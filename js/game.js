@@ -53,7 +53,13 @@ function renderSheet() {
   const repRows = Object.entries(c.rep).map(([k, v]) => `<div class="stat"><span>${k} Rep</span><span>${"★".repeat(v)}${"☆".repeat(5 - v)}</span></div>`).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
   const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name}${g.attr ? ` <em>(${g.attr})</em>` : ""}</li>`).join("") : "<li><em>none</em></li>";
+  // "People" is the full recurring-cast pool, not just friendly contacts —
+  // Adversaries and Targets you've crossed paths with end up here too, with
+  // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
   const contactList = c.contacts.map(ct => `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})</li>`).join("");
+  const graveyardSection = c.graveyard && c.graveyard.length
+    ? `<div class="section"><h3>Graveyard</h3><ul>${c.graveyard.map(p => `<li>${p.name} — ${p.faction}</li>`).join("")}</ul></div>`
+    : "";
 
   els.sheet.innerHTML = `
     <h2>${c.name}</h2>
@@ -63,7 +69,8 @@ function renderSheet() {
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Rep</h3>${repRows}</div>
     <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
-    <div class="section"><h3>Contacts</h3><ul>${contactList}</ul></div>
+    <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
+    ${graveyardSection}
   `;
 }
 
@@ -179,11 +186,13 @@ function startJob() {
   const loc = genLocation();
   const persisted = rememberLocation(c, loc);
   const fullLoc = { name: loc.name, area: persisted.area, faction: persisted.faction, heat: persisted.heat };
-  const mission = genMission(fullLoc);
-  const employer = genPerson();
+  const excludeIds = new Set(); // keeps this job from casting one person into two roles
+  const employer = getPerson(c, "ally", excludeIds);
+  const mission = genMission(fullLoc, c, excludeIds);
   G.job = {
     employer,
     mission,
+    excludeIds,
     location: fullLoc,
     steps: buildStepSequence(mission),
     stepIndex: 0,
@@ -197,7 +206,7 @@ function startJob() {
     encounter: { pre: { done: false }, post: { done: false }, stage: null },
     outcome: null
   };
-  addLog(c, `A job comes in from ${employer.name} (${employer.faction.name}, ${employer.profession}): ${mission.flavor}`);
+  addLog(c, `A job comes in from ${employer.name} (${employer.faction}, ${employer.profession}): ${mission.flavor}`);
   G.phase = "briefing";
   persist();
   render();
@@ -211,7 +220,7 @@ function renderBriefing() {
   const fieldRows = missionFieldRows(mission);
   wrap.innerHTML = `
     <h2>Mission Briefing</h2>
-    <p><strong>Employer:</strong> ${employer.name} — ${employer.faction.name} ${employer.profession}</p>
+    <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
     <p><strong>Job:</strong> ${mission.type} — ${mission.flavor}</p>
     ${fieldRows}
     <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction.name} turf` : ""}) — Heat ${location.heat}</p>
@@ -240,7 +249,7 @@ function missionFieldRows(mission) {
   switch (mission.type) {
     case "Assassination":
     case "Heist":
-      return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction.name})</p>`;
+      return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p>`;
     case "Transport":
       return `<p><strong>Cargo:</strong> ${mission.target.name}</p>`;
     case "Delay":
@@ -295,9 +304,9 @@ function renderGearUp() {
     btn.disabled = c.cred < 150;
     btn.addEventListener("click", () => {
       c.cred -= 150;
-      const person = genPerson();
+      const person = getPerson(c, "ally", job.excludeIds);
       const attr = pick(["Combat", "Driving", "Hacking", "Social", "Stealth"]);
-      job.hireling = { name: person.name, attr };
+      job.hireling = { ...person, attr };
       addLog(c, `${person.name} signs on for the job, backing you up on ${attr}.`);
       persist(); render();
     });
@@ -379,6 +388,13 @@ function finalizeChallengeCommon() {
   applyOutcome(c, job, res.usedAttr, res.tier);
   if (res.styleTrack && res.tier === "full") job.repStyleFullSuccess[res.styleTrack] = true;
 
+  // Every clash deepens the grudge, regardless of roll tier — covers both
+  // mission Combat steps and the "Caught!" forced step (Encounter combat
+  // touches the same mission adversaries too; treated the same for simplicity).
+  if (res.usedAttr === "Combat" && job.mission && job.mission.adversaries) {
+    job.mission.adversaries.forEach(a => nudgeRelationship(c, a.id, -1));
+  }
+
   job.pendingResult = null;
   return res;
 }
@@ -433,7 +449,7 @@ function applyOutcome(c, job, attr, tier) {
   } else if (attr === "Hacking") {
     if (loc) loc.heat = Math.min(5, loc.heat + (tier === "fail" ? 2 : 1));
   } else if (attr === "Social") {
-    if (tier === "fail" && c.contacts.length) c.contacts[0].relationship -= 1;
+    if (tier === "fail") nudgeRelationship(c, job.employer.id, -1);
   } else if (attr === "Stealth") {
     if (loc) loc.heat = Math.min(5, loc.heat + 1);
   }
@@ -556,9 +572,27 @@ function runDebrief() {
   });
 
   const relDelta = outcome === "Full Success" ? 1 : outcome === "Partial Success" ? 0 : -1;
-  const existing = c.contacts.find(ct => ct.name === job.employer.name);
-  if (existing) existing.relationship += relDelta;
-  else c.contacts.push({ name: job.employer.name, faction: job.employer.faction.name, relationship: relDelta, favor: 0 });
+  nudgeRelationship(c, job.employer.id, relDelta);
+
+  // Outcomes retire people permanently: a successful hit kills its target;
+  // a failed Transport/Hold kills whoever was being moved/protected.
+  if (job.mission.type === "Assassination") {
+    if (outcome !== "Failure") {
+      killPerson(c, job.mission.target.id);
+      addLog(c, `${job.mission.target.name} won't be a problem for anyone again.`);
+    }
+  } else if (job.mission.type === "Transport" || job.mission.type === "Hold") {
+    if (outcome === "Failure") {
+      killPerson(c, job.mission.target.id);
+      addLog(c, `${job.mission.target.name} didn't make it.`);
+    } else {
+      nudgeRelationship(c, job.mission.target.id, 1);
+    }
+  }
+
+  if (job.hireling) {
+    nudgeRelationship(c, job.hireling.id, outcome === "Failure" ? -1 : 1);
+  }
 
   decayOtherLocations(c, job.location.name);
 

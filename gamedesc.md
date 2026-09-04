@@ -38,8 +38,11 @@ Contacts, Gear). No backend required for v1.
 - **Cred**: starting 200. Currency for Gear Up phase, bribes, medical.
 - **Gear**: list of items (weapons, armor, deck, programs, vehicle). Each Job's
   Gear Up phase can add/consume items.
-- **Contacts**: list of {Name, Faction, Relationship, Favor owed (+/-)}. Seeded
-  from Turf, grows as Employers/Adversaries are met.
+- **Contacts** (the "People" pool): list of {Name, Faction, Relationship,
+  Favor owed (+/-)}. Seeded from Turf; every Employer, mission Target,
+  Adversary, and Hireling you ever cross paths with lands here too — this is
+  the game's whole recurring cast, not just friendly names. See §5 for how
+  roles are cast from it.
 
 ---
 
@@ -147,6 +150,25 @@ rolls during Mission Start (3.4); the app can let harder tiers add a step.
   a Job's outcome ripples — hurting one member shifts standing with the whole Faction).
 - **Threat tier** (Adversary only): Weak / Tough / Elite — sets the Challenge
   roll penalty in §2 and, for Combat, how many Health boxes it takes to drop them.
+
+**Recurring cast.** Every Employer, mission Target, Adversary, and Hireling
+is drawn from the same pool (§1 Contacts) instead of always being a fresh
+name. **8 times out of 10**, a role is filled by reusing an existing pooled
+person instead of generating a new one; the rest of the time (or if the pool
+has no eligible candidate yet) a new person is generated and added to the
+pool. Which pooled people are eligible for a role follows their
+**relationship**: negative relationship casts them into opposition roles
+(Adversary, Assassination Target); zero-or-positive casts them into
+cooperative roles (Employer, Hireling, and Targets for every other mission
+type). A newly-generated person starts at relationship 0 (cooperative roles)
+or slightly negative (opposition roles), and drifts from there — Combat
+against an Adversary deepens the grudge, a Job's outcome nudges its Employer,
+Hireling, and (for Transport/Hold) its Target.
+
+Outcomes can retire people for good: a successful Assassination kills its
+Target, and a failed Transport or Hold kills the person who was being
+moved/protected. Dead people move to the **Graveyard** and are never drawn
+again.
 
 ## 6. Location
 

@@ -32,7 +32,11 @@ function defaultCharacter(name, profession, turf) {
     health: [false, false, false], // true = Harm marked
     cred: trf.cred,
     gear: [...prof.gear, ...trf.gear],
-    contacts: [{ name: genName(), faction: trf.contactFaction, relationship: 1, favor: turf === "Corpo" ? -1 : 0 }],
+    // The people pool: every Employer/Target/Adversary/Hireling ever drawn
+    // or generated lives here (not just friendly contacts). See getPerson().
+    contacts: [{ id: 1, name: genName(), faction: trf.contactFaction, profession: "Fixer", relationship: 1, favor: turf === "Corpo" ? -1 : 0 }],
+    nextPersonId: 2,
+    graveyard: [], // people killed off by mission outcomes; never redrawn
     locations: {}, // name -> {area, faction, heat}
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
@@ -43,10 +47,70 @@ function save(character) {
 }
 function load() {
   const raw = localStorage.getItem(SAVE_KEY);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  const character = JSON.parse(raw);
+  migrateCharacter(character);
+  return character;
 }
 function clearSave() {
   localStorage.removeItem(SAVE_KEY);
+}
+
+// Backfills saves made before the people-pool feature existed: ids,
+// relationship defaults, the id counter, and the graveyard array.
+function migrateCharacter(character) {
+  if (!character.graveyard) character.graveyard = [];
+  if (!character.contacts) character.contacts = [];
+  let maxId = 0;
+  character.contacts.forEach(p => {
+    if (typeof p.relationship !== "number") p.relationship = 0;
+    if (!p.profession) p.profession = "Fixer";
+    if (!p.id) p.id = ++maxId;
+    else maxId = Math.max(maxId, p.id);
+  });
+  if (!character.nextPersonId) character.nextPersonId = maxId + 1;
+}
+
+// Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
+// person is drawn instead of generating a brand-new one.
+const REUSE_CHANCE = 0.8;
+
+// roleCategory: "hostile" (opposition — Adversary / Assassination target) or
+// "ally" (cooperative — Employer / Hireling / other mission Targets), per
+// the sign of each pooled person's relationship. excludeIds keeps one job
+// from casting the same person into two roles.
+function getPerson(character, roleCategory, excludeIds) {
+  const pool = character.contacts.filter(p =>
+    !excludeIds.has(p.id) && (roleCategory === "hostile" ? p.relationship < 0 : p.relationship >= 0)
+  );
+  let person = null;
+  if (pool.length && Math.random() < REUSE_CHANCE) {
+    person = pick(pool);
+  }
+  if (!person) {
+    person = genPerson();
+    person.id = character.nextPersonId++;
+    person.relationship = roleCategory === "hostile" ? -randInt(1, 2) : 0;
+    person.favor = 0;
+    character.contacts.push(person);
+  }
+  excludeIds.add(person.id);
+  return person;
+}
+
+function nudgeRelationship(character, personId, delta) {
+  const person = character.contacts.find(p => p.id === personId);
+  if (!person) return;
+  person.relationship = Math.max(-5, Math.min(5, person.relationship + delta));
+}
+
+function killPerson(character, personId) {
+  const idx = character.contacts.findIndex(p => p.id === personId);
+  if (idx === -1) return null;
+  const [dead] = character.contacts.splice(idx, 1);
+  dead.dead = true;
+  character.graveyard.push(dead);
+  return dead;
 }
 
 function addLog(character, text) {

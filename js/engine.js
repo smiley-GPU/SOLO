@@ -41,9 +41,15 @@ function genFaction(chanceFreelance = 0.25) {
 }
 
 function genPerson() {
+  // faction is flattened to a plain string here (not the {name,type} object
+  // genFaction() returns) because generated people can end up living in
+  // character.contacts alongside the seeded Turf contact, which already
+  // stores faction as a string. Location generation still uses the object
+  // form via genFaction() directly.
+  const f = genFaction();
   return {
     name: genName(),
-    faction: genFaction(),
+    faction: f.name,
     profession: pick(DATA.npcProfessions)
   };
 }
@@ -78,11 +84,13 @@ function genGearOffers(count = 3) {
   return offers;
 }
 
-function genMission(location) {
+function genMission(location, character, excludeIds) {
   const type = pick(DATA.missionTypes);
   const adversaryCount = randInt(1, 3);
+  // tier is per-mission, not a trait of the pooled person, so it's spread
+  // onto a copy rather than mutating the shared contacts entry.
   const adversaries = Array.from({ length: adversaryCount }, () => ({
-    ...genPerson(),
+    ...getPerson(character, "hostile", excludeIds),
     tier: genAdversaryTier(location.heat)
   }));
   const worstTier = adversaries.reduce((worst, a) => {
@@ -95,10 +103,16 @@ function genMission(location) {
     timePeriod = randInt(1, 3); // Short/Medium/Long -> 1-3 steps
   }
 
+  // Assassination targets are cast from the opposition pool (that's who's
+  // getting killed); every other mission type casts a cooperative/neutral
+  // Target (the person/cargo being stolen, moved, delayed, or held).
+  const targetRole = type === "Assassination" ? "hostile" : "ally";
+  const target = getPerson(character, targetRole, excludeIds);
+
   return {
     type,
     flavor: DATA.missionFlavor[type],
-    target: genPerson(),
+    target,
     location,
     adversaries,
     worstTier,
