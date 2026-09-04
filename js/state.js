@@ -30,6 +30,7 @@ function defaultCharacter(name, profession, turf) {
     attrs,
     rep,
     health: [false, false, false], // true = Harm marked
+    permanentInjury: false, // going Down leaves this until a repair is paid for
     cred: trf.cred,
     gear: [...prof.gear, ...trf.gear],
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
@@ -69,6 +70,7 @@ function migrateCharacter(character) {
     else maxId = Math.max(maxId, p.id);
   });
   if (!character.nextPersonId) character.nextPersonId = maxId + 1;
+  if (typeof character.permanentInjury !== "boolean") character.permanentInjury = false;
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -134,11 +136,40 @@ function healBox(character) {
   if (idx !== -1) character.health[idx] = false;
 }
 
+function highestRepTrack(character) {
+  return Object.entries(character.rep).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+// Fires exactly once, the moment a character goes Down (all 3 Health boxes
+// marked). No permadeath: a slim chance instead knocks two stars off their
+// best Rep track ("you should be dead — you're not, but it cost you"), and
+// either way they're left with a Permanent Injury that needs a paid repair
+// (see DATA.repairs) and an ongoing roll penalty until it's fixed.
+function resolveDownEvent(character) {
+  if (Math.random() < 0.1) {
+    const track = highestRepTrack(character);
+    character.rep[track] = Math.max(0, character.rep[track] - 2);
+    addLog(character, `You should be dead. You're not — but your ${track} Rep just took a beating it won't forget.`);
+  }
+  character.permanentInjury = true;
+  addLog(character, "The damage doesn't heal clean. You're carrying a Permanent Injury now — needs real repair.");
+}
+
 function rememberLocation(character, location) {
   if (!character.locations[location.name]) {
     character.locations[location.name] = { area: location.area, faction: location.faction, heat: location.heat };
   }
   return character.locations[location.name];
+}
+
+// Given a fixed location definition ({name, area, faction} from
+// DATA.locations), returns the full, currently-persisted location object —
+// rolling a first-visit Heat if this is the first time it's been seen, or
+// returning its already-persisted Heat otherwise. The 12 locations are a
+// permanent map, so this is the one path anything should use to "visit" one.
+function resolveLocation(character, def) {
+  const persisted = rememberLocation(character, { name: def.name, area: def.area, faction: def.faction, heat: rollHeatForArea(def.area) });
+  return { name: def.name, area: persisted.area, faction: persisted.faction, heat: persisted.heat };
 }
 function decayOtherLocations(character, exceptName) {
   Object.keys(character.locations).forEach(name => {

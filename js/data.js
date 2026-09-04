@@ -30,16 +30,22 @@ const DATA = {
     "Media", "Cop", "Civilian", "Medtech", "Techie", "Ripperdoc"
   ],
 
-  locationAdjectives: {
-    Urban: ["Lower", "Old", "Neon", "Rust", "Glass", "Crimson", "Hollow"],
-    Corpo: ["Arasaka", "Zenith", "Skyline", "Sterling", "Meridian", "Obsidian"],
-    Rural: ["Dust", "Salt", "Ashen", "Bone", "Iron", "Wind"]
-  },
-  locationNouns: {
-    Urban: ["Market", "Alley", "Row", "Underpass", "Bazaar", "Block", "Yards"],
-    Corpo: ["Plaza", "Tower", "Atrium", "Campus", "Spire", "Complex"],
-    Rural: ["Flats", "Junkyard", "Outpost", "Highway", "Depot", "Ridge"]
-  },
+  // Fixed, permanent world map — always these 12, never randomly combined.
+  // faction is null for open/neutral turf. See gamedesc.md §6.
+  locations: [
+    { name: "Neon Wash", area: "Urban", faction: "Valentinos" },
+    { name: "Undercroft Row", area: "Urban", faction: "Maelstrom" },
+    { name: "Rustline Market", area: "Urban", faction: null },
+    { name: "The Hollow Mile", area: "Urban", faction: "Tyger Claws" },
+    { name: "Arasaka Spire", area: "Corpo", faction: "Arasaka" },
+    { name: "Zenith Campus", area: "Corpo", faction: "Militech" },
+    { name: "Meridian Atrium", area: "Corpo", faction: "Kang Tao" },
+    { name: "The Glass Exchange", area: "Corpo", faction: null },
+    { name: "Saltflat Depot", area: "Rural", faction: "Aldecaldos" },
+    { name: "Ashwind Highway", area: "Rural", faction: "Wraiths" },
+    { name: "Bonepile Yards", area: "Rural", faction: "Voodoo Boys" },
+    { name: "The Rustbelt Outpost", area: "Rural", faction: null }
+  ],
 
   gear: {
     Street: [
@@ -71,7 +77,7 @@ const DATA = {
   missionTypes: ["Assassination", "Heist", "Transport", "Delay", "Hold"],
 
   missionFlavor: {
-    Assassination: "put down a target who's become a liability.",
+    Assassination: "put down a target who's become a liability — gun, blade, or a burst of lethal ICE.",
     Heist: "lift something valuable before anyone notices it's gone.",
     Transport: "move a package across town without it getting flagged.",
     Delay: "keep someone or something tied up while the real move happens.",
@@ -101,6 +107,14 @@ const DATA = {
       fail: ["You're spotted cold.", "A patrol catches you mid-move."]
     }
   },
+
+  // Repair options for a Permanent Injury (gamedesc.md §1 Health). Cybernetic
+  // is the cheap, standard fix but leaves a lasting rough edge; Biovat costs
+  // more but grows back clean.
+  repairs: [
+    { name: "Cybernetic Replacement", price: 400, sideEffect: true, flavor: "Quick and cheap. It works — but it's never quite the same." },
+    { name: "Biovat Regrowth", price: 900, sideEffect: false, flavor: "Slow and expensive. Grown clean, no compromises." }
+  ],
 
   encounterFlavor: [
     "A patrol rounds the corner right into your path.",

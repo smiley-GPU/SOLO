@@ -60,17 +60,21 @@ function renderSheet() {
   const graveyardSection = c.graveyard && c.graveyard.length
     ? `<div class="section"><h3>Graveyard</h3><ul>${c.graveyard.map(p => `<li>${p.name} — ${p.faction}</li>`).join("")}</ul></div>`
     : "";
+  // The permanent 12-location map (gamedesc.md §6) — fills in as you visit.
+  const locationsList = Object.entries(c.locations).map(([name, loc]) => `<li>${name} ${heatBarHtml(loc.heat)}</li>`).join("");
+  const injuryBadge = c.permanentInjury ? `<div class="injury-badge">⚠ Permanent Injury — needs repair</div>` : "";
 
   els.sheet.innerHTML = `
     <h2>${c.name}</h2>
     <div class="tag">${c.profession} / ${c.turf}</div>
-    <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div></div>
+    <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${injuryBadge}</div>
     <div class="section"><h3>Cred</h3><div class="cred">¥${c.cred}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Rep</h3>${repRows}</div>
     <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
     <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
     ${graveyardSection}
+    <div class="section"><h3>Locations</h3><ul>${locationsList || "<li><em>none visited yet</em></li>"}</ul></div>
   `;
 }
 
@@ -134,7 +138,8 @@ function renderHub() {
   const medBtn = document.createElement("button");
   const openWounds = c.health.filter(h => h).length;
   medBtn.textContent = `Medical (¥100 / box) — ${openWounds} wound(s)`;
-  medBtn.disabled = openWounds === 0 || c.cred < 100;
+  // Band-aids don't touch a Permanent Injury — that needs a real repair below.
+  medBtn.disabled = openWounds === 0 || c.cred < 100 || c.permanentInjury;
   medBtn.addEventListener("click", () => {
     c.cred -= 100;
     healBox(c);
@@ -142,6 +147,33 @@ function renderHub() {
     persist(); render();
   });
   wrap.appendChild(medBtn);
+
+  if (c.permanentInjury) {
+    const repairSection = document.createElement("div");
+    repairSection.className = "section";
+    repairSection.innerHTML = "<h3>Permanent Injury</h3><p class=\"muted\">Every roll takes -1 until this is fixed.</p>";
+    DATA.repairs.forEach(r => {
+      const btn = document.createElement("button");
+      btn.textContent = `${r.name} — ¥${r.price}`;
+      btn.title = r.flavor;
+      btn.disabled = c.cred < r.price;
+      btn.addEventListener("click", () => {
+        c.cred -= r.price;
+        c.health = [false, false, false];
+        c.permanentInjury = false;
+        if (r.sideEffect) {
+          const attr = pick(Object.keys(c.attrs));
+          c.attrs[attr] = Math.max(1, c.attrs[attr] - 1);
+          addLog(c, `${r.name} patches you up, but the ${attr} side never sits quite right again (${attr} -1).`);
+        } else {
+          addLog(c, `${r.name} grows you back clean. No compromises.`);
+        }
+        persist(); render();
+      });
+      repairSection.appendChild(btn);
+    });
+    wrap.appendChild(repairSection);
+  }
 
   const train = document.createElement("div");
   train.className = "section";
@@ -154,7 +186,7 @@ function renderHub() {
     btn.disabled = rank >= 5 || c.cred < cost || !repAvailable;
     btn.addEventListener("click", () => {
       c.cred -= cost;
-      const track = Object.entries(c.rep).sort((a, b) => b[1] - a[1])[0][0];
+      const track = highestRepTrack(c);
       c.rep[track] = Math.max(0, c.rep[track] - 1);
       c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
       addLog(c, `You call in favors on your ${track} Rep to train ${attr} to ${c.attrs[attr]}.`);
@@ -183,9 +215,7 @@ function renderHub() {
 // ---------- BRIEFING ----------
 function startJob() {
   const c = G.character;
-  const loc = genLocation();
-  const persisted = rememberLocation(c, loc);
-  const fullLoc = { name: loc.name, area: persisted.area, faction: persisted.faction, heat: persisted.heat };
+  const fullLoc = resolveLocation(c, genLocationDef());
   const excludeIds = new Set(); // keeps this job from casting one person into two roles
   const employer = getPerson(c, "ally", excludeIds);
   const mission = genMission(fullLoc, c, excludeIds);
@@ -223,7 +253,7 @@ function renderBriefing() {
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
     <p><strong>Job:</strong> ${mission.type} — ${mission.flavor}</p>
     ${fieldRows}
-    <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction.name} turf` : ""}) — Heat ${location.heat}</p>
+    <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction} turf` : ""}) — Heat ${location.heat} ${heatBarHtml(location.heat)}</p>
     <p><strong>Opposition:</strong></p><ul>${adversaryList}</ul>
     <p class="muted">Estimated payout: ¥${estimatePayout(G.job)}</p>
   `;
@@ -251,7 +281,7 @@ function missionFieldRows(mission) {
     case "Heist":
       return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p>`;
     case "Transport":
-      return `<p><strong>Cargo:</strong> ${mission.target.name}</p>`;
+      return `<p><strong>Cargo:</strong> ${mission.target.name}</p><p><strong>Route:</strong> ${mission.fromLocation.name} → ${mission.location.name}</p>`;
     case "Delay":
     case "Hold":
       return `<p><strong>Time:</strong> ${["Short", "Medium", "Long"][mission.timePeriod - 1]} (${mission.timePeriod} rounds)</p>`;
@@ -261,7 +291,18 @@ function missionFieldRows(mission) {
 }
 
 function estimatePayout(job) {
-  return 100 + job.steps.length * 50 + job.location.heat * 20;
+  const base = 100 + job.steps.length * 50 + job.location.heat * 20;
+  // Employer relationship shifts pay ±8% per point (clamped -5..5, so
+  // roughly 0.6x-1.4x): work for people you're square with, get paid better.
+  const relMult = 1 + (job.employer.relationship || 0) * 0.08;
+  return Math.round(base * relMult);
+}
+
+// A small 5-segment Heat indicator, e.g. for Briefing and the Locations
+// sidebar list.
+function heatBarHtml(heat) {
+  const segs = Array.from({ length: 5 }, (_, i) => `<span class="heatseg${i < heat ? " filled" : ""}"></span>`).join("");
+  return `<span class="heatbar">${segs}</span>`;
 }
 
 // ---------- GEAR UP ----------
@@ -274,15 +315,19 @@ function renderGearUp() {
   wrap.className = "card";
   wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Buying the right tool preps a matching Challenge (+1).</p>`;
 
+  // A friendly Employer relationship also gets you a better rate from their
+  // fixer, ±4% per point (clamped -5..5, so roughly 0.8x-1.2x).
+  const priceMult = 1 - (job.employer.relationship || 0) * 0.04;
   job.offers.forEach(item => {
+    const price = Math.max(10, Math.round(item.price * priceMult));
     const row = document.createElement("div");
     row.className = "offer";
-    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${item.attr})</em></span><span>¥${item.price}</span>`;
+    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${item.attr})</em></span><span>¥${price}</span>`;
     const btn = document.createElement("button");
     btn.textContent = item.bought ? "Bought" : "Buy";
-    btn.disabled = c.cred < item.price || item.bought;
+    btn.disabled = c.cred < price || item.bought;
     btn.addEventListener("click", () => {
-      c.cred -= item.price;
+      c.cred -= price;
       c.gear.push({ name: item.name, attr: item.attr });
       job.prep[item.attr] = true;
       item.bought = true;
@@ -405,7 +450,16 @@ function finalizeStep(step) {
   const res = finalizeChallengeCommon();
   job.stepResults.push({ attr: res.usedAttr, tier: res.tier });
 
-  if (res.usedAttr === "Stealth" && res.tier === "fail" && !step.forced) {
+  // Transport: a failed transit leg (Driving or its Stealth alt) risks an
+  // ambush between the two locations, in place of the generic Stealth-fail
+  // "Caught!" step below.
+  if (job.mission.type === "Transport" && (res.usedAttr === "Driving" || res.usedAttr === "Stealth") && res.tier === "fail" && !step.forced) {
+    job.steps.splice(job.stepIndex + 1, 0, {
+      attr: "Combat",
+      desc: "Ambushed on the road between drop points. Fight through.",
+      forced: true
+    });
+  } else if (res.usedAttr === "Stealth" && res.tier === "fail" && !step.forced) {
     job.steps.splice(job.stepIndex + 1, 0, {
       attr: "Combat", alt: "Social",
       desc: "Caught! Fight your way clear or talk your way out.",
@@ -442,10 +496,10 @@ function applyOutcome(c, job, attr, tier) {
 
   const loc = c.locations[job.location.name];
   if (attr === "Combat") {
-    if (tier === "partial") { markHarm(c); }
-    else { markHarm(c); if (loc) loc.heat = Math.min(5, loc.heat + 1); }
+    if (tier === "partial") { if (markHarm(c) && !c.permanentInjury) resolveDownEvent(c); }
+    else { if (markHarm(c) && !c.permanentInjury) resolveDownEvent(c); if (loc) loc.heat = Math.min(5, loc.heat + 1); }
   } else if (attr === "Driving") {
-    if (tier === "fail") markHarm(c);
+    if (tier === "fail" && markHarm(c) && !c.permanentInjury) resolveDownEvent(c);
   } else if (attr === "Hacking") {
     if (loc) loc.heat = Math.min(5, loc.heat + (tier === "fail" ? 2 : 1));
   } else if (attr === "Social") {
@@ -517,6 +571,10 @@ function computeModifiers(attr, style) {
     if (p) mods.push({ label: `Adversary (${job.mission.worstTier})`, value: p });
   }
   if (style && style !== "None" && c.rep[style] > 0) mods.push({ label: `${style} Rep`, value: 1 });
+  const harmCount = c.health.filter(h => h).length;
+  if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
+  else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
+  if (c.permanentInjury) mods.push({ label: "Permanent Injury", value: -1 });
   return mods;
 }
 

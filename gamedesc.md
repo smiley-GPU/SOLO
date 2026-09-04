@@ -34,7 +34,18 @@ Contacts, Gear). No backend required for v1.
 - **Attributes** (skills used to resolve Challenges), 1–3 at creation, cap 5:
   - Combat, Driving, Hacking, Social, Stealth
   - Start at 1, Profession gives +1 to two, Turf gives +1 to one (may stack, cap 3 at creation).
-- **Health**: 3 boxes (Hurt/Wounded/Down). Harm marks a box; Down = Job fails, forced retreat, possible Cred/Rep loss.
+- **Health**: 3 boxes (Hurt/Wounded/Down). Harm marks a box.
+  - 1 box marked: **-1** to all rolls. 2 boxes: **-2**. 3 boxes (Down): the
+    Job fails/forced retreat, *and* it leaves a **Permanent Injury** — an
+    ongoing **-1** to every roll on top of the Wounded penalty, until paid off.
+  - Going Down also rolls a slim (10%) chance of a close call: no permadeath,
+    but your highest Rep track takes a **-2** hit ("you should be dead —
+    you're not, but it cost you").
+  - **Repair** (Hub, only while a Permanent Injury is carried) clears all 3
+    boxes and the injury: **Cybernetic Replacement** (¥400, quick — leaves a
+    lasting -1 on a random Attribute) or **Biovat Regrowth** (¥900, slow —
+    grows back clean, no downside). The cheap ¥100/box Medical option only
+    handles ordinary Wounded boxes, not a Permanent Injury.
 - **Cred**: starting 200. Currency for Gear Up phase, bribes, medical.
 - **Gear**: list of items (weapons, armor, deck, programs, vehicle). Each Job's
   Gear Up phase can add/consume items.
@@ -118,16 +129,21 @@ rolls during Mission Start (3.4); the app can let harder tiers add a step.
 
 - **Assassination** — kill or take out a Target.
   - Target: Person (§5) | Location | Guards/Adversaries (1–3 rolled Adversaries)
-  - Sequence: *Stealth* (approach) → *Combat or Hacking* (neutralize, hacker
-    route = disable security instead of kill) → *Stealth or Driving* (escape)
+  - Sequence: *Stealth* (approach) → *Combat or Hacking* (neutralize — Combat
+    up close, or Hacking as a lethal ICE kill through the net) → *Stealth or
+    Driving* (escape)
 - **Heist** — steal an Item or extract a Person.
   - Target: Item or Person | Location | Guards/Adversaries
   - Sequence: *Hacking or Stealth* (breach) → *Stealth* (grab) → *Driving*
     (getaway)
-- **Transport** — move an Item or Person between two Locations.
+- **Transport** — move an Item or Person between two distinct Locations
+  (From and To, both drawn from the fixed map in §6 — the job's Location is
+  the destination, the origin is separate flavor/routing context).
   - Target: Item or Person | Location From | Location To | Vehicle
-  - Sequence: *Driving* (transit, roll per leg or per checkpoint) → optional
-    *Social* (talk past a checkpoint) or *Combat* (ambush) depending on route Heat
+  - Sequence: *Driving or Stealth* (transit — fast and open, or slow and
+    quiet) → *Social or Combat* (a checkpoint on the way). A **failed**
+    transit leg (either approach) risks an **ambush**: a forced Combat step
+    inserted immediately, instead of reaching the checkpoint clean.
 - **Delay** — stall a Person or Item at/in a Location for a Time period.
   - Target: Person or Item | Location | Time period (Short/Medium/Long =
     1/2/3 Challenge rolls) | Adversaries
@@ -172,17 +188,27 @@ again.
 
 ## 6. Location
 
-- **Name**: generated (district/venue name table, flavored by Area).
+The world is a **fixed, permanent map of 12 named Locations** (4 Urban / 4
+Corpo / 4 Rural) — not randomly combined, always the same 12. Every Job's
+Location (and Transport's origin) is drawn from this set, so Heat and history
+accumulate on real, recurring places instead of disposable ones.
+
+- **Name**: one of the 12 fixed, "fancy" names (e.g. *Arasaka Spire*,
+  *Neon Wash*, *Saltflat Depot*).
 - **Area**: Rural / Urban / Corpo — biases which Factions/Adversary types and
   Mission types are more likely to roll here (Corpo → Heist/Assassination
   vs. security; Rural/Nomad turf → Transport/Delay; Urban/Street → all types, higher Encounter odds).
-- **Faction**: optional controlling Faction (affects who you owe/anger).
-- **Heat**: 0–5. How much fighting/hacking noise draws authority attention here.
+- **Faction**: fixed per Location (some are neutral/open turf) — affects who
+  you owe/anger.
+- **Heat**: 0–5, rolled once on first visit then persisted forever after.
+  How much fighting/hacking noise draws authority attention here.
   - Drives Random Encounter chance (§3.3/3.5) and the Combat/Stealth roll
     penalty at Heat 4–5.
   - Rises by 1 per Combat/failed-Stealth/failed-Hacking roll during a Job at
-    that Location (session-scoped); persists between Jobs but decays by 1 per
-    Job cycle where nothing happens there.
+    that Location; persists between Jobs but decays by 1 per Job cycle where
+    nothing happens there.
+  - Shown as a 5-segment Heat bar in the Briefing and in the character
+    sheet's Locations list (which fills in as the map gets explored).
 
 ---
 
@@ -214,6 +240,10 @@ resulting branch text pulled from the table above.
   scales with new rank), cap 5.
 - **Cred** earned from Job payouts, spent on Gear Up, Hirelings, Attribute
   training, medical (clear Health boxes).
+- **Relationship pays off.** A Job's payout scales ±8% per point of the
+  Employer's relationship (roughly 0.6×–1.4× across the -5..5 range), and
+  that same Employer's fixer prices Gear Up ±4% per point. Work for people
+  you're square with; it shows up in the numbers both ways.
 - **Gear tiers**: Street (cheap, −0), Professional (mid, +0 baseline, meets
   most Jobs), Military/Black-market (expensive, +1 prep bonus, raises Heat if seen).
 

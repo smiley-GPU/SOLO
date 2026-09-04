@@ -69,9 +69,21 @@ header h1 {
   width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 3px; display: inline-block;
 }
 .hbox.hurt { background: var(--danger); border-color: var(--danger); }
+.injury-badge {
+  margin-top: 6px; font-size: 12px; color: var(--danger);
+  border: 1px solid var(--danger); border-radius: 4px; padding: 4px 6px; display: inline-block;
+}
 #sheet ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-#sheet li { padding: 2px 0; color: var(--text); }
+#sheet li { padding: 2px 0; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #sheet li em { color: var(--muted); font-style: normal; }
+
+.heatbar { display: inline-flex; gap: 2px; vertical-align: middle; }
+.heatseg {
+  width: 8px; height: 8px; border-radius: 2px;
+  background: var(--border); display: inline-block;
+}
+.heatseg.filled { background: var(--danger); }
+.challenge .heatbar, .card .heatbar { margin-left: 2px; }
 
 .card {
   background: var(--panel-2);

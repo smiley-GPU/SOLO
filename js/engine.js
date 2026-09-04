@@ -65,12 +65,15 @@ function tierPenalty(tier) {
   return tier === "elite" ? -2 : tier === "tough" ? -1 : 0;
 }
 
-function genLocation() {
-  const area = pick(["Urban", "Corpo", "Rural"]);
-  const name = `${pick(DATA.locationAdjectives[area])} ${pick(DATA.locationNouns[area])}`;
-  const faction = Math.random() < 0.5 ? genFaction(0.4) : null;
-  const baseHeat = area === "Corpo" ? randInt(1, 3) : area === "Urban" ? randInt(0, 3) : randInt(0, 2);
-  return { name, area, faction, heat: baseHeat };
+// Higher-Heat areas roll hotter on first visit; Location Heat otherwise
+// persists on character.locations (see rememberLocation/resolveLocation in
+// state.js) — the world is a fixed 12-location map, not randomly combined.
+function rollHeatForArea(area) {
+  return area === "Corpo" ? randInt(1, 3) : area === "Urban" ? randInt(0, 3) : randInt(0, 2);
+}
+
+function genLocationDef() {
+  return pick(DATA.locations); // {name, area, faction}
 }
 
 function genGearOffers(count = 3) {
@@ -109,11 +112,20 @@ function genMission(location, character, excludeIds) {
   const targetRole = type === "Assassination" ? "hostile" : "ally";
   const target = getPerson(character, targetRole, excludeIds);
 
+  // Transport gets a distinct origin point; `location` (the job's main
+  // Location, driving Heat/Encounters) is the destination.
+  let fromLocation = null;
+  if (type === "Transport") {
+    const fromDef = pick(DATA.locations.filter(l => l.name !== location.name));
+    fromLocation = resolveLocation(character, fromDef);
+  }
+
   return {
     type,
     flavor: DATA.missionFlavor[type],
     target,
     location,
+    fromLocation,
     adversaries,
     worstTier,
     timePeriod
@@ -123,7 +135,7 @@ function genMission(location, character, excludeIds) {
 const MISSION_SEQUENCES = {
   Assassination: [
     { attr: "Stealth", desc: "Approach the target undetected." },
-    { attr: "Combat", alt: "Hacking", desc: "Take out the target — or disable security and slip past." },
+    { attr: "Combat", alt: "Hacking", desc: "Take out the target — a gun or a blade up close, or a burst of lethal ICE through the net." },
     { attr: "Stealth", alt: "Driving", desc: "Escape the scene." }
   ],
   Heist: [
@@ -132,7 +144,7 @@ const MISSION_SEQUENCES = {
     { attr: "Driving", desc: "Getaway before the block locks down." }
   ],
   Transport: [
-    { attr: "Driving", desc: "Run the transit route to the drop-off." },
+    { attr: "Driving", alt: "Stealth", desc: "Run the transit route to the drop-off — fast and open, or slow and quiet." },
     { attr: "Social", alt: "Combat", desc: "Get past a checkpoint on the way." }
   ],
   Delay: [
