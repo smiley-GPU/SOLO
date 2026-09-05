@@ -27,8 +27,14 @@
     For each faction create following parameters: wealth; r&d; power.
     Each successful mission done a faction as a employer increases appropriate faction parameter.
     Also if faction is target of the mission it reduces appropriate parameter.
-    Faction relationship 
+    Faction relationship should change to between employer and target factions if mission is noticed. Mission can go unnoticed if critical stealth check(s) are successful. 
 
 ## Gear
     Gear need to give bonuses to challenge checks.
     Bonuses should be appropriate to the gear quality and challenge. 
+
+## REP
+    remove REP stats, and change it to single BOOST stat. Player can use BOOST to give bonus to skill checks.
+
+## Failed checks
+    failed check should not always result to damage. It could also be lost or damaged gear, in social challenges increased heat, lowered relationship, lost money for bribes.
