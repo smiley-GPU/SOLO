@@ -8,6 +8,18 @@ function pick(arr) {
   return arr[randInt(0, arr.length - 1)];
 }
 
+// Weighted-random pick from [{effect, weight}, ...] — used to diversify
+// fail/partial consequences per Challenge type (todo2.md, DATA.failOutcomes).
+function pickWeighted(entries) {
+  const total = entries.reduce((sum, e) => sum + e.weight, 0);
+  let roll = Math.random() * total;
+  for (const entry of entries) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry.effect;
+  }
+  return entries[entries.length - 1].effect;
+}
+
 function roll2d6() {
   const d1 = randInt(1, 6), d2 = randInt(1, 6);
   return { d1, d2, sum: d1 + d2 };
@@ -120,6 +132,16 @@ function genMission(location, character, excludeIds) {
     fromLocation = resolveLocation(character, fromDef);
   }
 
+  // Which faction parameter this job moves (todo2.md): depends on what's
+  // actually being Held/Transported/Heisted, not the mission type. Delay
+  // rolls one too, but it's just flavor — see DATA.delayFlavor. Assassination
+  // has none; it always hits "power" (see runDebrief in game.js).
+  let assetType = null, assetFlavor = null;
+  if (type === "Heist" || type === "Transport" || type === "Hold" || type === "Delay") {
+    assetType = pick(["wealth", "rnd", "power"]);
+    assetFlavor = type === "Delay" ? DATA.delayFlavor : pick(DATA.assetTypes[assetType]);
+  }
+
   return {
     type,
     flavor: DATA.missionFlavor[type],
@@ -128,7 +150,9 @@ function genMission(location, character, excludeIds) {
     fromLocation,
     adversaries,
     worstTier,
-    timePeriod
+    timePeriod,
+    assetType,
+    assetFlavor
   };
 }
 

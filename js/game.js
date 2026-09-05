@@ -10,7 +10,7 @@ const G = {
 const els = {
   sheet: document.getElementById("sheet"),
   main: document.getElementById("main"),
-  log: document.getElementById("log")
+  factions: document.getElementById("factions")
 };
 
 function init() {
@@ -31,28 +31,51 @@ function persist() {
 function render() {
   renderSheet();
   renderMain();
-  renderLog();
+  renderFactions();
 }
 
-function renderLog() {
-  els.log.innerHTML = "";
+// Journal, appended into #main below the phase card — newest line on top,
+// old ones pushed down (todo2.md INTERFACE). No auto-scroll needed since the
+// newest entry is always the first thing visible.
+function renderJournal() {
+  const journal = document.createElement("div");
+  journal.id = "journal";
+  if (G.character) {
+    G.character.log.slice().reverse().forEach(line => {
+      const p = document.createElement("div");
+      p.className = "log-line";
+      p.textContent = line;
+      journal.appendChild(p);
+    });
+  }
+  return journal;
+}
+
+// Right-hand panel: every faction in the game (todo2.md INTERFACE/Factions),
+// grouped by type, with its current Wealth/R&D/Power standing.
+function renderFactions() {
+  els.factions.innerHTML = "";
   if (!G.character) return;
-  G.character.log.forEach(line => {
-    const p = document.createElement("div");
-    p.className = "log-line";
-    p.textContent = line;
-    els.log.appendChild(p);
-  });
-  els.log.scrollTop = els.log.scrollHeight;
+  const standings = G.character.factionStandings;
+  const types = ["Corpo", "Gang", "Nomad", "Authority"];
+  const html = types.map(type => {
+    const rows = DATA.factions.filter(f => f.type === type).map(f => {
+      const s = standings[f.name] || { wealth: 0, rnd: 0, power: 0 };
+      return `<li class="faction-row"><span>${f.name}</span><span class="faction-stats">
+        <em title="Wealth">¥${s.wealth}</em><em title="R&D">🔬${s.rnd}</em><em title="Power">⚔${s.power}</em>
+      </span></li>`;
+    }).join("");
+    return `<div class="section"><h3>${type}</h3><ul>${rows}</ul></div>`;
+  }).join("");
+  els.factions.innerHTML = `<h2>Factions</h2>${html}`;
 }
 
 function renderSheet() {
   const c = G.character;
   if (!c) { els.sheet.innerHTML = ""; return; }
   const attrRows = Object.entries(c.attrs).map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join("");
-  const repRows = Object.entries(c.rep).map(([k, v]) => `<div class="stat"><span>${k} Rep</span><span>${"★".repeat(v)}${"☆".repeat(5 - v)}</span></div>`).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
-  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name}${g.attr ? ` <em>(${g.attr})</em>` : ""}</li>`).join("") : "<li><em>none</em></li>";
+  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name}${g.attr ? ` <em>(${g.tier || "Street"} ${g.attr})</em>` : ""}</li>`).join("") : "<li><em>none</em></li>";
   // "People" is the full recurring-cast pool, not just friendly contacts —
   // Adversaries and Targets you've crossed paths with end up here too, with
   // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
@@ -70,7 +93,7 @@ function renderSheet() {
     <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${injuryBadge}</div>
     <div class="section"><h3>Cred</h3><div class="cred">¥${c.cred}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
-    <div class="section"><h3>Rep</h3>${repRows}</div>
+    <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
     <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
     <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
     ${graveyardSection}
@@ -90,6 +113,7 @@ function renderMain() {
     debrief: renderDebrief
   }[G.phase];
   if (fn) fn();
+  els.main.appendChild(renderJournal());
 }
 
 // ---------- CREATE ----------
@@ -180,16 +204,14 @@ function renderHub() {
   train.innerHTML = "<h3>Training</h3>";
   Object.entries(c.attrs).forEach(([attr, rank]) => {
     const cost = (rank + 1) * 150;
-    const repAvailable = Object.values(c.rep).some(v => v > 0);
     const btn = document.createElement("button");
-    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ¥${cost} + 1 Rep`;
-    btn.disabled = rank >= 5 || c.cred < cost || !repAvailable;
+    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ¥${cost} + 1 BOOST`;
+    btn.disabled = rank >= 5 || c.cred < cost || c.boost < 1;
     btn.addEventListener("click", () => {
       c.cred -= cost;
-      const track = highestRepTrack(c);
-      c.rep[track] = Math.max(0, c.rep[track] - 1);
+      c.boost -= 1;
       c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
-      addLog(c, `You call in favors on your ${track} Rep to train ${attr} to ${c.attrs[attr]}.`);
+      addLog(c, `You spend BOOST training ${attr} to ${c.attrs[attr]}.`);
       persist(); render();
     });
     train.appendChild(btn);
@@ -227,11 +249,8 @@ function startJob() {
     steps: buildStepSequence(mission),
     stepIndex: 0,
     stepResults: [],
-    repStyleFullSuccess: { Gun: false, Knife: false, Car: false },
-    prep: {},
     hireling: null,
     pendingResult: null,
-    signatureUsed: false,
     rerolled: false,
     encounter: { pre: { done: false }, post: { done: false }, stage: null },
     outcome: null
@@ -251,7 +270,7 @@ function renderBriefing() {
   wrap.innerHTML = `
     <h2>Mission Briefing</h2>
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
-    <p><strong>Job:</strong> ${mission.type} — ${mission.flavor}</p>
+    <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}</p>
     ${fieldRows}
     <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction} turf` : ""}) — Heat ${location.heat} ${heatBarHtml(location.heat)}</p>
     <p><strong>Opposition:</strong></p><ul>${adversaryList}</ul>
@@ -276,15 +295,20 @@ function renderBriefing() {
 }
 
 function missionFieldRows(mission) {
+  // Heist/Transport/Hold/Delay carry an asset flavor line — what's actually
+  // being stolen/moved/held decides which faction parameter the job affects
+  // (todo2.md). See genMission() in engine.js.
+  const assetRow = mission.assetFlavor ? `<p><strong>Word is:</strong> ${mission.assetFlavor}</p>` : "";
   switch (mission.type) {
     case "Assassination":
-    case "Heist":
       return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p>`;
+    case "Heist":
+      return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p>${assetRow}`;
     case "Transport":
-      return `<p><strong>Cargo:</strong> ${mission.target.name}</p><p><strong>Route:</strong> ${mission.fromLocation.name} → ${mission.location.name}</p>`;
+      return `<p><strong>Cargo:</strong> ${mission.target.name}</p><p><strong>Route:</strong> ${mission.fromLocation.name} → ${mission.location.name}</p>${assetRow}`;
     case "Delay":
     case "Hold":
-      return `<p><strong>Time:</strong> ${["Short", "Medium", "Long"][mission.timePeriod - 1]} (${mission.timePeriod} rounds)</p>`;
+      return `<p><strong>Time:</strong> ${["Short", "Medium", "Long"][mission.timePeriod - 1]} (${mission.timePeriod} rounds)</p>${assetRow}`;
     default:
       return "";
   }
@@ -313,7 +337,7 @@ function renderGearUp() {
 
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Buying the right tool preps a matching Challenge (+1).</p>`;
+  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Better gear gives a lasting bonus to its matching Challenge — Professional +1, Military +2 — for as long as you own it.</p>`;
 
   // A friendly Employer relationship also gets you a better rate from their
   // fixer, ±4% per point (clamped -5..5, so roughly 0.8x-1.2x).
@@ -328,10 +352,9 @@ function renderGearUp() {
     btn.disabled = c.cred < price || item.bought;
     btn.addEventListener("click", () => {
       c.cred -= price;
-      c.gear.push({ name: item.name, attr: item.attr });
-      job.prep[item.attr] = true;
+      c.gear.push({ name: item.name, attr: item.attr, tier: item.tier });
       item.bought = true;
-      addLog(c, `You pick up a ${item.name} for the job.`);
+      addLog(c, `You pick up a ${item.name} for the job — yours to keep.`);
       persist(); render();
     });
     row.appendChild(btn);
@@ -396,7 +419,7 @@ function renderEncounter() {
   const job = G.job;
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>Encounter</h2><p>${job.encounter.step.desc}</p>`;
+  wrap.innerHTML = `<h2>Encounter</h2><p class="step-desc">${job.encounter.step.desc}</p>`;
   els.main.appendChild(wrap);
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
@@ -417,21 +440,21 @@ function renderSteps() {
   const step = job.steps[job.stepIndex];
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2><p>${step.desc}</p>`;
+  wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2><p class="step-desc">${step.desc}</p>`;
   els.main.appendChild(wrap);
   renderChallenge(wrap, step, () => finalizeStep(step));
 }
 
-// Applies a resolved roll's effects (Harm/Heat/etc. per gamedesc.md §7),
-// tracks Rep-style Full successes, and clears the pending result. Shared by
-// mission steps and Random Encounters so neither path skips consequences.
+// Applies a resolved roll's effects (Harm/Heat/etc. per gamedesc.md §7) and
+// clears the pending result. Shared by mission steps and Random Encounters so
+// neither path skips consequences. BOOST growth is tallied once at Debrief
+// from job.stepResults instead of tracked per-step here.
 function finalizeChallengeCommon() {
   const job = G.job;
   const c = G.character;
   const res = job.lastResult;
 
   applyOutcome(c, job, res.usedAttr, res.tier);
-  if (res.styleTrack && res.tier === "full") job.repStyleFullSuccess[res.styleTrack] = true;
 
   // Every clash deepens the grudge, regardless of roll tier — covers both
   // mission Combat steps and the "Caught!" forced step (Encounter combat
@@ -485,6 +508,9 @@ function finalizeStep(step) {
   render();
 }
 
+// A failed/partial check no longer always means Harm (todo2.md) — each
+// Challenge type has a weighted table of what actually goes wrong
+// (DATA.failOutcomes), and the tier (partial vs fail) sets how bad it is.
 function applyOutcome(c, job, attr, tier) {
   const table = DATA.complications[attr];
   if (tier === "full") {
@@ -495,17 +521,34 @@ function applyOutcome(c, job, attr, tier) {
   addLog(c, text);
 
   const loc = c.locations[job.location.name];
-  if (attr === "Combat") {
-    if (tier === "partial") { if (markHarm(c) && !c.permanentInjury) resolveDownEvent(c); }
-    else { if (markHarm(c) && !c.permanentInjury) resolveDownEvent(c); if (loc) loc.heat = Math.min(5, loc.heat + 1); }
-  } else if (attr === "Driving") {
-    if (tier === "fail" && markHarm(c) && !c.permanentInjury) resolveDownEvent(c);
-  } else if (attr === "Hacking") {
+  let effect = pickWeighted(DATA.failOutcomes[attr]);
+  if (effect === "gearDamage" && tier === "fail" && c.gear.length === 0) effect = "credLoss";
+
+  if (effect === "harm") {
+    const wentDown = markHarm(c);
+    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+    if (attr === "Combat" && tier === "fail" && loc) loc.heat = Math.min(5, loc.heat + 1);
+  } else if (effect === "gearDamage") {
+    if (tier === "partial") {
+      c.cred = Math.max(0, c.cred - 20);
+      addLog(c, pick(DATA.gearDamageFlavor.partial));
+    } else {
+      const matching = c.gear.filter(g => g.attr === attr);
+      const pool = matching.length ? matching : c.gear;
+      const idx = c.gear.indexOf(pick(pool));
+      const [lost] = c.gear.splice(idx, 1);
+      addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${lost.name})`);
+    }
+  } else if (effect === "heat") {
     if (loc) loc.heat = Math.min(5, loc.heat + (tier === "fail" ? 2 : 1));
-  } else if (attr === "Social") {
-    if (tier === "fail") nudgeRelationship(c, job.employer.id, -1);
-  } else if (attr === "Stealth") {
-    if (loc) loc.heat = Math.min(5, loc.heat + 1);
+  } else if (effect === "relationship") {
+    nudgeRelationship(c, job.employer.id, tier === "fail" ? -2 : -1);
+  } else if (effect === "credLoss") {
+    const pct = tier === "fail" ? 0.12 : 0.05;
+    const min = tier === "fail" ? 25 : 10;
+    const loss = Math.min(c.cred, Math.max(min, Math.round(c.cred * pct)));
+    c.cred -= loss;
+    addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-¥${loss})`);
   }
 }
 
@@ -523,32 +566,30 @@ function renderChallenge(container, step, onContinue) {
   attrs.forEach(attr => {
     const block = document.createElement("div");
     block.className = "challenge";
-    const styles = attr === "Combat" ? ["None", "Gun", "Knife"] : attr === "Stealth" ? ["None", "Knife"] : ["None"];
-    const styleSelect = styles.length > 1
-      ? `<select class="style-select">${styles.map(s => `<option value="${s}">${s === "None" ? "No style" : `${s} style (Rep ${c.rep[s]})`}</option>`).join("")}</select>`
+    const boostOption = c.boost >= 1
+      ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
       : "";
-    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${styleSelect}<div class="mods"></div>`;
+    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
-    const selectEl = block.querySelector(".style-select");
+    const boostCheck = block.querySelector(".boost-check");
 
     const refreshMods = () => {
-      const style = selectEl ? selectEl.value : "None";
-      const mods = computeModifiers(attr, style);
+      const mods = computeModifiers(attr, boostCheck && boostCheck.checked);
       modsEl.innerHTML = mods.length
         ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
         : `<span class="chip">no modifiers</span>`;
     };
     refreshMods();
-    if (selectEl) selectEl.addEventListener("change", refreshMods);
+    if (boostCheck) boostCheck.addEventListener("change", refreshMods);
 
     const rollBtn = document.createElement("button");
     rollBtn.textContent = `Roll ${attr}`;
     rollBtn.addEventListener("click", () => {
-      const style = selectEl ? selectEl.value : (attr === "Driving" && c.rep.Car > 0 ? "Car" : "None");
-      const mods = computeModifiers(attr, style);
+      const spendBoost = !!(boostCheck && boostCheck.checked);
+      const mods = computeModifiers(attr, spendBoost);
+      if (spendBoost) c.boost -= 1;
       const result = resolve(c.attrs[attr], mods);
       result.usedAttr = attr;
-      result.styleTrack = style !== "None" ? style : (attr === "Driving" ? "Car" : null);
       step.usedAttr = attr;
       job.pendingResult = result;
       job.lastResult = result;
@@ -560,17 +601,18 @@ function renderChallenge(container, step, onContinue) {
   });
 }
 
-function computeModifiers(attr, style) {
+function computeModifiers(attr, spendBoost) {
   const c = G.character, job = G.job;
   const mods = [];
-  if (job.prep[attr]) mods.push({ label: "Prep", value: 1 });
+  const gearBonus = bestGearBonus(c, attr);
+  if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
   if (job.hireling && job.hireling.attr === attr) mods.push({ label: `Hireling`, value: 1 });
   if ((attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
   if ((attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
     const p = tierPenalty(job.mission.worstTier);
     if (p) mods.push({ label: `Adversary (${job.mission.worstTier})`, value: p });
   }
-  if (style && style !== "None" && c.rep[style] > 0) mods.push({ label: `${style} Rep`, value: 1 });
+  if (spendBoost) mods.push({ label: "Boost", value: 1 });
   const harmCount = c.health.filter(h => h).length;
   if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
   else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
@@ -586,14 +628,14 @@ function renderResultBlock(container, result, onContinue) {
     <h4>Roll: ${result.d1} + ${result.d2} (+${result.attrRank} attr ${result.modTotal >= 0 ? "+" : ""}${result.modTotal} mods) = ${result.total}</h4>
     <p class="tier tier-${result.tier}">${result.tier.toUpperCase()}</p>
   `;
-  const canSignature = !G.job.signatureUsed && Object.values(c.rep).some(v => v >= 5) && result.tier !== "full";
+  const canSignature = c.boost >= 3 && result.tier !== "full";
   if (canSignature) {
     const sigBtn = document.createElement("button");
-    sigBtn.textContent = "Burn Signature Move (upgrade result)";
+    sigBtn.textContent = "Spend 3 BOOST (upgrade result)";
     sigBtn.addEventListener("click", () => {
-      G.job.signatureUsed = true;
+      c.boost -= 3;
       result.tier = upgradeTier(result.tier);
-      addLog(c, "You pull off your signature move to turn it around.");
+      addLog(c, "You burn through BOOST to turn it around.");
       persist(); render();
     });
     block.appendChild(sigBtn);
@@ -621,16 +663,36 @@ function runDebrief() {
   const payout = Math.round(estimatePayout(job) * mult);
   c.cred += payout;
 
-  Object.entries(job.repStyleFullSuccess).forEach(([track, used]) => {
-    if (used && c.rep[track] < 5) {
-      c.rep[track] += 1;
-      addLog(c, `Your ${track} Rep grows to ${c.rep[track]}.`);
-      if (c.rep[track] === 5) addLog(c, `${track} Rep maxed — you've unlocked a Signature Move.`);
-    }
-  });
+  // BOOST grows with full successes, replacing the old per-track Rep gain.
+  const boostGained = job.stepResults.filter(r => r.tier === "full").length;
+  if (boostGained > 0 && c.boost < 10) {
+    c.boost = Math.min(10, c.boost + boostGained);
+    addLog(c, `That clean work earns you ${boostGained} BOOST (now ${c.boost}).`);
+  }
 
   const relDelta = outcome === "Full Success" ? 1 : outcome === "Partial Success" ? 0 : -1;
   nudgeRelationship(c, job.employer.id, relDelta);
+
+  // Faction system (todo2.md): a completed job moves the parameter tied to
+  // its asset (or "power" for a hit) — employer's faction gains, the
+  // target's loses. If the job was ever noticed (Heat rose during the run),
+  // tension between employer and target factions rises too.
+  if (outcome !== "Failure") {
+    const param = job.mission.type === "Assassination" ? "power" : job.mission.assetType;
+    if (param) {
+      adjustFactionParam(c, job.employer.faction, param, 1);
+      if (job.mission.target && job.mission.target.faction !== job.employer.faction) {
+        adjustFactionParam(c, job.mission.target.faction, param, -1);
+      }
+    }
+    const startHeat = job.location.heat;
+    const nowHeat = (c.locations[job.location.name] || {}).heat;
+    const noticed = job.mission.target && typeof nowHeat === "number" && nowHeat > startHeat;
+    if (noticed) {
+      nudgeFactionRelation(c, job.employer.faction, job.mission.target.faction, -1);
+      addLog(c, `Word gets out — tension rises between ${job.employer.faction} and ${job.mission.target.faction}.`);
+    }
+  }
 
   // Outcomes retire people permanently: a successful hit kills its target;
   // a failed Transport/Hold kills whoever was being moved/protected.

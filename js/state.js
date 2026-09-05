@@ -12,7 +12,7 @@ const PROFESSIONS = {
 const TURFS = {
   Nomad: { boost: "Driving", cred: 200, contactFaction: "Aldecaldos", gear: [{ name: "Beater Car", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
   Corpo: { boost: "Hacking", cred: 300, contactFaction: "Arasaka", gear: [], desc: "+Hacking. Extra starting Cred and a Corp contact (a favor owed either way)." },
-  Street: { boost: "Stealth", cred: 200, contactFaction: "Valentinos", gear: [], repBonus: "Gun", desc: "+Stealth. Starts with a Gang contact and a point of Gun Rep." }
+  Street: { boost: "Stealth", cred: 200, contactFaction: "Valentinos", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Gang contact and a point of BOOST." }
 };
 
 function defaultCharacter(name, profession, turf) {
@@ -22,25 +22,36 @@ function defaultCharacter(name, profession, turf) {
   prof.boosts.forEach(a => attrs[a] = Math.min(3, attrs[a] + 1));
   attrs[trf.boost] = Math.min(3, attrs[trf.boost] + 1);
 
-  const rep = { Gun: 0, Knife: 0, Car: 0 };
-  if (trf.repBonus) rep[trf.repBonus] += 1;
-
   return {
     name, profession, turf,
     attrs,
-    rep,
+    boost: trf.boostBonus || 0, // spendable pool — see bestGearBonus/renderChallenge (game.js)
     health: [false, false, false], // true = Harm marked
     permanentInjury: false, // going Down leaves this until a repair is paid for
     cred: trf.cred,
-    gear: [...prof.gear, ...trf.gear],
+    gear: [...prof.gear, ...trf.gear].map(g => ({ ...g, tier: g.tier || "Street" })),
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
     // or generated lives here (not just friendly contacts). See getPerson().
     contacts: [{ id: 1, name: genName(), faction: trf.contactFaction, profession: "Fixer", relationship: 1, favor: turf === "Corpo" ? -1 : 0 }],
     nextPersonId: 2,
     graveyard: [], // people killed off by mission outcomes; never redrawn
     locations: {}, // name -> {area, faction, heat}
+    factionStandings: defaultFactionStandings(),
+    factionRelations: {}, // lazy pairwise map, see nudgeFactionRelation()
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
+}
+
+// Eager-inits Wealth/R&D/Power for all 11 fixed factions (unlike Locations,
+// the faction roster is small and fixed, so there's no lazy-discovery step —
+// the Factions panel always shows every faction in the game). See data.js
+// DATA.factions / DATA.factionBaseStats.
+function defaultFactionStandings() {
+  const standings = {};
+  DATA.factions.forEach(f => {
+    standings[f.name] = { ...DATA.factionBaseStats[f.type] };
+  });
+  return standings;
 }
 
 function save(character) {
@@ -58,7 +69,9 @@ function clearSave() {
 }
 
 // Backfills saves made before the people-pool feature existed: ids,
-// relationship defaults, the id counter, and the graveyard array.
+// relationship defaults, the id counter, and the graveyard array. Also
+// backfills the faction system, gear tiers, and the REP→BOOST switch
+// (todo2.md) for saves made before those existed.
 function migrateCharacter(character) {
   if (!character.graveyard) character.graveyard = [];
   if (!character.contacts) character.contacts = [];
@@ -71,6 +84,20 @@ function migrateCharacter(character) {
   });
   if (!character.nextPersonId) character.nextPersonId = maxId + 1;
   if (typeof character.permanentInjury !== "boolean") character.permanentInjury = false;
+
+  if (typeof character.boost !== "number") {
+    // Old saves had per-track Rep instead of a single BOOST pool — carry the
+    // total forward as starting BOOST rather than losing it outright.
+    character.boost = character.rep ? Object.values(character.rep).reduce((a, b) => a + b, 0) : 0;
+  }
+  delete character.rep;
+
+  if (!character.factionStandings) character.factionStandings = defaultFactionStandings();
+  if (!character.factionRelations) character.factionRelations = {};
+
+  (character.gear || []).forEach(item => {
+    if (!item.tier) item.tier = "Street";
+  });
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -136,23 +163,60 @@ function healBox(character) {
   if (idx !== -1) character.health[idx] = false;
 }
 
-function highestRepTrack(character) {
-  return Object.entries(character.rep).sort((a, b) => b[1] - a[1])[0][0];
-}
-
 // Fires exactly once, the moment a character goes Down (all 3 Health boxes
-// marked). No permadeath: a slim chance instead knocks two stars off their
-// best Rep track ("you should be dead — you're not, but it cost you"), and
+// marked). No permadeath: a slim chance instead knocks 2 points off their
+// BOOST pool ("you should be dead — you're not, but it cost you"), and
 // either way they're left with a Permanent Injury that needs a paid repair
 // (see DATA.repairs) and an ongoing roll penalty until it's fixed.
 function resolveDownEvent(character) {
   if (Math.random() < 0.1) {
-    const track = highestRepTrack(character);
-    character.rep[track] = Math.max(0, character.rep[track] - 2);
-    addLog(character, `You should be dead. You're not — but your ${track} Rep just took a beating it won't forget.`);
+    character.boost = Math.max(0, character.boost - 2);
+    addLog(character, "You should be dead. You're not — but it cost you 2 BOOST you won't get back.");
   }
   character.permanentInjury = true;
   addLog(character, "The damage doesn't heal clean. You're carrying a Permanent Injury now — needs real repair.");
+}
+
+// -- Faction system (todo2.md) --------------------------------------------
+
+function getFactionRelationKey(a, b) {
+  return [a, b].sort().join("|");
+}
+
+// Pairwise faction-to-faction standing, lazily created at 0 (neutral) and
+// clamped to -5..5, mirroring nudgeRelationship()'s per-person scale. No-ops
+// for a faction pair that isn't meaningful (same faction, or either side
+// isn't one of the 11 tracked factions — e.g. "Freelance" or a null turf).
+function nudgeFactionRelation(character, factionA, factionB, delta) {
+  if (!factionA || !factionB || factionA === factionB) return;
+  if (!DATA.factions.some(f => f.name === factionA)) return;
+  if (!DATA.factions.some(f => f.name === factionB)) return;
+  const key = getFactionRelationKey(factionA, factionB);
+  const current = character.factionRelations[key] || 0;
+  character.factionRelations[key] = Math.max(-5, Math.min(5, current + delta));
+}
+
+// Bumps one Wealth/R&D/Power parameter for a faction (a job's employer gains,
+// its target loses — see runDebrief() in game.js). No-ops for untracked
+// factions (Freelance, null turf).
+function adjustFactionParam(character, factionName, param, delta) {
+  const standing = character.factionStandings[factionName];
+  if (!standing) return;
+  standing[param] = Math.max(0, Math.min(20, standing[param] + delta));
+}
+
+// -- Gear bonuses (todo2.md) -----------------------------------------------
+
+// Highest-tier owned item matching attr, or null. Gear grants its bonus
+// permanently just by being owned — see computeModifiers() in game.js.
+function bestGearBonus(character, attr) {
+  let best = null;
+  character.gear.forEach(item => {
+    if (item.attr !== attr) return;
+    const bonus = DATA.gearTierBonus[item.tier] || 0;
+    if (!best || bonus > best.bonus) best = { name: item.name, bonus };
+  });
+  return best;
 }
 
 function rememberLocation(character, location) {

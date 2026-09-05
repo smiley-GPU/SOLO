@@ -12,6 +12,9 @@ const DATA = {
     "Bramble", "Doss", "Kilo", "Snapback", "Torque"
   ],
 
+  // Exactly 3 factions per level (Corpo/Gang/Nomad) plus 2 Authority factions,
+  // per todo2.md. Each has a Wealth/R&D/Power standing tracked per-character in
+  // character.factionStandings (state.js), seeded from factionBaseStats below.
   factions: [
     { name: "Arasaka", type: "Corpo" },
     { name: "Militech", type: "Corpo" },
@@ -19,11 +22,20 @@ const DATA = {
     { name: "Valentinos", type: "Gang" },
     { name: "Maelstrom", type: "Gang" },
     { name: "Tyger Claws", type: "Gang" },
-    { name: "Voodoo Boys", type: "Gang" },
     { name: "Aldecaldos", type: "Nomad" },
     { name: "Wraiths", type: "Nomad" },
-    { name: "NCPD", type: "Authority" }
+    { name: "Bakkers", type: "Nomad" },
+    { name: "NCPD", type: "Authority" },
+    { name: "NCNG", type: "Authority" }
   ],
+
+  // Starting Wealth/R&D/Power per faction type — see factionStandings in state.js.
+  factionBaseStats: {
+    Corpo: { wealth: 8, rnd: 8, power: 4 },
+    Gang: { wealth: 3, rnd: 1, power: 6 },
+    Nomad: { wealth: 4, rnd: 2, power: 4 },
+    Authority: { wealth: 5, rnd: 3, power: 8 }
+  },
 
   npcProfessions: [
     "Fixer", "Corp Exec", "Ganger", "Nomad Rider", "Netrunner", "Solo",
@@ -43,7 +55,7 @@ const DATA = {
     { name: "The Glass Exchange", area: "Corpo", faction: null },
     { name: "Saltflat Depot", area: "Rural", faction: "Aldecaldos" },
     { name: "Ashwind Highway", area: "Rural", faction: "Wraiths" },
-    { name: "Bonepile Yards", area: "Rural", faction: "Voodoo Boys" },
+    { name: "Bonepile Yards", area: "Rural", faction: "Bakkers" },
     { name: "The Rustbelt Outpost", area: "Rural", faction: null }
   ],
 
@@ -82,6 +94,43 @@ const DATA = {
     Transport: "move a package across town without it getting flagged.",
     Delay: "keep someone or something tied up while the real move happens.",
     Hold: "hold a position until the extraction window opens."
+  },
+
+  // What Heist/Transport/Hold/Delay is actually about, per todo2.md — which
+  // faction parameter (wealth/rnd/power) a job affects depends on the asset,
+  // not the mission type. Delay rolls one too, but it's just flavor ("could be
+  // anything, you're covering for someone else's job") — see engine.js genMission.
+  assetTypes: {
+    wealth: ["a case of untraceable eddies", "a shipment of black-market luxury goods", "a stash of counterfeit credchips"],
+    rnd: ["a prototype cyberware core", "an encrypted R&D data shard", "a stolen weapons blueprint"],
+    power: ["a crate of military-grade hardware", "a cache of restricted munitions", "a captured enforcer"]
+  },
+  delayFlavor: "You don't know what the real op needs from this — could be anything. You're just buying time for someone else's job.",
+
+  // Gear bonus scales with quality, per todo2.md — applied by bestGearBonus()
+  // in state.js against any owned item whose attr matches the roll.
+  gearTierBonus: { Street: 0, Professional: 1, Military: 2 },
+
+  // Weighted table of what a Partial/Fail actually costs you, per Challenge
+  // type, per todo2.md ("failed check should not always result to damage").
+  // Weights are relative, picked via a simple weighted-random draw.
+  failOutcomes: {
+    Combat: [{ effect: "harm", weight: 50 }, { effect: "gearDamage", weight: 30 }, { effect: "credLoss", weight: 20 }],
+    Driving: [{ effect: "harm", weight: 35 }, { effect: "gearDamage", weight: 45 }, { effect: "credLoss", weight: 20 }],
+    Hacking: [{ effect: "gearDamage", weight: 35 }, { effect: "heat", weight: 40 }, { effect: "credLoss", weight: 25 }],
+    Social: [{ effect: "heat", weight: 25 }, { effect: "relationship", weight: 40 }, { effect: "credLoss", weight: 35 }],
+    Stealth: [{ effect: "heat", weight: 55 }, { effect: "gearDamage", weight: 20 }, { effect: "relationship", weight: 25 }]
+  },
+
+  // Flavor for the two new fail-outcome effects (gearDamage/credLoss), read
+  // alongside the existing per-attribute complications below.
+  gearDamageFlavor: {
+    partial: ["A close call bends something — you'll need a quick repair.", "Your gear takes a knock; nothing lost, but it'll cost to fix."],
+    fail: ["Wrecked beyond repair — you lose the piece for good.", "It's trashed in the scuffle; that one's gone."]
+  },
+  credLossFlavor: {
+    partial: ["You grease a palm to make this go away.", "A quiet bribe smooths it over."],
+    fail: ["You pay through the nose to make this disappear.", "It costs you, hard, to keep this off the books."]
   },
 
   // Complication / fallout flavor per Challenge type, per gamedesc.md §7
