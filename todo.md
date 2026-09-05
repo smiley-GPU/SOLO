@@ -17,3 +17,18 @@
 
 ## Heat
     Heat bar to show how high the heat is
+
+## INTERFACE
+    move action description to the middle of the screen.
+    change it so that new text come on top and old ones move down.
+    on the right hand side panel place the factions that are involde to the game.
+## Factions
+    Create 3 factions for each level: nomads, gangs, corporates. Add NCPD as a authority, also NCNG (north california national guard).
+    For each faction create following parameters: wealth; r&d; power.
+    Each successful mission done a faction as a employer increases appropriate faction parameter.
+    Also if faction is target of the mission it reduces appropriate parameter.
+    Faction relationship 
+
+## Gear
+    Gear need to give bonuses to challenge checks.
+    Bonuses should be appropriate to the gear quality and challenge. 
