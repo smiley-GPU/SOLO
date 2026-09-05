@@ -156,7 +156,7 @@ function renderHub() {
 
   const jobBtn = document.createElement("button");
   jobBtn.textContent = "Find a Job";
-  jobBtn.addEventListener("click", startJob);
+  jobBtn.addEventListener("click", () => startJob());
   wrap.appendChild(jobBtn);
 
   const medBtn = document.createElement("button");
@@ -235,7 +235,10 @@ function renderHub() {
 }
 
 // ---------- BRIEFING ----------
-function startJob() {
+// alreadyRerolled carries forward across a Pass (gamedesc.md §3.1: reroll
+// once per Job search) — a fresh "Find a Job" from the Hub always starts at
+// false, but the job a Pass lands on inherits true so a second Pass is blocked.
+function startJob(alreadyRerolled) {
   const c = G.character;
   const fullLoc = resolveLocation(c, genLocationDef());
   const excludeIds = new Set(); // keeps this job from casting one person into two roles
@@ -251,7 +254,7 @@ function startJob() {
     stepResults: [],
     hireling: null,
     pendingResult: null,
-    rerolled: false,
+    rerolled: !!alreadyRerolled,
     encounter: { pre: { done: false }, post: { done: false }, stage: null },
     outcome: null
   };
@@ -287,7 +290,7 @@ function renderBriefing() {
   rerollBtn.addEventListener("click", () => {
     G.character.cred -= 20;
     addLog(G.character, "You pass on the job and put the word out for something else.");
-    startJob();
+    startJob(true);
   });
   wrap.appendChild(rerollBtn);
 
