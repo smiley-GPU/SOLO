@@ -39,5 +39,8 @@ With BLOODBROTHER you can go and spend the night with them instead of spending n
 add a possibility to sell items in DOWNTIME.
 you need to sell 2 street level items to get 1 BOND, or 1 Professional or Military items to get 1 BOND. If you have a fixer contact with relationship +3 you get a 1 extra BOND from each sale.
 
+## HUNT
+add avoid / run to all steps
+give descriptions what has happened: "You have managed to ambush ...." "You are looking for ARCHENEMY when a car serves behind a corner and ARCHENEMY come guns blazing towards you!"
 
   

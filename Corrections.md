@@ -12,3 +12,5 @@ Change all names and street names to more european variants: french, italian, no
 Equipments should also have original names
 Clothing gives stealth bonuses - put some fashion brand like names here
 Armor - gives you a chance to absorp damage, but then the armor is damaged (if 0, remove item as broken)
+
+gear damage should lower the gear grade or remove it if it goes below street.
