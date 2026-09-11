@@ -256,7 +256,54 @@ function renderHub() {
   });
   wrap.appendChild(train);
 
+  // Sell Gear (todo3.md Items) — 2 Street items = 1 BOND, 1 Professional/
+  // Military item = 1 BOND; a Fixer contact at relationship ≥3 adds +1
+  // BOND per completed sale. Street items bank one at a time
+  // (character.pendingSaleItem) until a second one pairs with it.
+  if (c.gear.length) {
+    const sellSection = document.createElement("div");
+    sellSection.className = "section";
+    const hasFixerDeal = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3);
+    const bankNote = c.pendingSaleItem ? `<p class="muted">Banked: ${c.pendingSaleItem} — sell one more Street item to cash in.</p>` : "";
+    sellSection.innerHTML = `<h3>Sell Gear</h3><p class="muted">2 Street items = 1 BOND. 1 Professional/Military item = 1 BOND.${hasFixerDeal ? " Your fixer kicks in +1 BOND per sale." : ""}</p>${bankNote}`;
+    c.gear.forEach((item, idx) => {
+      const row = document.createElement("div");
+      row.className = "offer";
+      row.innerHTML = `<span>${item.name} <em>(${item.tier || "Street"})</em></span>`;
+      const btn = document.createElement("button");
+      btn.textContent = "Sell";
+      btn.addEventListener("click", () => sellGearItem(idx));
+      row.appendChild(btn);
+      sellSection.appendChild(row);
+    });
+    wrap.appendChild(sellSection);
+  }
+
   els.main.appendChild(wrap);
+}
+
+function sellGearItem(idx) {
+  const c = G.character;
+  const item = c.gear[idx];
+  if (!item) return;
+  const bonusPerSale = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3) ? 1 : 0;
+  c.gear.splice(idx, 1);
+  if (item.tier === "Professional" || item.tier === "Military") {
+    const gain = 1 + bonusPerSale;
+    c.bonds += gain;
+    addLog(c, `You sell the ${item.name} for ${gain} BOND${gain === 1 ? "" : "S"}.`);
+  } else if (c.pendingSaleItem) {
+    const gain = 1 + bonusPerSale;
+    c.bonds += gain;
+    addLog(c, `You sell the ${item.name} alongside the ${c.pendingSaleItem} for ${gain} BOND${gain === 1 ? "" : "S"}.`);
+    c.pendingSaleItem = null;
+  } else {
+    c.pendingSaleItem = item.name;
+    addLog(c, `You bank the ${item.name} — sell one more Street item to cash it in.`);
+  }
+  if (checkWinCondition()) G.phase = "win";
+  persist();
+  render();
 }
 
 // ---------- BRIEFING ----------

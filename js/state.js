@@ -40,6 +40,7 @@ function defaultCharacter(name, profession, turf) {
     factionRelations: {}, // lazy pairwise map, see nudgeFactionRelation()
     restCount: 0, // Coffin Hotel / Night on the Street uses since the last Hunt (todo3.md)
     archenemyId: null, // locked in on the first Rest — see processRestTick() in game.js
+    pendingSaleItem: null, // a banked Street-tier item awaiting its pair — see sellGearItem() in game.js
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
 }
@@ -111,6 +112,7 @@ function migrateCharacter(character) {
 
   if (typeof character.restCount !== "number") character.restCount = 0;
   if (character.archenemyId === undefined) character.archenemyId = null;
+  if (character.pendingSaleItem === undefined) character.pendingSaleItem = null;
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
