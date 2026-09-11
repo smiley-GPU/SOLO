@@ -3,7 +3,10 @@
 
 const G = {
   character: null,
-  job: null,
+  job: null,       // the accepted job, once one of the Board's two offers is taken
+  board: null,     // §19.3 — the two not-yet-accepted job candidates shown at Briefing
+  boardRerolled: false, // Coffin Hotel's once-per-search gate, now board-level (was job.rerolled)
+  restFlow: null,  // §19.3 — Rest sub-flow scratch state (was job.restStage/pendingResult/lastResult)
   phase: "create"
 };
 
@@ -17,7 +20,7 @@ function init() {
   const loaded = load();
   if (loaded) {
     G.character = loaded;
-    G.phase = checkWinCondition() ? "win" : "hub";
+    G.phase = nextHubPhase();
   } else {
     G.phase = "create";
   }
@@ -29,6 +32,17 @@ function init() {
 // win condition is met (callers use this to pick "win" vs "hub").
 function checkWinCondition() {
   return !!G.character && G.character.bonds >= 20;
+}
+
+// §17.2/§19.8 — the Corpo category reduced to one survivor ends the game in
+// a loss instead. Checked at every point control would otherwise route to
+// the Hub, alongside the win condition (win is checked first if somehow
+// both are true in the same tick — vanishingly unlikely, but a runner would
+// rather retire than watch MULTI-CORP take over on their way out the door).
+function nextHubPhase() {
+  if (checkWinCondition()) return "win";
+  if (G.character && checkMultiCorpLoss(G.character)) return "loss";
+  return "hub";
 }
 
 function persist() {
@@ -60,15 +74,22 @@ function renderJournal() {
 
 // Right-hand panel: every faction in the game (todo2.md INTERFACE/Factions),
 // grouped by type, with its current Wealth/R&D/Power standing.
+// Grouped by each faction's current *dynamic* category (§19.6 — Wealth can
+// jump a Nomad/Crime faction up into Crime/Corpo, so this is no longer
+// always DATA.factions' static `type`), with its Tier and Wealth/R&D/Power,
+// or a greyed-out DESTROYED marker (§19.7) instead.
 function renderFactions() {
   els.factions.innerHTML = "";
   if (!G.character) return;
   const standings = G.character.factionStandings;
   const types = ["Corpo", "Crime", "Nomad", "Authority"];
   const html = types.map(type => {
-    const rows = DATA.factions.filter(f => f.type === type).map(f => {
-      const s = standings[f.name] || { wealth: 0, rnd: 0, power: 0 };
-      return `<li class="faction-row"><span>${f.name}</span><span class="faction-stats">
+    const rows = DATA.factions.filter(f => (standings[f.name] || {}).category === type).map(f => {
+      const s = standings[f.name] || { wealth: 0, rnd: 0, power: 0, tier: 1, destroyed: false };
+      if (s.destroyed) {
+        return `<li class="faction-row destroyed"><span>${f.name}</span><span class="faction-stats">DESTROYED</span></li>`;
+      }
+      return `<li class="faction-row"><span>${f.name} <em>(T${s.tier})</em></span><span class="faction-stats">
         <em title="Wealth">¥${s.wealth}</em><em title="R&D">🔬${s.rnd}</em><em title="Power">⚔${s.power}</em>
       </span></li>`;
     }).join("");
@@ -118,6 +139,7 @@ function renderSheet() {
     <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
+    <div class="section"><h3>Reputation</h3><div class="cred">${c.reputation} <span class="tag" style="margin:0;display:inline">${reputationTitle(c)} (T${reputationTier(c)})</span></div></div>
     <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
     <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
     ${graveyardSection}
@@ -148,7 +170,8 @@ function renderMain() {
     steps: renderSteps,
     debrief: renderDebrief,
     hunt: renderHunt,
-    win: renderWin
+    win: renderWin,
+    loss: renderLoss
   }[G.phase];
   if (fn) fn();
   els.main.appendChild(renderJournal());
@@ -194,7 +217,7 @@ function renderHub() {
 
   const jobBtn = document.createElement("button");
   jobBtn.textContent = "Find a Job";
-  jobBtn.addEventListener("click", () => startJob());
+  jobBtn.addEventListener("click", () => startJobSearch());
   wrap.appendChild(jobBtn);
 
   const medBtn = document.createElement("button");
@@ -306,51 +329,85 @@ function sellGearItem(idx) {
   render();
 }
 
-// ---------- BRIEFING ----------
-// alreadyRerolled carries forward across a Pass (gamedesc.md §3.1: reroll
-// once per Job search) — a fresh "Find a Job" from the Hub always starts at
-// false, but the job a Pass lands on inherits true so a second Pass is blocked.
-function startJob(alreadyRerolled) {
+// ---------- BRIEFING / MISSION BOARD (§19.3) ----------
+// alreadyRerolled carries forward across a Rest (was per-job "rerolled";
+// now board-level since a single Rest rerolls the whole two-job Board) — a
+// fresh "Find a Job" from the Hub always starts at false, a Rest always
+// passes true so Coffin Hotel is blocked on the very next search.
+function startJobSearch(alreadyRerolled) {
   const c = G.character;
-  const fullLoc = resolveLocation(c, genLocationDef());
-  const excludeIds = new Set(); // keeps this job from casting one person into two roles
-  const employer = getPerson(c, "ally", excludeIds);
-  const mission = genMission(fullLoc, c, excludeIds);
-  G.job = {
-    employer,
-    mission,
-    excludeIds,
-    location: fullLoc,
-    steps: buildStepSequence(mission),
-    stepIndex: 0,
-    stepResults: [],
-    hireling: null,
-    pendingResult: null,
-    rerolled: !!alreadyRerolled,
-    encounter: { pre: { done: false }, post: { done: false }, stage: null },
-    outcome: null,
-    ally: null, // relationship-recruited backup (todo3.md Persons) — see renderGearUp
-    sideObjective: null, // "more BONDS" side job (todo3.md ADD) — see takeSideJob
-    restStage: null // mid-roll marker for the Rest sub-flows (night/brothernight/brotherfight)
-  };
-  addLog(c, `A job comes in from ${employer.name} (${employer.faction}, ${employer.profession}): ${mission.flavor}`);
+  const candidates = genMissionBoard(c); // §19.3 — [{employer, mission, location, excludeIds}, ...]
+  G.board = candidates.map(buildJobFromCandidate);
+  G.boardRerolled = !!alreadyRerolled;
+  G.job = null;
+  G.restFlow = null;
+  addLog(c, `Two jobs come across the wire tonight.`);
   G.phase = "briefing";
   persist();
   render();
 }
 
+// Wraps a genMissionBoard() candidate into the full per-job shape the rest
+// of the Job phase flow (GearUp/Steps/Debrief) expects — same shape the old
+// single-job startJob() built directly into G.job.
+function buildJobFromCandidate(candidate) {
+  const { employer, mission, location, excludeIds } = candidate;
+  return {
+    employer,
+    mission,
+    excludeIds,
+    location,
+    steps: buildStepSequence(mission),
+    stepIndex: 0,
+    stepResults: [],
+    hireling: null,
+    pendingResult: null,
+    lastResult: null,
+    encounter: { pre: { done: false }, post: { done: false }, stage: null },
+    outcome: null,
+    ally: null, // relationship-recruited backup (todo3.md Persons) — see renderGearUp
+    sideObjective: null // "more BONDS" side job (todo3.md ADD) — see takeSideJob
+  };
+}
+
 function renderBriefing() {
-  const { employer, mission, location } = G.job;
+  const header = document.createElement("div");
+  header.className = "card";
+  header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or lay low till morning.</p>`;
+  els.main.appendChild(header);
+
+  G.board.forEach((job, idx) => renderBriefingCard(job, idx));
+
+  const restWrap = document.createElement("div");
+  restWrap.className = "card";
+  els.main.appendChild(restWrap);
+  // Mid-roll on a Rest sub-flow (Night on the Street / Spend the Night / the
+  // street fight that can follow it) — show the Challenge UI in place of the
+  // Rest picker until it resolves (Accept/side-job buttons on both cards
+  // above are also suppressed for the same reason — see renderBriefingCard).
+  if (G.restFlow) renderRestSubflow(restWrap);
+  else renderRestOptions(restWrap);
+}
+
+function renderBriefingCard(job, idx) {
+  const { employer, mission, location } = job;
   const wrap = document.createElement("div");
   wrap.className = "card";
   const adversaryList = mission.adversaries.map(a => `<li>${a.name} — ${a.profession} (${a.tier})</li>`).join("");
   const fieldRows = missionFieldRows(mission);
-  const payout = estimatePayout(G.job);
-  const sideRow = G.job.sideObjective
-    ? `<p><strong>Side job:</strong> ${G.job.sideObjective.type} — ${G.job.sideObjective.target.name} (+2 BONDS if it goes clean)</p>`
+  const payout = estimatePayout(job);
+  const sideRow = job.sideObjective
+    ? `<p><strong>Side job:</strong> ${job.sideObjective.type} — ${job.sideObjective.target.name} (+2 BONDS if it goes clean)</p>`
+    : "";
+  // Special Missions (§19.5): unrestricted faction pairing, an extra -1 on
+  // every roll, +2 BONDS, amplified relationship/standing swings, and real
+  // risk to a Bloodbrother riding along as Ally.
+  const specialBadge = mission.special
+    ? `<p class="special-badge">⚠ SPECIAL MISSION — extra -1 to every roll, +2 BONDS, bigger relationship swings. A Bloodbrother riding along can be wounded or killed.</p>`
     : "";
   wrap.innerHTML = `
-    <h2>Mission Briefing</h2>
+    <h3>${mission.special ? mission.specialName : `Job ${idx + 1}`}</h3>
+    ${specialBadge}
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
     <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}<br><strong>Payout:</strong> ${payout} BOND${payout === 1 ? "" : "S"}</p>
     ${fieldRows}
@@ -360,83 +417,93 @@ function renderBriefing() {
   `;
   els.main.appendChild(wrap);
 
-  // Mid-roll on a Rest sub-flow (Night on the Street / Spend the Night /
-  // the street fight that can follow it) — show the Challenge UI in place
-  // of the accept/rest buttons until it resolves.
-  if (G.job.restStage) {
-    renderRestSubflow(wrap);
-    return;
-  }
+  if (G.restFlow) return; // mid Rest roll — don't offer Accept/side-job until it resolves
 
   const acceptBtn = document.createElement("button");
   acceptBtn.textContent = "Accept the Job";
-  acceptBtn.addEventListener("click", () => { G.phase = "gearup"; persist(); render(); });
+  acceptBtn.addEventListener("click", () => {
+    G.job = job;
+    G.board = null;
+    G.phase = "gearup";
+    persist(); render();
+  });
   wrap.appendChild(acceptBtn);
 
-  if (!G.job.sideObjective) {
+  if (!job.sideObjective) {
     const sideBtn = document.createElement("button");
     sideBtn.textContent = "Take on a side job (+2 BONDS)";
-    sideBtn.addEventListener("click", () => takeSideJob());
+    sideBtn.addEventListener("click", () => takeSideJob(job));
     wrap.appendChild(sideBtn);
   }
+}
 
-  // Rest replaces the old Pass reroll (todo3.md) — Coffin Hotel keeps the
-  // once-per-search gate Pass used; Night on the Street (and Spend the
-  // Night, with a BLOODBROTHER) are always available (todo3.md ADD).
+// Rest replaces the old Pass reroll (todo3.md) — Coffin Hotel keeps the
+// once-per-search gate Pass used (now gated on the whole Board, G.boardRerolled);
+// Night on the Street (and Spend the Night, with a BLOODBROTHER) are always
+// available (todo3.md ADD). Shared by both jobs on the Board — resting
+// rerolls the whole Board, not just one candidate.
+function renderRestOptions(wrap) {
+  wrap.innerHTML = `<h3>Lay Low Instead</h3>`;
+
   const restBtn = document.createElement("button");
   restBtn.textContent = "Rest in Comfy Coffin Hotel (1 BOND)";
-  restBtn.disabled = G.job.rerolled || G.character.bonds < 1;
+  restBtn.disabled = G.boardRerolled || G.character.bonds < 1;
   restBtn.addEventListener("click", () => restCoffinHotel());
   wrap.appendChild(restBtn);
 
   const nightBtn = document.createElement("button");
   nightBtn.textContent = "Night on the Street (Free)";
-  nightBtn.addEventListener("click", () => { G.job.restStage = "night"; persist(); render(); });
+  nightBtn.addEventListener("click", () => { G.restFlow = { stage: "night", pendingResult: null, lastResult: null }; persist(); render(); });
   wrap.appendChild(nightBtn);
 
   const bb = findBloodbrother(G.character);
   if (bb) {
     const brotherBtn = document.createElement("button");
     brotherBtn.textContent = `Spend the Night with ${bb.name} (Free)`;
-    brotherBtn.addEventListener("click", () => { G.job.restStage = "brothernight"; persist(); render(); });
+    brotherBtn.addEventListener("click", () => { G.restFlow = { stage: "brothernight", pendingResult: null, lastResult: null }; persist(); render(); });
     wrap.appendChild(brotherBtn);
   }
 
   const restNote = document.createElement("p");
   restNote.className = "muted";
-  restNote.textContent = "Resting finds you a different job — the Coffin Hotel might also patch you up.";
+  restNote.textContent = "Resting finds you two different jobs — the Coffin Hotel might also patch you up.";
   wrap.appendChild(restNote);
 }
 
-// Dispatches the three Rest sub-flows that borrow the Briefing's job object
-// for a quick Challenge roll (todo3.md ADD/Persons).
+// Dispatches the three Rest sub-flows against G.restFlow (a standalone
+// scratch object, not a job — there's no accepted job yet at Briefing, and
+// with two candidates on the Board there's no single one to hang this off).
+// renderChallenge's ctx param points it at G.restFlow instead of G.job.
 function renderRestSubflow(container) {
-  const stage = G.job.restStage;
+  const stage = G.restFlow.stage;
+  const ctx = { job: null, holder: G.restFlow };
   if (stage === "night") {
     const w = document.createElement("div");
     w.innerHTML = `<h4>Where do you lay low tonight?</h4>`;
     container.appendChild(w);
-    renderChallenge(w, { attr: "Combat", alt: "Social", desc: "Where do you lay low tonight?" }, finishNightOnStreet);
+    renderChallenge(w, { attr: "Combat", alt: "Social", desc: "Where do you lay low tonight?" }, finishNightOnStreet, ctx);
   } else if (stage === "brothernight") {
     const bb = findBloodbrother(G.character);
     const w = document.createElement("div");
     w.innerHTML = `<h4>A night with ${bb ? bb.name : "your Bloodbrother"}.</h4>`;
     container.appendChild(w);
-    renderChallenge(w, { attr: "Social", desc: "Spend the night." }, finishBrotherNight);
+    renderChallenge(w, { attr: "Social", desc: "Spend the night." }, finishBrotherNight, ctx);
   } else if (stage === "brotherfight") {
     const w = document.createElement("div");
     w.innerHTML = `<h4>It goes sideways — a street fight breaks out.</h4>`;
     container.appendChild(w);
-    renderChallenge(w, { attr: "Combat", desc: "Fight your way clear." }, finishBrotherFight);
+    renderChallenge(w, { attr: "Combat", desc: "Fight your way clear." }, finishBrotherFight, ctx);
   }
 }
 
 // "More BONDS" side objective (todo3.md ADD) — folds a second Heist or
 // Assassination target into the job for +2 BONDS. Drops the shared first
 // "approach" step ("remove overlapping challenges like stealth to same
-// premises") and appends the type's other two steps instead.
-function takeSideJob() {
-  const c = G.character, job = G.job;
+// premises") and appends the type's other two steps instead. Operates on
+// one specific Board candidate (job), not necessarily G.job — it isn't
+// accepted yet.
+function takeSideJob(job) {
+  const c = G.character;
   const type = pick(["Heist", "Assassination"]);
   const targetRole = type === "Assassination" ? "hostile" : "ally";
   const target = getPerson(c, targetRole, job.excludeIds);
@@ -479,8 +546,7 @@ function restCoffinHotel() {
 // shape — pick an attr, roll 2d6+attr+mods — is identical to any Challenge.
 function finishNightOnStreet() {
   const c = G.character;
-  const job = G.job;
-  const res = job.lastResult;
+  const res = G.restFlow.lastResult;
   const flavor = res.usedAttr === "Combat" ? "a tough street night" : "talking your way into a shelter";
   if (res.tier === "full") {
     healBox(c);
@@ -492,8 +558,7 @@ function finishNightOnStreet() {
   } else {
     addLog(c, `It's ${flavor}. You get by, nothing more.`);
   }
-  job.pendingResult = null;
-  job.restStage = null;
+  G.restFlow = null;
   processRestTick();
 }
 
@@ -501,24 +566,22 @@ function finishNightOnStreet() {
 // Social table, distinct from Night on the Street's.
 function finishBrotherNight() {
   const c = G.character;
-  const job = G.job;
-  const res = job.lastResult;
+  const res = G.restFlow.lastResult;
   const bb = findBloodbrother(c);
-  job.pendingResult = null;
   if (res.tier === "full") {
     if (bb) nudgeRelationship(c, bb.id, 1);
     grantBloodbrotherGift(c);
-    job.restStage = null;
+    G.restFlow = null;
     processRestTick();
   } else if (res.tier === "partial") {
     healBox(c);
     if (c.boost > 0) { c.boost -= 1; addLog(c, "Hungover — that BOOST is gone, but at least you're patched up."); }
     else addLog(c, "Hungover, but at least you're patched up.");
-    job.restStage = null;
+    G.restFlow = null;
     processRestTick();
   } else {
     addLog(c, `It goes sideways fast — you and ${bb ? bb.name : "your Bloodbrother"} end up in a street fight.`);
-    job.restStage = "brotherfight";
+    G.restFlow = { stage: "brotherfight", pendingResult: null, lastResult: null };
     persist();
     render();
   }
@@ -527,8 +590,7 @@ function finishBrotherNight() {
 // The 6- branch's nested Combat roll against the BLOODBROTHER's faction.
 function finishBrotherFight() {
   const c = G.character;
-  const job = G.job;
-  const res = job.lastResult;
+  const res = G.restFlow.lastResult;
   const bb = findBloodbrother(c);
   if (res.tier === "full") {
     c.boost = Math.min(10, c.boost + 1);
@@ -544,8 +606,7 @@ function finishBrotherFight() {
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     addLog(c, "You catch a bad one in the scuffle.");
   }
-  job.pendingResult = null;
-  job.restStage = null;
+  G.restFlow = null;
   processRestTick();
 }
 
@@ -576,18 +637,31 @@ function grantBloodbrotherGift(c) {
 // Shared by both Rest flavors: ticks the clock toward an Archenemy Hunt
 // (todo3.md), locking in the Archenemy on the first use, then either
 // rerolls the job search (as Pass used to) or, at 4 uses, launches the Hunt.
+// Also runs the §19.7 faction Power struggles once per tick, and checks the
+// §19.8 MULTI-CORP loss condition immediately after — a faction destroyed
+// mid-Rest can end the game before the next Board or Hunt ever shows.
 function processRestTick() {
   const c = G.character;
   c.restCount++;
   if (c.restCount === 1) lockInArchenemy(c);
+  runFactionPowerStruggles(c);
+  if (checkMultiCorpLoss(c)) {
+    G.job = null;
+    G.board = null;
+    G.phase = "loss";
+    persist();
+    render();
+    return;
+  }
   if (c.restCount >= 4) {
     c.restCount = 0;
     G.job = null;
+    G.board = null;
     persist();
     startHunt();
     return;
   }
-  startJob(true);
+  startJobSearch(true);
 }
 
 function lockInArchenemy(c) {
@@ -821,6 +895,7 @@ function finalizeStep(step) {
     job.sideObjective.results.push({ attr: res.usedAttr, tier: res.tier });
   } else {
     job.stepResults.push({ attr: res.usedAttr, tier: res.tier });
+    applySpecialMissionBloodbrotherDanger(c, job, res);
   }
 
   // Transport: a failed transit leg (Driving or its Stealth alt) risks an
@@ -881,50 +956,145 @@ function degradeGearItem(c, item) {
   }
 }
 
+// §19.9 — a fixed, deterministic per-attribute fallout table, replacing the
+// old weighted-random one (DATA.failOutcomes, still used by the Hunt's own
+// Combat-fail fallout — see applyHuntCombatFailFallout — which this doesn't
+// touch). `options` is an array of consequence-key arrays; a Partial/Fail
+// picks one array at random and applies every key in it.
 function applyOutcome(c, job, attr, tier) {
-  const table = DATA.complications[attr];
+  const loc = c.locations[job.location.name];
+  const fallout = DATA.challengeFallout[attr];
+
+  // Combat always adds Heat, win or lose (§19.9) — checked before the
+  // full-success early return below, since it applies there too.
+  if (fallout.heatAlways && loc) loc.heat = Math.min(5, loc.heat + 1);
+
   if (tier === "full") {
     addLog(c, `Full success on ${attr}.`);
     return;
   }
-  const text = tier === "partial" ? pick(table.partial) : pick(table.fail);
-  addLog(c, text);
 
-  const loc = c.locations[job.location.name];
-  let effect = pickWeighted(DATA.failOutcomes[attr]);
-  if (effect === "gearDamage" && tier === "fail" && c.gear.length === 0) effect = "credLoss";
+  const table = DATA.complications[attr];
+  addLog(c, tier === "partial" ? pick(table.partial) : pick(table.fail));
 
-  if (effect === "harm") {
-    const wentDown = applyHarm(c);
-    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-    if (attr === "Combat" && tier === "fail" && loc) loc.heat = Math.min(5, loc.heat + 1);
-  } else if (effect === "gearDamage") {
-    if (tier === "partial") {
-      c.bonds = Math.max(0, c.bonds - 1);
-      addLog(c, pick(DATA.gearDamageFlavor.partial));
-    } else {
-      const matching = c.gear.filter(g => g.attr === attr);
-      const pool = matching.length ? matching : c.gear;
-      degradeGearItem(c, pick(pool));
+  if (fallout.heatOnResolve && loc) loc.heat = Math.min(5, loc.heat + fallout.heatOnResolve);
+
+  const consequences = pick(tier === "partial" ? fallout.partial : fallout.fail);
+  consequences.forEach(key => applyFalloutConsequence(c, job, attr, tier, key, loc));
+}
+
+function applyFalloutConsequence(c, job, attr, tier, key, loc) {
+  switch (key) {
+    case "harm1":
+    case "harm2": {
+      const hits = key === "harm2" ? 2 : 1;
+      for (let i = 0; i < hits; i++) {
+        const wentDown = applyHarm(c);
+        if (wentDown) {
+          if (!c.permanentInjury) resolveDownEvent(c);
+          break;
+        }
+      }
+      break;
     }
-  } else if (effect === "heat") {
-    if (loc) loc.heat = Math.min(5, loc.heat + (tier === "fail" ? 2 : 1));
-  } else if (effect === "relationship") {
-    nudgeRelationship(c, job.employer.id, tier === "fail" ? -2 : -1);
-  } else if (effect === "credLoss") {
-    const loss = Math.min(c.bonds, tier === "fail" ? 2 : 1);
-    c.bonds -= loss;
-    addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-${loss} BOND${loss === 1 ? "" : "S"})`);
+    case "gearDamage":
+      if (c.gear.length === 0) { applyFalloutConsequence(c, job, attr, tier, "credLoss", loc); break; }
+      if (tier === "partial") {
+        c.bonds = Math.max(0, c.bonds - 1);
+        addLog(c, pick(DATA.gearDamageFlavor.partial));
+      } else {
+        const matching = c.gear.filter(g => g.attr === attr);
+        degradeGearItem(c, pick(matching.length ? matching : c.gear));
+      }
+      break;
+    case "vehicleDamage": {
+      const vehicles = c.gear.filter(g => g.attr === "Driving");
+      if (vehicles.length) degradeGearItem(c, pick(vehicles));
+      else applyFalloutConsequence(c, job, attr, tier, "harm1", loc);
+      break;
+    }
+    case "loseVehicle": {
+      const vehicles = c.gear.filter(g => g.attr === "Driving");
+      if (vehicles.length) {
+        const v = pick(vehicles);
+        c.gear = c.gear.filter(item => item !== v);
+        addLog(c, `${v.name} is totaled — you lose it for good.`);
+      } else {
+        applyFalloutConsequence(c, job, attr, tier, "gearDamage", loc);
+      }
+      break;
+    }
+    case "woundHelper":
+      woundJobHelper(c, job);
+      break;
+    case "heat":
+      if (loc) loc.heat = Math.min(5, loc.heat + 1);
+      break;
+    case "heat2":
+      if (loc) loc.heat = Math.min(5, loc.heat + 2);
+      break;
+    case "credLoss": {
+      const loss = Math.min(c.bonds, tier === "fail" ? 2 : 1);
+      c.bonds -= loss;
+      addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-${loss} BOND${loss === 1 ? "" : "S"})`);
+      break;
+    }
+  }
+}
+
+// §19.5 — a Bloodbrother riding along as Ally on a Special Mission is at
+// real risk: a Combat Partial wounds them (same "out for the rest of the
+// job" effect as woundJobHelper below), any main-sequence Fail (any attr)
+// kills them outright. Checked per main-sequence step, not side-objective
+// ones or Encounters (neither is "main-sequence").
+function applySpecialMissionBloodbrotherDanger(c, job, res) {
+  if (!job.mission.special || !job.ally) return;
+  const person = job.ally.person;
+  if (!person.bloodbrother) return;
+  // A Fail kills them outright regardless of whether the generic §19.9
+  // fallout already wounded them this same step (woundJobHelper) — Fail
+  // takes priority over "already wounded", so check it before that guard.
+  if (res.tier === "fail") {
+    addLog(c, `${person.name} doesn't walk away from this one. Special Missions don't forgive.`);
+    killPerson(c, person.id);
+    job.ally = null;
+    return;
+  }
+  if (job.ally.wounded) return; // the Partial-wound rule below only ever applies once
+  if (res.usedAttr === "Combat" && res.tier === "partial") {
+    job.ally.wounded = true;
+    job.ally.used = true;
+    addLog(c, `${person.name} takes a bad hit backing you up on this one — they're out for the rest of the job.`);
+  }
+}
+
+// §19.9 — a wounded Hireling/Ally stops contributing their bonus (and an
+// Ally forfeits their unused one-time +2) for the rest of the job. Ally
+// takes the hit first if both are present. Special Mission Bloodbrothers
+// have their own harsher rule — see applySpecialMissionBloodbrotherDanger() above.
+function woundJobHelper(c, job) {
+  if (job.ally && !job.ally.wounded) {
+    job.ally.wounded = true;
+    job.ally.used = true;
+    addLog(c, `${job.ally.person.name} takes a hit backing you up — they're out for the rest of this job.`);
+  } else if (job.hireling && !job.hireling.wounded) {
+    job.hireling.wounded = true;
+    addLog(c, `${job.hireling.name} takes a hit — no more use to you tonight.`);
   }
 }
 
 // ---------- Shared Challenge UI (roll block, used by steps + encounters) ----------
-function renderChallenge(container, step, onContinue) {
+// ctx ({job, holder}, optional) lets Rest sub-flows (renderRestSubflow) reuse
+// this without a real accepted job: job is null (no mission/location/ally to
+// pull modifiers from) and holder is a standalone scratch object (G.restFlow)
+// instead of G.job, since there's no job to hang pendingResult/lastResult off.
+function renderChallenge(container, step, onContinue, ctx) {
   const c = G.character;
-  const job = G.job;
+  const job = ctx ? ctx.job : G.job;
+  const holder = ctx ? ctx.holder : G.job;
 
-  if (job.pendingResult) {
-    renderResultBlock(container, job.pendingResult, onContinue);
+  if (holder.pendingResult) {
+    renderResultBlock(container, holder.pendingResult, onContinue);
     return;
   }
 
@@ -942,8 +1112,9 @@ function renderChallenge(container, step, onContinue) {
       ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
       : "";
     // Ally Assist (todo3.md Persons) — a recruited contact's one-time +2 to
-    // a single test, consumed on the roll it's checked for.
-    const allyOption = job.ally && !job.ally.used
+    // a single test, consumed on the roll it's checked for. Not offered once
+    // wounded (§19.9) — that forfeits the unused checkbox for the job.
+    const allyOption = job && job.ally && !job.ally.used
       ? `<label class="boost-toggle"><input type="checkbox" class="ally-check" /> ${job.ally.person.name}: +2 to this roll</label>`
       : "";
     block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${allyOption}<div class="mods"></div>`;
@@ -952,7 +1123,7 @@ function renderChallenge(container, step, onContinue) {
     const allyCheck = block.querySelector(".ally-check");
 
     const refreshMods = () => {
-      const mods = computeModifiers(attr, boostCheck && boostCheck.checked, allyCheck && allyCheck.checked);
+      const mods = computeModifiers(attr, boostCheck && boostCheck.checked, allyCheck && allyCheck.checked, job);
       modsEl.innerHTML = mods.length
         ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
         : `<span class="chip">no modifiers</span>`;
@@ -966,14 +1137,14 @@ function renderChallenge(container, step, onContinue) {
     rollBtn.addEventListener("click", () => {
       const spendBoost = !!(boostCheck && boostCheck.checked);
       const spendAlly = !!(allyCheck && allyCheck.checked);
-      const mods = computeModifiers(attr, spendBoost, spendAlly);
+      const mods = computeModifiers(attr, spendBoost, spendAlly, job);
       if (spendBoost) c.boost -= 1;
       if (spendAlly) job.ally.used = true;
       const result = resolve(c.attrs[attr], mods);
       result.usedAttr = attr;
       step.usedAttr = attr;
-      job.pendingResult = result;
-      job.lastResult = result;
+      holder.pendingResult = result;
+      holder.lastResult = result;
       persist();
       render();
     });
@@ -984,26 +1155,36 @@ function renderChallenge(container, step, onContinue) {
 
 function attrAvailable(c, job, attr) {
   if (attr === "Hacking") return ownsGearForAttr(c, "Hacking");
-  if (attr === "Driving" && job.mission && job.mission.type === "Transport" && job.mission.difficulty >= 2) {
+  if (job && attr === "Driving" && job.mission && job.mission.type === "Transport" && job.mission.difficulty >= 2) {
     const rural = job.location.area === "Rural" || (job.mission.fromLocation && job.mission.fromLocation.area === "Rural");
     if (rural) return ownsGearForAttr(c, "Driving");
   }
   return true;
 }
 
-function computeModifiers(attr, spendBoost, spendAlly) {
-  const c = G.character, job = G.job;
+// job may be null (a Rest sub-flow's Challenge has no accepted job to pull
+// job/location/ally modifiers from — see renderChallenge's ctx param).
+function computeModifiers(attr, spendBoost, spendAlly, job) {
+  const c = G.character;
   const mods = [];
   const gearBonus = bestGearBonus(c, attr);
   if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
-  if (job.hireling && job.hireling.attr === attr) mods.push({ label: `Hireling`, value: 1 });
-  if ((attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
-  if ((attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
+  if (job && job.hireling && !job.hireling.wounded && job.hireling.attr === attr) mods.push({ label: `Hireling`, value: 1 });
+  if (job && (attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
+  if (job && (attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
     const p = tierPenalty(job.mission.worstTier);
     if (p) mods.push({ label: `Adversary (${job.mission.worstTier})`, value: p });
   }
+  // §19.6 — a Challenge against a specific hostile faction (the mission
+  // Target's) carries that faction's Tier modifier.
+  if (job && job.mission && job.mission.target && job.mission.target.faction) {
+    const factionMod = factionChallengeModifier(c, job.mission.target.faction);
+    if (factionMod) mods.push({ label: `${job.mission.target.faction} (Tier)`, value: factionMod });
+  }
+  // §19.5 — every Challenge on a Special Mission carries an extra -1.
+  if (job && job.mission && job.mission.special) mods.push({ label: "Special Mission", value: -1 });
   if (spendBoost) mods.push({ label: "Boost", value: 1 });
-  if (spendAlly && job.ally) mods.push({ label: job.ally.person.name, value: 2 });
+  if (spendAlly && job && job.ally) mods.push({ label: job.ally.person.name, value: 2 });
   const harmCount = c.health.filter(h => h).length;
   if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
   else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
@@ -1053,9 +1234,15 @@ function runDebrief() {
   else if (ratio >= 0.4) { outcome = "Partial Success"; mult = 0.6; }
   else { outcome = "Failure"; mult = 0; }
 
-  const payout = Math.round(estimatePayout(job) * mult);
+  const basePayout = estimatePayout(job); // §19.1 — "job's base payout, before outcome multiplier"
+  const payout = Math.round(basePayout * mult);
   c.bonds += payout;
   let totalPayout = payout; // tracks ally fees / side-objective bonus for the Debrief display
+
+  // §19.5 — Special Missions push every relationship/standing delta below
+  // one point further from zero (0 is unaffected — Math.sign(0) === 0).
+  const amp = job.mission.special ? 1 : 0;
+  const relAmp = v => v + Math.sign(v) * amp;
 
   // BOOST grows with full successes, replacing the old per-track Rep gain.
   const boostGained = job.stepResults.filter(r => r.tier === "full").length;
@@ -1065,18 +1252,20 @@ function runDebrief() {
   }
 
   const relDelta = outcome === "Full Success" ? 1 : outcome === "Partial Success" ? 0 : -1;
-  nudgeRelationship(c, job.employer.id, relDelta);
+  nudgeRelationship(c, job.employer.id, relAmp(relDelta));
 
-  // Faction system (todo2.md): a completed job moves the parameter tied to
-  // its asset (or "power" for a hit) — employer's faction gains, the
-  // target's loses. If the job was ever noticed (Heat rose during the run),
-  // tension between employer and target factions rises too.
+  // §19.2 — per-mission-type faction standing effects (supersedes the old
+  // flat ±1 asset-type rule): the Employer's faction always gains, the
+  // opposing faction (the Target, or the attacking/chasing side for
+  // Hold/Transport) always loses, by fixed amounts specific to the type. If
+  // the job was ever noticed (Heat rose during the run), tension between
+  // employer and target factions rises too.
   if (outcome !== "Failure") {
-    const param = job.mission.type === "Assassination" ? "power" : job.mission.assetType;
-    if (param) {
-      adjustFactionParam(c, job.employer.faction, param, 1);
+    const effects = DATA.missionFactionEffects[job.mission.type];
+    if (effects) {
+      Object.entries(effects.employer).forEach(([param, v]) => adjustFactionParam(c, job.employer.faction, param, relAmp(v)));
       if (job.mission.target && job.mission.target.faction !== job.employer.faction) {
-        adjustFactionParam(c, job.mission.target.faction, param, -1);
+        Object.entries(effects.target).forEach(([param, v]) => adjustFactionParam(c, job.mission.target.faction, param, relAmp(v)));
       }
     }
     const startHeat = job.location.heat;
@@ -1086,6 +1275,20 @@ function runDebrief() {
       nudgeFactionRelation(c, job.employer.faction, job.mission.target.faction, -1);
       addLog(c, `Word gets out — tension rises between ${job.employer.faction} and ${job.mission.target.faction}.`);
     }
+  }
+
+  // §19.1 — Reputation: a non-Failure always gives +1, plus stacking +1s
+  // for a big payout, an Assassination, and a Special Mission.
+  if (outcome !== "Failure") {
+    let repGain = 1;
+    if (basePayout >= 4) repGain += 1;
+    if (job.mission.type === "Assassination") {
+      repGain += 1;
+      addLog(c, `Word travels: "Shadow of ${job.location.name}."`);
+    }
+    if (job.mission.special) repGain += 1;
+    gainReputation(c, repGain);
+    addLog(c, `Reputation +${repGain} (now ${c.reputation}, ${reputationTitle(c)}).`);
   }
 
   // Outcomes retire people permanently: a successful hit kills its target;
@@ -1105,18 +1308,20 @@ function runDebrief() {
       killPerson(c, job.mission.target.id);
       addLog(c, `${job.mission.target.name} didn't make it.`);
     } else {
-      nudgeRelationship(c, job.mission.target.id, 1);
+      nudgeRelationship(c, job.mission.target.id, relAmp(1));
     }
   }
 
   if (job.hireling) {
-    nudgeRelationship(c, job.hireling.id, outcome === "Failure" ? -1 : 1);
+    nudgeRelationship(c, job.hireling.id, relAmp(outcome === "Failure" ? -1 : 1));
   }
 
-  // Ally recruitment resolution (todo3.md Persons).
+  // Ally recruitment resolution (todo3.md Persons). job.ally can be null
+  // here even if one was brought along — a Special Mission Fail kills a
+  // Bloodbrother Ally mid-job (§19.5, see applySpecialMissionBloodbrotherDanger).
   if (job.ally) {
     if (outcome !== "Failure") {
-      nudgeRelationship(c, job.ally.person.id, 1);
+      nudgeRelationship(c, job.ally.person.id, relAmp(1));
       if (job.ally.tier === 3) {
         const fee = Math.min(c.bonds, 1);
         c.bonds -= fee;
@@ -1124,10 +1329,12 @@ function runDebrief() {
         addLog(c, `${job.ally.person.name} takes ${fee} BOND off the top for the help.`);
       } else {
         tagBloodbrother(c, job.ally.person);
+        gainReputation(c, 1); // §19.1
         addLog(c, `${job.ally.person.name} watches your back, no questions asked. You're blood now.`);
+        addLog(c, `Reputation +1 — "Friend of ${job.ally.person.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
       }
     } else {
-      nudgeRelationship(c, job.ally.person.id, -2);
+      nudgeRelationship(c, job.ally.person.id, relAmp(-2));
     }
   }
 
@@ -1172,7 +1379,7 @@ function renderDebrief() {
   btn.textContent = "Return to the Street";
   btn.addEventListener("click", () => {
     G.job = null;
-    G.phase = checkWinCondition() ? "win" : "hub";
+    G.phase = nextHubPhase();
     persist();
     render();
   });
@@ -1202,6 +1409,43 @@ function renderWin() {
     clearSave();
     G.character = null;
     G.job = null;
+    G.hunt = null;
+    G.phase = "create";
+    render();
+  });
+  wrap.appendChild(btn);
+  els.main.appendChild(wrap);
+}
+
+// ---------- LOSS (§17.2/§19.8) ----------
+// MULTI-CORP: the Corpo category reduced to a single survivor (§19.7's
+// faction Power struggles having destroyed the other two) — that faction
+// absorbs the entire tier and the game ends. Checked at nextHubPhase().
+function renderLoss() {
+  const c = G.character;
+  const survivor = DATA.factions.find(f => {
+    const s = c.factionStandings[f.name];
+    return s && !s.destroyed && s.category === "Corpo";
+  });
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>MULTI-CORP</h2>
+    <p>${survivor ? survivor.name : "One Corpo giant"} finishes off the last name that could still stand
+    up to it. There's no more competition left to play the others off of —
+    just one logo, on every wall, in every feed, over every door.</p>
+    <p>The SuperState doesn't fall. It just stops pretending it was ever
+    anything else. Every fixer, every gang, every Turf answers to one
+    balance sheet now, and yours is not the name on it.</p>
+    <p class="muted">${c.name} — still on the street, in a city that isn't anyone's anymore.</p>
+  `;
+  const btn = document.createElement("button");
+  btn.textContent = "Start a New Runner";
+  btn.addEventListener("click", () => {
+    clearSave();
+    G.character = null;
+    G.job = null;
+    G.board = null;
     G.hunt = null;
     G.phase = "create";
     render();
@@ -1584,6 +1828,8 @@ function applyHuntKillReward(c) {
   c.boost = Math.min(10, c.boost + 3);
   c.bonds += 2;
   addLog(c, `${hunt.archenemy.name} goes down for good. You walk away with a ${weapon.name}, a surge of BOOST, and 2 more BONDS.`);
+  gainReputation(c, 2); // §19.1
+  addLog(c, `Reputation +2 — "Killer of ${hunt.archenemy.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
   killPerson(c, hunt.archenemy.id);
   hunt.stage = "resolved-kill";
 }
@@ -1608,7 +1854,7 @@ function renderHuntResolution(container) {
   btn.textContent = "Return to the Street";
   btn.addEventListener("click", () => {
     G.hunt = null;
-    G.phase = checkWinCondition() ? "win" : "hub";
+    G.phase = nextHubPhase();
     persist();
     render();
   });

@@ -164,6 +164,13 @@ button.danger { background: var(--danger); color: #2a0000; }
 }
 .faction-stats { display: flex; gap: 8px; color: var(--muted); font-size: 12px; }
 .faction-stats em { font-style: normal; }
+.faction-row.destroyed { opacity: 0.5; }
+.faction-row.destroyed .faction-stats { color: var(--danger); letter-spacing: 1px; }
+
+.special-badge {
+  margin: 6px 0; font-size: 12px; color: var(--danger);
+  border: 1px solid var(--danger); border-radius: 4px; padding: 4px 6px; display: inline-block;
+}
 
 .step-desc {
   text-align: center;

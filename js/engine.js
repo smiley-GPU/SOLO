@@ -52,13 +52,16 @@ function genFaction(chanceFreelance = 0.25) {
   return pick(DATA.factions);
 }
 
-function genPerson() {
-  // faction is flattened to a plain string here (not the {name,type} object
-  // genFaction() returns) because generated people can end up living in
-  // character.contacts alongside the seeded Turf contact, which already
-  // stores faction as a string. Location generation still uses the object
-  // form via genFaction() directly.
-  const f = genFaction();
+// allowedFactionNames (§19.4, optional): if given, the generated person's
+// faction is drawn from that list instead of any of the 11 — Freelance is
+// always included since it's exempt from the Employer/Target pairing rule.
+function genPerson(allowedFactionNames) {
+  let f;
+  if (allowedFactionNames) {
+    f = pick([{ name: "Freelance", type: "None" }, ...DATA.factions.filter(x => allowedFactionNames.includes(x.name))]);
+  } else {
+    f = genFaction();
+  }
   return {
     name: genName(),
     faction: f.name,
@@ -88,6 +91,12 @@ function genLocationDef() {
   return pick(DATA.locations); // {name, area, faction}
 }
 
+// §19.5 / Appendix J — "Mission: <GREEK> <SHAPE> <COLOR> <NN>".
+function genSpecialMissionName() {
+  const p = DATA.specialMissionParts;
+  return `Mission: ${pick(p.greek).toUpperCase()} ${pick(p.shape).toUpperCase()} ${pick(p.color).toUpperCase()} ${randInt(10, 99)}`;
+}
+
 function genGearOffers(count = 3) {
   const tiers = ["Street", "Street", "Professional", "Professional", "Military"];
   const offers = [];
@@ -99,8 +108,12 @@ function genGearOffers(count = 3) {
   return offers;
 }
 
-function genMission(location, character, excludeIds) {
-  const type = pick(DATA.missionTypes);
+// allowedTargetFactions (§19.4, optional): restricts the mission Target's
+// faction (null = unrestricted, used for Special Missions and Freelance
+// Employers). forcedType/forcedTarget (§19.7): used to build a guaranteed
+// Special Mission out of a faction Power struggle's pending war.
+function genMission(location, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget) {
+  const type = forcedType || pick(DATA.missionTypes);
   const adversaryCount = randInt(1, 3);
   // tier is per-mission, not a trait of the pooled person, so it's spread
   // onto a copy rather than mutating the shared contacts entry.
@@ -122,7 +135,7 @@ function genMission(location, character, excludeIds) {
   // getting killed); every other mission type casts a cooperative/neutral
   // Target (the person/cargo being stolen, moved, delayed, or held).
   const targetRole = type === "Assassination" ? "hostile" : "ally";
-  const target = getPerson(character, targetRole, excludeIds);
+  const target = forcedTarget || getPerson(character, targetRole, excludeIds, allowedTargetFactions);
 
   // Transport gets a distinct origin point; `location` (the job's main
   // Location, driving Heat/Encounters) is the destination.
@@ -159,8 +172,76 @@ function genMission(location, character, excludeIds) {
     timePeriod,
     difficulty,
     assetType,
-    assetFlavor
+    assetFlavor,
+    special: false, // §19.5 — set true/named by genBoardJob() for the Mission Board's escalated slot
+    specialName: null,
+    forcedFactionWar: null // §19.7 — set when this Special Mission comes from a queued faction Power struggle
   };
+}
+
+// -- §19.3 The Mission Board (two jobs) + §19.4/§19.5 pairing & specials ----
+
+// Builds one Board candidate: {employer, mission, location, excludeIds}.
+// capTier is the Reputation-gated difficulty ceiling (§19.3); wantHigher
+// pushes difficulty one tier past it; forceSpecial additionally marks/names
+// it a Special Mission and ignores Employer/Target pairing (§19.4/§19.5).
+// forcedWar ({attacker, target}, §19.7) forces an Assassination against the
+// war's target faction, guaranteed Special — from a faction Power struggle.
+function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar) {
+  const fullLoc = resolveLocation(character, genLocationDef());
+  const excludeIds = new Set();
+  const employer = getEmployer(character, excludeIds);
+  const allowedTargetFactions = forceSpecial ? null : pairedFactionsFor(character, employer.faction);
+
+  let forcedType = null, forcedTarget = null;
+  if (forcedWar) {
+    forcedType = "Assassination";
+    forcedTarget = castWarTarget(character, forcedWar.target, excludeIds);
+  }
+
+  const mission = genMission(fullLoc, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget);
+
+  if (forceSpecial) {
+    mission.special = true;
+    mission.specialName = genSpecialMissionName();
+    // "one full tier above" (§19.5), on top of whatever escalation already got it here.
+    mission.difficulty = Math.min(4, Math.max(mission.difficulty, capTier + 1) + 1);
+    if (forcedWar) mission.forcedFactionWar = forcedWar;
+  } else if (wantHigher) {
+    mission.difficulty = Math.min(3, Math.max(mission.difficulty, capTier + 1));
+  } else {
+    mission.difficulty = Math.min(mission.difficulty, capTier);
+  }
+
+  return { employer, mission, location: fullLoc, excludeIds };
+}
+
+// The Hub always offers two of these (§19.3). The first is always at/below
+// the player's Reputation Tier; the second has an escalating (with
+// character.restCount) chance of being one tier higher, and a further 10%
+// chance of that being a Special Mission — unless a faction Power struggle
+// (§19.7) has a guaranteed war queued up, which always fills the second slot.
+function genMissionBoard(character) {
+  const capTier = Math.min(reputationTier(character), 3);
+  const jobA = genBoardJob(character, capTier, false, false);
+
+  // The queued war's target could have been destroyed by another Power
+  // struggle in the same tick (§19.7) before this Board consumed it —
+  // drop it rather than build a Special Mission against a faction that's
+  // already gone.
+  let war = character.pendingWars.length ? character.pendingWars.shift() : null;
+  const targetStanding = war && character.factionStandings[war.target];
+  if (war && (!targetStanding || targetStanding.destroyed)) war = null;
+  let jobB;
+  if (war) {
+    jobB = genBoardJob(character, capTier, true, true, war);
+  } else {
+    const higherChance = 10 + 10 * character.restCount;
+    const wantHigher = randInt(1, 100) <= higherChance;
+    const wantSpecial = wantHigher && randInt(1, 100) <= 10;
+    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial);
+  }
+  return [jobA, jobB];
 }
 
 const MISSION_SEQUENCES = {

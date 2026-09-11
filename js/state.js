@@ -43,6 +43,8 @@ function defaultCharacter(name, profession, turf) {
     restCount: 0, // Coffin Hotel / Night on the Street uses since the last Hunt (todo3.md)
     archenemyId: null, // locked in on the first Rest — see processRestTick() in game.js
     pendingSaleItem: null, // a banked Street-tier item awaiting its pair — see sellGearItem() in game.js
+    reputation: 1, // §19.1 — 1-20, never spent, gates the Mission Board (reputationTier() below)
+    pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
 }
@@ -54,9 +56,105 @@ function defaultCharacter(name, profession, turf) {
 function defaultFactionStandings() {
   const standings = {};
   DATA.factions.forEach(f => {
-    standings[f.name] = { ...DATA.factionBaseStats[f.type] };
+    standings[f.name] = {
+      ...DATA.factionBaseStats[f.type],
+      category: f.type, // mutable: Wealth-driven category jumps (§19.6) change this away from DATA.factions' fixed type
+      tier: startingFactionTier(f.name, f.type),
+      destroyed: false
+    };
   });
   return standings;
+}
+
+// -- Faction Tiers (§19.6) --------------------------------------------------
+
+function startingFactionTier(factionName, category) {
+  if (DATA.factionFixedTier[factionName] !== undefined) return DATA.factionFixedTier[factionName];
+  const range = DATA.factionTierRanges[category];
+  return range ? range.min : 1;
+}
+
+// Re-checks a faction's Tier/category after any Wealth/R&D change (§19.6):
+// R&D ≥10 promotes to the category's higher Tier, dropping back below 8
+// demotes it again; Wealth ≥10 while already at the category's higher Tier
+// promotes it into the next category up (Nomad→Crime, Crime→Corpo), keeping
+// the Tier number. Authority factions (fixed Tier) never move.
+function updateFactionTier(character, factionName) {
+  const standing = character.factionStandings[factionName];
+  if (!standing || standing.destroyed) return;
+  if (DATA.factionFixedTier[factionName] !== undefined) return;
+  const range = DATA.factionTierRanges[standing.category];
+  if (!range) return;
+
+  if (standing.tier < range.max && standing.rnd >= 10) {
+    standing.tier = range.max;
+    addLog(character, `${factionName} throws its R&D lead around — it moves up to Tier ${standing.tier}.`);
+  } else if (standing.tier === range.max && standing.rnd < 8) {
+    standing.tier = range.min;
+    addLog(character, `${factionName}'s R&D dries up — it slips back to Tier ${standing.tier}.`);
+  }
+
+  if (standing.tier === range.max && standing.wealth >= 10) {
+    const nextCategory = standing.category === "Nomad" ? "Crime" : standing.category === "Crime" ? "Corpo" : null;
+    if (nextCategory) {
+      standing.category = nextCategory;
+      // Tier number carries over unchanged — it's already this category's floor/ceiling either way.
+      addLog(character, `${factionName} buys its way up — it's a ${nextCategory} player now.`);
+    }
+  }
+}
+
+function nonDestroyedFactionsIn(character, category) {
+  return DATA.factions.filter(f => {
+    const s = character.factionStandings[f.name];
+    return s && !s.destroyed && s.category === category;
+  }).map(f => f.name);
+}
+
+// A destroyed faction drops out of every future draw and its remaining
+// Contacts scatter to Freelance (§19.7).
+function destroyFaction(character, factionName) {
+  const standing = character.factionStandings[factionName];
+  if (!standing || standing.destroyed) return;
+  standing.destroyed = true;
+  character.contacts.forEach(p => { if (p.faction === factionName) p.faction = "Freelance"; });
+  addLog(character, `${factionName} is torn apart. What's left of it scatters.`);
+}
+
+// §19.8 — the Corpo category reduced to a single survivor ends the game.
+function checkMultiCorpLoss(character) {
+  return nonDestroyedFactionsIn(character, "Corpo").length === 1;
+}
+
+// §19.7 — checked once per Rest tick. Any non-destroyed Corpo/Crime/Nomad
+// faction with Power ≥10 rolls against a random rival in its own category.
+function runFactionPowerStruggles(character) {
+  ["Corpo", "Crime", "Nomad"].forEach(category => {
+    nonDestroyedFactionsIn(character, category).forEach(attackerName => {
+      const attacker = character.factionStandings[attackerName];
+      if (!attacker || attacker.destroyed || attacker.power < 10) return;
+      const rivals = nonDestroyedFactionsIn(character, category).filter(n => n !== attackerName);
+      if (!rivals.length) return;
+      const targetName = pick(rivals);
+      const target = character.factionStandings[targetName];
+
+      const atkMod = ["wealth", "rnd", "power"].filter(k => attacker[k] >= 10).length + (attacker.tier > target.tier ? 1 : 0);
+      const defMod = ["wealth", "rnd", "power"].filter(k => target[k] >= 10).length + (target.tier > attacker.tier ? 1 : 0);
+      const { sum } = roll2d6();
+      const roll = sum + atkMod - defMod;
+
+      if (roll <= 6) {
+        attacker.power = Math.max(0, attacker.power - 1);
+        addLog(character, `${attackerName} makes a play for ${targetName} and it falls apart (-1 Power for ${attackerName}).`);
+      } else if (roll <= 9) {
+        character.pendingWars.push({ attacker: attackerName, target: targetName });
+        addLog(character, `${attackerName} puts a price on ${targetName}'s territory. Word is a Special Mission's coming.`);
+      } else {
+        destroyFaction(character, targetName);
+        addLog(character, `${attackerName} crushes ${targetName} outright.`);
+      }
+    });
+  });
 }
 
 function save(character) {
@@ -115,6 +213,16 @@ function migrateCharacter(character) {
   if (typeof character.restCount !== "number") character.restCount = 0;
   if (character.archenemyId === undefined) character.archenemyId = null;
   if (character.pendingSaleItem === undefined) character.pendingSaleItem = null;
+
+  // §19.1 / §19.6 / §19.7 — Reputation, Faction Tiers, pending faction wars.
+  if (typeof character.reputation !== "number") character.reputation = 1;
+  if (!character.pendingWars) character.pendingWars = [];
+  Object.entries(character.factionStandings).forEach(([name, standing]) => {
+    const f = DATA.factions.find(f => f.name === name);
+    if (!standing.category) standing.category = f ? f.type : "None";
+    if (typeof standing.tier !== "number") standing.tier = startingFactionTier(name, standing.category);
+    if (typeof standing.destroyed !== "boolean") standing.destroyed = false;
+  });
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -125,18 +233,70 @@ const REUSE_CHANCE = 0.8;
 // "ally" (cooperative — Employer / Hireling / other mission Targets), per
 // the sign of each pooled person's relationship. excludeIds keeps one job
 // from casting the same person into two roles.
-function getPerson(character, roleCategory, excludeIds) {
+// allowedFactionNames (§19.4, optional): restricts both the reused-pool
+// draw and a freshly generated person to that faction list (Freelance always
+// exempt — see genPerson()). Omitted entirely by every call site that
+// doesn't care (Hireling, Adversaries, ...), so existing behavior is unchanged.
+function getPerson(character, roleCategory, excludeIds, allowedFactionNames) {
   const pool = character.contacts.filter(p =>
-    !excludeIds.has(p.id) && (roleCategory === "hostile" ? p.relationship < 0 : p.relationship >= 0)
+    !excludeIds.has(p.id) &&
+    (roleCategory === "hostile" ? p.relationship < 0 : p.relationship >= 0) &&
+    (!allowedFactionNames || p.faction === "Freelance" || allowedFactionNames.includes(p.faction))
   );
   let person = null;
   if (pool.length && Math.random() < REUSE_CHANCE) {
     person = pick(pool);
   }
   if (!person) {
-    person = genPerson();
+    person = genPerson(allowedFactionNames);
     person.id = character.nextPersonId++;
     person.relationship = roleCategory === "hostile" ? -randInt(1, 2) : 0;
+    person.favor = 0;
+    character.contacts.push(person);
+  }
+  excludeIds.add(person.id);
+  return person;
+}
+
+// -- Employer/Target faction pairing (§19.4) --------------------------------
+
+function nonAuthorityFactionNames(character) {
+  return Object.keys(character.factionStandings).filter(name => {
+    const s = character.factionStandings[name];
+    return !s.destroyed && s.category !== "Authority";
+  });
+}
+
+// Authority factions may only ever be a mission Target, never an Employer.
+function getEmployer(character, excludeIds) {
+  return getPerson(character, "ally", excludeIds, nonAuthorityFactionNames(character));
+}
+
+// The factions a Target may belong to given the Employer's faction: same or
+// an adjacent category (Corpo↔Crime, Crime↔Nomad), or any Authority faction.
+// Returns null (no constraint) for a Freelance/untracked Employer.
+function pairedFactionsFor(character, employerFactionName) {
+  const employerStanding = character.factionStandings[employerFactionName];
+  if (!employerStanding) return null;
+  const allowedCategories = DATA.factionCategoryAdjacency[employerStanding.category] || [employerStanding.category];
+  const allowed = [];
+  Object.entries(character.factionStandings).forEach(([name, standing]) => {
+    if (standing.destroyed) return;
+    if (standing.category === "Authority" || allowedCategories.includes(standing.category)) allowed.push(name);
+  });
+  return allowed;
+}
+
+// §19.7 — casts a hostile Target belonging to exactly the queued war's
+// target faction (a plain Employer/Target pairing draw could still land on
+// Freelance, which wouldn't be "against" that faction at all).
+function castWarTarget(character, factionName, excludeIds) {
+  const pool = character.contacts.filter(p => !excludeIds.has(p.id) && p.faction === factionName && p.relationship < 0);
+  let person = pool.length && Math.random() < REUSE_CHANCE ? pick(pool) : null;
+  if (!person) {
+    person = { name: genName(), faction: factionName, profession: pick(DATA.npcProfessions) };
+    person.id = character.nextPersonId++;
+    person.relationship = -randInt(1, 2);
     person.favor = 0;
     character.contacts.push(person);
   }
@@ -238,6 +398,20 @@ function resolveDownEvent(character) {
   addLog(character, "The damage doesn't heal clean. You're carrying a Permanent Injury now — needs real repair.");
 }
 
+// -- Reputation (§19.1) ------------------------------------------------------
+
+function gainReputation(character, amount) {
+  character.reputation = Math.max(1, Math.min(20, character.reputation + amount));
+}
+function reputationTier(character) {
+  const entry = DATA.reputationTiers.find(t => character.reputation <= t.max);
+  return entry ? entry.tier : DATA.reputationTiers[DATA.reputationTiers.length - 1].tier;
+}
+function reputationTitle(character) {
+  const entry = DATA.reputationTiers.find(t => character.reputation <= t.max);
+  return entry ? entry.title : DATA.reputationTiers[DATA.reputationTiers.length - 1].title;
+}
+
 // -- Faction system (todo2.md) --------------------------------------------
 
 function getFactionRelationKey(a, b) {
@@ -262,8 +436,17 @@ function nudgeFactionRelation(character, factionA, factionB, delta) {
 // factions (Freelance, null turf).
 function adjustFactionParam(character, factionName, param, delta) {
   const standing = character.factionStandings[factionName];
-  if (!standing) return;
+  if (!standing || standing.destroyed) return;
   standing[param] = Math.max(0, Math.min(20, standing[param] + delta));
+  if (param === "rnd" || param === "wealth") updateFactionTier(character, factionName);
+}
+
+// §19.6 — the Challenge modifier a faction's Tier applies: Tier 1 → 0,
+// Tier 2 → -1, Tier 3 → -2, Tier 4 → -3.
+function factionChallengeModifier(character, factionName) {
+  const standing = character.factionStandings[factionName];
+  if (!standing || standing.destroyed) return 0;
+  return -(standing.tier - 1);
 }
 
 // -- Gear bonuses (todo2.md) -----------------------------------------------

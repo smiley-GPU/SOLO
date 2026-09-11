@@ -199,5 +199,83 @@ const DATA = {
     "A drone sweep pings something out of place.",
     "A fixer's runner recognizes you from a past job.",
     "Corp security is doing a routine sweep tonight."
-  ]
+  ],
+
+  // -- §19: Reputation, Faction Power & Special Missions --------------------
+
+  // REPUTATION tiers (SOLOdescription.md §19.1).
+  reputationTiers: [
+    { max: 5, tier: 1, title: "Street Rat" },
+    { max: 10, tier: 2, title: "Warhound" },
+    { max: 15, tier: 3, title: "Operative" },
+    { max: 20, tier: 4, title: "Legend" }
+  ],
+
+  // Faction category adjacency for Employer/Target pairing (§19.4): a
+  // category may pair with itself or with the categories listed here.
+  // Authority is deliberately absent — it's handled as a special "target
+  // only, any pairing" case in pairedFactionsFor() (state.js).
+  factionCategoryAdjacency: {
+    Corpo: ["Corpo", "Crime"],
+    Crime: ["Crime", "Corpo", "Nomad"],
+    Nomad: ["Nomad", "Crime"]
+  },
+
+  // Faction Tier ranges + starting Tier per category (§19.6). Authority
+  // factions are named individually since each has one fixed Tier.
+  factionTierRanges: {
+    Corpo: { min: 3, max: 4 },
+    Crime: { min: 2, max: 3 },
+    Nomad: { min: 1, max: 2 }
+  },
+  factionFixedTier: { EurCop: 2, SwissGuard: 3 },
+
+  // Per-mission-type faction standing effects on a non-Failure outcome
+  // (§19.2, supersedes the old flat ±1 asset-type rule). "target" is the
+  // opposing faction (the mission's Target, or the attacking/chasing side
+  // for Hold/Transport); "employer" is the Employer's faction.
+  missionFactionEffects: {
+    Assassination: { target: { power: -2 }, employer: { power: 2 } },
+    Delay: { target: { wealth: -2, rnd: -1 }, employer: { wealth: 2 } },
+    Heist: { target: { wealth: -1, rnd: -2 }, employer: { rnd: 2 } },
+    Hold: { target: { wealth: -1, power: -1 }, employer: { power: 1 } },
+    Transport: { target: { wealth: -1, power: -1 }, employer: { wealth: 1 } }
+  },
+
+  // Special Mission name generator (§19.5, Appendix J).
+  specialMissionParts: {
+    greek: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Theta", "Kappa", "Sigma", "Omega", "Rho", "Omicron"],
+    shape: ["Hex", "Cube", "Prism", "Spiral", "Vertex", "Wedge", "Torus", "Rhombus", "Helix", "Shard", "Obelisk", "Lattice"],
+    color: ["Cyan", "Magenta", "Crimson", "Amber", "Jade", "Cobalt", "Onyx", "Violet", "Ember", "Slate", "Indigo", "Bone"]
+  },
+
+  // Deterministic per-attribute Challenge fallout (§19.9, supersedes the
+  // weighted-random DATA.failOutcomes above). Each entry lists the possible
+  // consequences for a 7-9 Partial and a ≤6 Fail; applyOutcome() picks one
+  // "option" at random from the relevant list (an option can itself bundle
+  // more than one simultaneous consequence, e.g. Fail Combat's 2-box-plus-one-more).
+  challengeFallout: {
+    Combat: {
+      heatAlways: true,
+      partial: [["harm1"], ["gearDamage"], ["woundHelper"]],
+      fail: [["harm2", "gearDamage"], ["harm2", "woundHelper"]]
+    },
+    Driving: {
+      heatOnResolve: 1, // partial/fail always add Heat too, on top of the picked option below
+      partial: [["vehicleDamage"], ["harm1"], ["gearDamage"]],
+      fail: [["harm1", "loseVehicle"]]
+    },
+    Hacking: {
+      partial: [["heat"], ["gearDamage"]],
+      fail: [["heat", "harm1"], ["heat", "gearDamage"]]
+    },
+    Social: {
+      partial: [["heat"], ["gearDamage"]],
+      fail: [["heat", "gearDamage"]]
+    },
+    Stealth: {
+      partial: [["heat"], ["gearDamage"]],
+      fail: [["heat2", "harm1"]]
+    }
+  }
 };
