@@ -1,0 +1,945 @@
+# SOLO — Complete Game Description
+
+A single-player, browser-based (static HTML + vanilla JavaScript, no
+framework, no build step, no backend) cyberpunk "job runner" game. It plays
+like a solo journaling game: the app procedurally generates people, places,
+and jobs; the player makes choices and spends resources; dice resolve
+outcomes; a running text log turns the session into a short story.
+
+Setting: **Europunk**, in the **European SuperState** — an original setting
+(not a licensed IP). All proper nouns (factions, locations, gear, names) are
+invented for this game; see §3 and the Appendix for the full canon.
+
+This document is self-contained: everything needed to rebuild the game from
+scratch — every formula, every table, every screen, every button — is
+below.
+
+---
+
+## 1. Architecture
+
+- **Files**: `index.html` (shell + script tags), `style.css` (all styling),
+  `js/data.js` (static content tables), `js/engine.js` (dice + generators),
+  `js/state.js` (character/world model + persistence), `js/game.js` (phase
+  state machine + all DOM rendering).
+- **No modules, no bundler.** All four `js/*.js` files are loaded as plain
+  `<script>` tags in that order and share one global scope — every
+  top-level `const`/`function` in one file is directly callable from the
+  others (e.g. `game.js` calls `resolve()` from `engine.js` and
+  `nudgeRelationship()` from `state.js` with no imports).
+- **Persistence**: the entire character/world state is one JSON blob in
+  `localStorage` under the key `"solo_game_save_v1"`. `save(character)`
+  writes it; `load()` reads and runs it through `migrateCharacter()` (adds
+  any fields introduced after the save was made, with safe defaults) before
+  handing it back.
+- **Rendering model**: no virtual DOM, no diffing. Every state change calls
+  `persist()` (save to localStorage) then `render()`, which does three full
+  innerHTML rebuilds: `renderSheet()` (left panel), `renderMain()` (center —
+  dispatches on `G.phase` to one of ~10 screen-render functions), and
+  `renderFactions()` (right panel). `G` is a single global object:
+  `{ character, job, phase }` (plus transient `G.hunt` while a Hunt is
+  active).
+- **Layout** (`index.html` + CSS grid): a 3-column layout — `#sheet` (260px,
+  character sheet), `#main` (flexible, the current phase screen + a
+  journal log below it), `#factions` (320px, every faction's standing).
+  Below 980px width it collapses to a single column.
+- **Journal**: every significant event calls `addLog(character, text)`
+  (state.js), which pushes a line onto `character.log` (capped at 300
+  lines, oldest dropped). `renderJournal()` (game.js) renders the array
+  **reversed** — newest line on top — under the phase card.
+
+---
+
+## 2. Core Mechanic
+
+**Roll 2d6 + Attribute rank + modifiers, compare to a fixed table.**
+
+```
+resolve(attrRank, modifiers[]) → { d1, d2, diceSum, attrRank, modifiers, modTotal, total, tier }
+```
+
+| Total | Tier | Meaning |
+|---|---|---|
+| 10+ | **full** | Full success. |
+| 7–9 | **partial** | Partial success — succeed, but pick a complication. |
+| ≤6 | **fail** | Fail — roll on the Challenge type's fallout table. |
+
+`modifiers` is an array of `{label, value}` shown to the player as colored
+chips (green for positive, red for negative) before they commit to the
+roll. The five Attributes are **Combat, Driving, Hacking, Social,
+Stealth**, each ranked 1–5.
+
+A **Signature/BOOST upgrade**: after any non-full roll, if the character
+has ≥3 BOOST, they may spend 3 to upgrade the result one tier (fail→partial
+or partial→full) via `upgradeTier()`. Offered on every roll result screen
+(mission steps, encounters, and Hunt rolls alike).
+
+---
+
+## 3. Setting & Canon (Appendix data, summarized here)
+
+- **11 factions**, fixed, 3 per level + 2 Authority:
+  - **Corpo**: Hammerstein GmbH, Bulldog Ltd., Styletto
+  - **Crime**: EuroMafia, Vikings, Hooligans
+  - **Nomad**: Vlads, Sombra 43, Odin's Ax
+  - **Authority**: EurCop, SwissGuard
+  - A generated person/location has a 25% chance of being **"Freelance"**
+    (no faction) instead of one of the 11.
+- **12 fixed locations** (the world map never changes, never randomly
+  combines) — 4 Urban, 4 Corpo, 4 Rural, each tied to a faction or `null`
+  (open/neutral turf):
+  - Urban: Rive Nord (EuroMafia), Nedre Kvartal (Vikings), Mercato Vecchio
+    (neutral), Pustý Blok (Hooligans)
+  - Corpo: Hammerstein Turm (Hammerstein GmbH), Campus Bulldog (Bulldog
+    Ltd.), Atrio Styletto (Styletto), La Bourse de Verre (neutral)
+  - Rural: Depozit Vlad (Vlads), Askeveien (Sombra 43), Beinhaugen (Odin's
+    Ax), Posterunek Rdzy (neutral)
+- **Person names**: `genName()` = one of 20 first names ×
+  `"<first> \"<handle>\""` where handle is one of 20 street handles (see
+  Appendix A for both full lists — French/Italian/Nordic/East-European
+  mix).
+- **NPC professions** (12): Fixer, Corp Exec, Ganger, Nomad Rider,
+  Netrunner, Solo, Media, Cop, Civilian, Medtech, Techie, Body Doc.
+
+---
+
+## 4. Character
+
+### 4.1 Creation
+Three inputs: **Name** (free text, defaults to a generated name if blank),
+**Profession**, **Background/Turf**. Building the character:
+
+```
+attrs = {Combat:1, Driving:1, Hacking:1, Social:1, Stealth:1}
+for each attr in profession.boosts: attrs[attr] = min(3, attrs[attr]+1)
+attrs[turf.boost] = min(3, attrs[turf.boost]+1)
+```
+
+**Professions:**
+| Profession | Boosts | Starting gear | Flavor |
+|---|---|---|---|
+| Solo | Combat, Stealth | Kessler Snub (Combat, Street), Padded Vest (armor 1, Street) | Combat & Stealth. Starts armed and armored. |
+| Hacker | Hacking, Social | Bootleg Deck (Hacking, Street), Patchwork ICE Program (Hacking, Street) | Hacking & Social. Starts with a deck and a program. |
+| Rocker | Social, Driving | Ostrava Runner (Driving, Street) | Social & Driving. Starts with a ride and a crew contact. |
+
+**Turfs:**
+| Turf | Boost | Starting BONDS | Starting gear | Contact faction | Extra |
+|---|---|---|---|---|---|
+| Nomad | Driving | 2 | Kombi Wagon (Driving, Street) | Vlads | — |
+| Corpo | Hacking | 3 | none | Hammerstein GmbH | — |
+| Street | Stealth | 2 | none | EuroMafia | +1 BOOST |
+
+All starting gear is tagged `tier: "Street"` if not otherwise specified.
+
+The character starts with **1 seeded Contact**: `{id:1, name: genName(),
+faction: turf.contactFaction, profession: "Fixer", relationship: 1, favor:
+turf==="Corpo" ? -1 : 0}`.
+
+### 4.2 Full character object shape
+```
+{
+  name, profession, turf,
+  attrs: {Combat, Driving, Hacking, Social, Stealth},  // 1-5 each
+  boost,                    // spendable BOOST pool, 0-10
+  health: [bool, bool, bool],  // 3 Harm boxes, true = marked
+  permanentInjury: bool,
+  bonds,                    // BONDS currency
+  gear: [ {name, tier, attr?|heal?|armor?}, ... ],
+  contacts: [ {id, name, faction, profession, relationship, favor,
+               archenemy?, bloodbrother?, tier?}, ... ],
+  nextPersonId,
+  graveyard: [ person, ... ],   // dead contacts, never redrawn
+  locations: { name: {area, faction, heat}, ... },  // lazily filled in as visited
+  factionStandings: { factionName: {wealth, rnd, power}, ... },  // all 11, eager
+  factionRelations: { "A|B": number, ... },  // lazy pairwise, sorted-key
+  restCount,                 // 0-3, Rest-clock counter (see §9)
+  archenemyId,                // who the Rest clock is counting toward
+  pendingSaleItem,            // a banked Street item awaiting its pair (see §12)
+  log: [ string, ... ]         // capped at 300
+}
+```
+
+### 4.3 Attributes
+5 attributes, 1–5. Trained in the Hub: cost = **current rank in BONDS + 1
+BOOST**, capped at rank 5.
+
+### 4.4 Health
+3 boxes, "Harm". Roll penalties: 1 box marked = **-1** to all rolls, 2
+boxes = **-2**. 3 boxes (**Down**) forces the job to end in Failure and
+always leaves a **Permanent Injury** (an ongoing extra -1 to every roll,
+stacked with the Wounded penalty, until repaired).
+
+Going Down triggers `resolveDownEvent()`: a 10% chance of "you should be
+dead" — costs 2 BOOST (floored at 0) — either way, `permanentInjury = true`.
+
+**Permanent Injury repair** (Hub, only shown while `permanentInjury` is
+true): heals all 3 boxes and clears the flag.
+- **Cybernetic Replacement** — 2 BONDS, quick: also knocks -1 off one
+  random Attribute (floored at 1), permanently.
+- **Biovat Regrowth** — 3 BONDS, slow: no side effect.
+
+**Medical** (Hub, ordinary Wounded only, not a Permanent Injury): 1 BOND
+per box healed.
+
+### 4.5 Armor (damage absorption)
+Gear can carry an `armor: N` field (charge count) instead of `attr`. Every
+place a character would take a Harm hit calls `applyHarm(character)`
+instead of the raw `markHarm()`:
+
+```
+applyHarm(c):
+  armor = first owned gear item with armor > 0
+  if armor exists and Math.random() < 0.5:
+    armor.armor -= 1
+    log "<armor.name> takes the hit for you."
+    if armor.armor <= 0: remove it from gear, log "<name> is wrecked — it won't stop another one."
+    return false   // no Health box marked
+  else:
+    return markHarm(c)   // normal Harm mark
+```
+
+Flat 50% absorb chance regardless of tier — tier only sets the starting
+charge count (Street 1, Professional 2, Military 3). Broken armor is
+removed from inventory entirely.
+
+### 4.6 BOOST
+A single spendable pool (0–10 cap), replacing a "Rep" system entirely.
+Gained from Debrief (1 per Full-success step in the job, if room under 10),
+from a killed Archenemy (+3), and from various Rest/Hunt minor events.
+Spent as +1 to any single roll (1 BOOST), or to upgrade a roll's tier (3
+BOOST, see §2), or on Training (1 BOOST + BONDS per rank).
+
+---
+
+## 5. Currency: BONDS
+
+**BONDS** is the one abstract currency (no separate "Cred" — fully
+replaced). Small numbers, 0–20+.
+
+- **Win condition**: reaching **20 BONDS** ends the game — see §15.
+- **Costs**: gear (1/2/3 BONDS by tier), Medical (1/box), repairs (2 or 3),
+  Training (current attribute rank in BONDS + 1 BOOST), Hireling (1),
+  Coffin Hotel Rest (1).
+- **Mission payout formula**: `payout = 1 + mission.difficulty` (so 2, 3,
+  or 4 BONDS for easy/medium/hard), then a flat employer-relationship
+  adjustment: **+1** if relationship ≥3, **-1** (floored at 1) if
+  relationship ≤-3. At Debrief this base is multiplied by an outcome
+  multiplier (see §11) and further adjusted by an Ally fee and/or a Side
+  Objective bonus.
+- **`mission.difficulty`** (1/2/3) is set at mission generation:
+  `{weak:1, tough:2, elite:3}[worstAdversaryTier]`, bumped to a max of 3 if
+  the mission's Time period is "Long" (3).
+
+---
+
+## 6. Gear
+
+Three tiers, each item belonging to exactly one of three kinds:
+- **Attribute gear** (`attr: "Combat"|"Driving"|"Hacking"|"Social"|"Stealth"`)
+  — grants a passive bonus to any roll of that attribute for as long as
+  it's owned. Bonus = tier value (Street +1, Professional +2, Military +3).
+  Only the single *best* owned item per attribute counts
+  (`bestGearBonus()`); they don't stack.
+- **Heal gear** (`heal: N`) — adds N to the Coffin Hotel healing roll (see
+  §9). Only the best owned heal item counts (`bestHealBonus()`).
+- **Armor** (`armor: N`) — see §4.5. Every owned armor item is eligible
+  (the *first* one found is used per hit — no "best" selection since there's
+  only ever realistically one at a time).
+
+**Tier scale**: Street = 1 BOND / +1 (or 1 charge for armor/heal),
+Professional = 2 BONDS / +2 (2 charges), Military = 3 BONDS / +3 (3
+charges).
+
+**Full catalog** — see Appendix B.
+
+### 6.1 Gear Up (buying, during a Job)
+`genGearOffers(3)` rolls 3 random offers: tier is picked from the weighted
+pool `["Street","Street","Professional","Professional","Military"]` (40%
+Street / 40% Professional / 20% Military), then one random item from that
+tier's full catalog array (all kinds mixed — attr/heal/armor). Buying
+removes BONDS and appends `{name, attr, heal, armor, tier}` to
+`character.gear`; each offer can be bought at most once.
+
+### 6.2 Gear damage (a Fail consequence)
+On certain Fail results (see §10.2 weighted fallout), gear takes damage
+via `degradeGearItem(c, item)`:
+```
+tierOrder = ["Street","Professional","Military"]
+idx = tierOrder.indexOf(item.tier)
+if idx <= 0 (already Street): remove item from gear entirely (lost)
+else: item.tier = tierOrder[idx-1]   // downgrade one tier, item survives
+```
+Different flavor-text pools for "downgraded" vs. "lost for good" (Appendix
+C). A Partial gearDamage result is cheaper and non-destructive: -1 BOND
+("a quick repair"), tier unchanged.
+
+### 6.3 Selling gear (Hub, "Sell Gear" section — shown whenever gear.length > 0)
+- **1 Professional or Military item → 1 BOND**, sold instantly.
+- **2 Street items → 1 BOND.** The first Street item sold is "banked"
+  (`character.pendingSaleItem = item.name`, shown as a note); selling a
+  second Street item pairs with the bank and pays out, clearing the bank.
+- **Fixer bonus**: if the character has any Contact with
+  `profession === "Fixer"` and `relationship >= 3`, every completed sale
+  (the Prof/Mil case, or the paired-Street case) pays **+1 extra BOND**.
+- Selling can push BONDS to 20 and trigger the win screen immediately.
+
+---
+
+## 7. People (the Contact pool / recurring cast)
+
+Every Employer, mission Target, Adversary, and Hireling is drawn from one
+shared pool, `character.contacts` — not always freshly generated. This is
+the game's entire recurring cast.
+
+### 7.1 `getPerson(character, roleCategory, excludeIds)`
+- `roleCategory` is `"hostile"` (opposition: Adversaries, Assassination
+  targets) or `"ally"` (cooperative: Employers, Hirelings, every other
+  mission type's Target).
+- Eligibility: a pooled person qualifies for `"hostile"` roles if
+  `relationship < 0`, for `"ally"` roles if `relationship >= 0`.
+  `excludeIds` (a `Set`, one per Job) prevents casting the same person into
+  two roles in the same job.
+- **80% of the time** (`REUSE_CHANCE = 0.8`), if any eligible pooled person
+  exists, one is picked at random and reused. Otherwise (or if the pool is
+  empty), `genPerson()` creates a new one:
+  ```
+  genPerson() → { name: genName(), faction: genFaction().name, profession: pick(npcProfessions) }
+  ```
+  assigned `id = nextPersonId++`, `relationship = roleCategory==="hostile"
+  ? -randInt(1,2) : 0`, `favor: 0`, and pushed onto `contacts`.
+
+### 7.2 Relationship
+A signed integer, clamped **-5..+5**, per person. `nudgeRelationship(c,
+personId, delta)` is the one mutator; after clamping it also checks: if
+the person is tagged `bloodbrother` and their relationship just went
+negative, they auto-flip to `archenemy` (see §7.3) and a log line fires.
+
+Relationship changes happen at Debrief (Employer ±1/0/-1 by outcome,
+Target +1 on a successful Transport/Hold, Hireling ±1, Ally ±1/-2 — see
+§14), from Combat clashes (-1 to every mission Adversary on any Combat
+roll, tier-independent), from failed Social/Stealth fallout (-1/-2 to the
+Employer), and from the various Rest/Hunt/Bloodbrother events below.
+
+### 7.3 Tags: Archenemy / Bloodbrother
+Mutually exclusive booleans on a contact; `tagArchenemy()`/
+`tagBloodbrother()` (state.js) each clear the other before setting their
+own. `tagArchenemy` also stamps `tier: "tough"` (used for a Hunt-modifier
+penalty, see §13).
+
+**A person becomes an Archenemy from:**
+1. The Rest clock's first tick (`lockInArchenemy` — the single
+   *worst*-relationship contact in the whole pool is chosen and locked in
+   as `character.archenemyId`, the one the clock counts toward).
+2. A **failed Assassination** where at least one Stealth step in that job
+   also came back a Fail — the surviving target is tagged (independent of
+   the clock; can happen to *any* target, and multiple Archenemies can
+   coexist).
+3. A **Bloodbrother's relationship dropping below 0** for any reason
+   (auto-flip, §7.2).
+
+**A person becomes a Bloodbrother from:** succeeding on a job with them as
+a free (relationship ≥5) recruited Ally (§14).
+
+Any contact tagged `archenemy` shows a small **Hunt** button next to their
+name in the sheet's People list (only rendered while `G.phase === "hub"`,
+so it can't interrupt an in-progress job) — clicking it starts a
+player-initiated Hunt (§13).
+
+### 7.4 Death
+`killPerson(character, personId)` removes a contact and moves them to
+`character.graveyard` (`dead: true`); dead people are never redrawn. Deaths
+happen: a successful Assassination kills its target; a failed
+Transport/Hold kills the person being moved/protected; a killed Archenemy
+(Hunt reward) or a killed side-objective Assassination target.
+
+---
+
+## 8. Factions
+
+11 tracked factions (§3), each with a `{wealth, rnd, power}` standing,
+seeded from its **type**'s base stats and eager-initialized for every
+character (shown in the right-hand panel grouped by type, always all 11
+visible):
+
+| Type | wealth | rnd | power |
+|---|---|---|---|
+| Corpo | 8 | 8 | 4 |
+| Crime | 3 | 1 | 6 |
+| Nomad | 4 | 2 | 4 |
+| Authority | 5 | 3 | 8 |
+
+`adjustFactionParam(c, factionName, param, delta)` clamps each stat to
+0–20.
+
+**How standings move** (at Debrief, only on a non-Failure outcome): the
+job's **asset type** (`wealth`/`rnd`/`power` — see §10.1) is the parameter
+moved; for an Assassination it's always `power`. The Employer's faction
+gains +1; if the mission Target belongs to a *different* faction than the
+Employer, that faction loses -1.
+
+**Faction-to-faction relations** (`factionRelations`, a lazy map keyed
+`"<sorted A>|<sorted B>"`, clamped -5..5): if the job's Location Heat ended
+higher than it started (i.e. the job "made noise"), tension rises -1
+between the Employer's faction and the Target's faction (only if they
+differ and both are real tracked factions — never for "Freelance").
+
+---
+
+## 9. Locations & Heat
+
+The 12 locations (§3) are a **fixed, permanent map** — never randomly
+combined, Heat persists forever once rolled.
+
+- **First visit**: `resolveLocation()` rolls Heat via
+  `rollHeatForArea(area)`: Corpo → 1-3, Urban → 0-3, Rural → 0-2. From then
+  on the persisted value is always reused (`rememberLocation` only sets it
+  once).
+- **Heat 4-5** applies a flat **-1** to any Combat or Stealth roll made at
+  that location during a job.
+- **Rises**: +1 on a Combat Fail; +1/+2 on a "heat" fallout effect
+  (partial/fail); capped at 5.
+- **Decays**: every Job's Debrief calls `decayOtherLocations()`, which
+  drops every *other* visited location's Heat by 1 (floored at 0) — only
+  the location the just-finished job happened at is left untouched (it
+  keeps whatever the job's events pushed it to).
+- **Random Encounters** (pre- and post-Job): chance = `heat * 10%`,
+  checked independently before Mission Steps and after (via
+  `maybeTriggerEncounter`). If triggered: one Challenge (Stealth vs. Combat
+  alt, random flavor line from a 5-entry pool) must be resolved before
+  continuing; its outcome runs through the same `applyOutcome`/`applyHarm`
+  pipeline as a normal step, but doesn't cancel the job.
+
+---
+
+## 10. Mission Generation
+
+`genMission(location, character, excludeIds)`:
+
+1. **Type**: uniform random from `["Assassination","Heist","Transport","Delay","Hold"]`.
+2. **Adversaries**: 1-3 (`randInt(1,3)`), each drawn via `getPerson(...,
+   "hostile", ...)` then given a **tier** rolled independently per
+   adversary: `randInt(1,6) + location.heat` → ≥8 elite, ≥5 tough, else
+   weak (`genAdversaryTier`). `worstTier` = the toughest among them.
+   Roll-penalty by tier: weak 0, tough -1, elite -2 (`tierPenalty`).
+3. **Time period** (Delay/Hold only): `randInt(1,3)` = Short/Medium/Long,
+   maps directly to 1-3 repeated Challenge steps.
+4. **Target**: Assassination casts from the `"hostile"` pool (the kill
+   target); every other type casts `"ally"` (the person/cargo being
+   stolen/moved/delayed/held).
+5. **Transport's origin** (`fromLocation`): a second, distinct Location
+   (never the destination) resolved the same way as the main location —
+   the job's primary `location` is always the *destination*.
+6. **Asset type** (Heist/Transport/Hold/Delay only — Assassination has
+   none): `assetType` = random of `wealth`/`rnd`/`power`; `assetFlavor` = a
+   random flavor line from that asset's pool (Appendix D), or a fixed line
+   for Delay ("You don't know what the real op needs...").
+7. **`difficulty`**: `{weak:1,tough:2,elite:3}[worstTier]`, +1 (capped 3)
+   if `timePeriod === 3`.
+
+### 10.1 Mission Sequences (the ordered Challenge steps)
+Fixed per type (`MISSION_SEQUENCES`), each entry `{attr, alt?, desc}`:
+
+| Type | Steps |
+|---|---|
+| Assassination | Stealth "Approach the target undetected." → Combat/Hacking "Take out the target..." → Stealth/Driving "Escape the scene." |
+| Heist | Hacking/Stealth "Breach the security..." → Stealth "Grab the target..." → Driving "Getaway..." |
+| Transport | Driving/Stealth "Run the transit route..." → Social/Combat "Get past a checkpoint..." |
+| Delay | Social/Stealth "Stall them without tipping your hand." (repeated per Time unit) |
+| Hold | Combat/Stealth "Hold the position against the next wave." (repeated per Time unit) |
+
+`buildStepSequence(mission)`: Delay/Hold repeat their single template step
+once per `timePeriod`, each copy suffixed `" (i/timePeriod)"`; all other
+types just copy their fixed array.
+
+### 10.2 Challenge resolution during steps
+Each step: `renderChallenge()` offers a button per available attr (the
+step's primary `attr`, plus `alt` if present) — see §10.3 for gating. Each
+button shows live modifier chips before rolling:
+
+**Modifiers** (`computeModifiers`):
+- Best owned gear bonus for that attr.
+- +1 if a Hireling is assigned to that attr.
+- -1 to Combat/Stealth if Location Heat ≥4.
+- Tier penalty (0/-1/-2) to Combat/Stealth from the mission's `worstTier`.
+- +1 if the player checks "Spend 1 BOOST" (consumes 1 BOOST).
+- +2 if the player checks "Ally Assist" (consumes the job's one-time Ally
+  use, §14).
+- -1 (1 Wounded box) or -2 (2+ boxes).
+- -1 if `permanentInjury`.
+
+**On Full**: logs "Full success on `<attr>`." — no further consequence.
+
+**On Partial/Fail**: logs a random line from `DATA.complications[attr]`
+(2 lines each, partial/fail — Appendix E), then rolls a **weighted fallout
+effect** from `DATA.failOutcomes[attr]` (Appendix F — effects: `harm`,
+`gearDamage`, `credLoss`, `heat`, `relationship`, weighted per attribute).
+If the rolled effect is `gearDamage` on a Fail but the character owns no
+gear, it's redirected to `credLoss`.
+
+Effect resolution (`applyOutcome`):
+- **harm**: `applyHarm(c)` (armor-aware, §4.5); if it results in Down,
+  `resolveDownEvent`; a Combat Fail also +1 Heat.
+- **gearDamage**: Partial = -1 BOND ("quick repair"), gear untouched. Fail
+  = `degradeGearItem` on a random owned item (prefers items matching the
+  rolled attr, else any item) — see §6.2.
+- **heat**: Location Heat +1 (partial) or +2 (fail), capped 5.
+- **relationship**: Employer relationship -1 (partial) or -2 (fail).
+- **credLoss**: lose `min(bonds, 1)` (partial) or `min(bonds, 2)` (fail)
+  BONDS.
+
+**Forced extra steps** (`finalizeStep`, only on the *main* sequence, not
+side-objective steps): 
+- Transport: a Fail on the transit leg (Driving or its Stealth alt)
+  inserts a forced `"Ambushed on the road..."` Combat step immediately
+  after the current one.
+- Any other Stealth Fail (not already a forced step) inserts a forced
+  `"Caught! Fight your way clear or talk your way out."` Combat/Social
+  step.
+
+Going Down mid-sequence (`isDown`) immediately ends the job (Failure,
+straight to Debrief).
+
+### 10.3 Equipment gating (`attrAvailable`)
+Before offering attr buttons, filter out:
+- **Hacking**, unless the character owns any Hacking-attr gear (any tier —
+  "a deck").
+- **Driving**, only when the current step is a Transport transit leg
+  (`mission.type==="Transport"`), `mission.difficulty >= 2`, **and** either
+  the destination or origin location's `area === "Rural"` — unless the
+  character owns any Driving-attr gear ("a vehicle").
+
+**Safety net**: if gating would remove every offered option, it's ignored
+(never hard-lock a step).
+
+### 10.4 Gear Up phase (per-job)
+Screen shown right after accepting a Briefing:
+- 3 rolled offers (§6.1) to buy.
+- **Hireling** (random, alongside/instead of an Ally — mutually exclusive
+  slot): 1 BOND, draws a `"ally"`-role person, assigns them a random attr,
+  grants **+1** to that attr for the whole job (`job.hireling`).
+- **Ally recruitment** ("Call in a Favor" section) — see §14.
+- **"Head Out"** button: calls `advanceFromGearUp()` →
+  `maybeTriggerEncounter("pre")` → Encounter or straight to Steps.
+
+---
+
+## 11. The Job — Full Phase Flow
+
+`Hub → Briefing → GearUp → (Encounter) → Steps → (Encounter) → Debrief → Hub`
+
+`startJob(alreadyRerolled)` builds the job object:
+```
+{
+  employer,           // getPerson(..., "ally", ...)
+  mission,            // genMission(...)
+  excludeIds,         // Set, shared for the whole job's people casting
+  location,           // destination
+  steps,              // buildStepSequence(mission)
+  stepIndex: 0,
+  stepResults: [],    // {attr, tier} per main-sequence step
+  hireling: null,
+  pendingResult: null,
+  rerolled: !!alreadyRerolled,
+  encounter: {pre:{done:false}, post:{done:false}, stage:null},
+  outcome: null,
+  ally: null,          // {person, tier:3|5, used:false}
+  sideObjective: null, // {type, target, results:[]}
+  restStage: null       // "night"|"brothernight"|"brotherfight" mid-roll marker
+}
+```
+
+### 11.1 Briefing
+Shows Employer, Job type + flavor + **Payout** (same visual size as "Job",
+§5 formula), mission-specific fields (§11.5), any accepted side objective,
+Location + Heat bar, and the Opposition list. Buttons:
+- **Accept the Job** → GearUp.
+- **Take on a side job (+2 BONDS)** — see §12 — hidden once already taken.
+- **Rest in Comfy Coffin Hotel (1 BOND)** — disabled once `rerolled` is
+  true for this search, or if BONDS <1.
+- **Night on the Street (Free)** — always enabled, no once-per-search
+  limit.
+- **Spend the Night with `<Bloodbrother>` (Free)** — only shown if the
+  character has a Bloodbrother contact; always enabled.
+- All three Rest options reroll into a brand-new job afterward (carrying
+  `rerolled: true` forward) — see §9 of the Rest section (§12).
+
+### 11.2 Random Encounter (pre)
+`maybeTriggerEncounter("pre")` — see §9. If triggered, one Challenge
+(Stealth/Combat) must be resolved before Steps begin.
+
+### 11.3 Mission Steps
+`renderSteps()` shows the current step's description and Challenge UI
+(§10.2). Each resolution advances `stepIndex`; reaching the end triggers
+the post-Encounter check, then Debrief.
+
+### 11.4 Random Encounter (post)
+Same mechanic, checked once all steps are done, before Debrief.
+
+### 11.5 Mission-specific Briefing fields
+- **Assassination**: Target (name, profession, faction).
+- **Heist**: Target (name, profession, faction) + "Word is" asset flavor.
+- **Transport**: Cargo (target name) + Route (`from → to`) + asset flavor.
+- **Delay/Hold**: Time (Short/Medium/Long, N rounds) + asset flavor.
+
+---
+
+## 12. Rest (replaces the old "Pass")
+
+Three ways to decline the current Briefing and (mostly) reroll into a new
+one, all funneled through `processRestTick()`:
+
+### 12.1 Rest in Comfy Coffin Hotel — 1 BOND
+Gated to once per job search (`rerolled`). Immediate roll, no UI: `2d6 +
+Combat rank + bestHealBonus(c)` vs.:
+- **10+**: heal 1 box if any are marked.
+- **7-9**: heal 1 box **only if exactly 1** is currently marked.
+- **≤6**: nothing.
+
+### 12.2 Night on the Street — Free, always available
+Reuses the generic Challenge UI directly: pick **Combat** or **Social**,
+roll with full modifiers (gear, Wounded, BOOST, etc. — same
+`computeModifiers` pipeline as a mission step, since it borrows the current
+job object). Resolution:
+- **Full**: heal 1 box.
+- **Partial**: nothing.
+- **Fail**: `applyHarm(c)` (armor-aware).
+Flavor: Combat = "a tough street night", Social = "talking your way into a
+shelter".
+
+### 12.3 Spend the Night (BLOODBROTHER only) — Free, always available
+Social-only Challenge roll ("Spend the night."):
+- **10+**: Bloodbrother relationship +1, plus a random gift
+  (`grantBloodbrotherGift`): a free Street-tier item in an attr category
+  the player doesn't yet own (picked at random among missing categories),
+  else (if all 5 owned) heal 1 box if wounded, else +1 BOOST.
+- **7-9**: heal 1 box; if BOOST >0, also -1 BOOST ("hangover").
+- **≤6**: triggers a **nested** Combat roll (`"brotherfight"` stage,
+  "Fight your way clear."):
+  - **Full**: +1 BOOST.
+  - **Partial**: Bloodbrother's own relationship -1 (no faction-standing
+    scalar exists, so this is the closest analog), no other cost.
+  - **Fail**: `applyHarm(c)`.
+
+### 12.4 The Rest clock → Archenemy Hunt
+`processRestTick()`, called after any of the three above resolve:
+```
+c.restCount++
+if restCount == 1: lockInArchenemy(c)   // §7.3 — worst-relationship contact locked in
+if restCount >= 4:
+  restCount = 0
+  clear G.job
+  startHunt()     // forced Hunt against the locked-in archenemyId (§13)
+else:
+  startJob(true)   // reroll into a new Briefing, rerolled=true
+```
+
+---
+
+## 13. The Archenemy Hunt
+
+A bespoke mini state machine, `G.hunt`, entered via two paths:
+- **`startHunt()`** — the Rest clock's forced trigger (§12.4). Opens on
+  stage `"notice"`. If the locked-in archenemy is somehow already dead
+  (e.g. killed by a normal Assassination job first), it's a no-op back to
+  Hub.
+- **`startHuntManual(personId)`** — clicking the Hunt button on any
+  Archenemy-tagged contact from the Hub (§7.3). Opens on stage `"track"`.
+
+```
+G.hunt = { archenemy, stage, wounds: 0, combatBonus: 0, combatChoice: null,
+           pendingResult: null, bloodbrotherUsed: false }
+```
+
+Every Hunt roll (`renderHuntRoll`) uses its own trimmed modifier set (no
+`G.job` involved): best owned gear bonus for the attr, a tier penalty from
+the archenemy's fixed `"tough"` tier (-1), an optional one-time
+`extraBonus` passed in per-stage, +1 for spending BOOST, +2 for calling in
+a Bloodbrother assist (once per Hunt, if one exists), -1/-2 Wounded,
+-1 Permanent Injury.
+
+**Bail-out options** (`renderHuntEscape`, offered on most stages, hidden
+mid-roll): "Try to Slip Away (Stealth)" jumps to `avoid`; "Try to Run
+(Driving)" jumps to `run`.
+
+### 13.1 Stage: `notice` (clock-triggered entry)
+Social roll, "Something's off tonight. Do you notice `<name>` closing in?"
+- **Fail**: "...a car swerves out of nowhere — `<name>` comes out guns
+  blazing!" → stage `combat`, no bonus.
+- **Partial**: → stage `choice`, no bonus.
+- **Full**: "You have managed to ambush `<name>`..." → stage `choice`,
+  `combatBonus = 2` (consumed on the next Attack roll only).
+Escape row: both Avoid and Run offered.
+
+### 13.2 Stage: `track` (manual entry)
+Social roll, "Tracking down `<name>`."
+- **Full**: ambush, `combatBonus = 2` → stage `combat` directly (no choice
+  offered — you initiated this).
+- **Partial**: → stage `choice`, no bonus.
+- **Fail**: "...guns blazing!" + `applyHarm(c)` immediately → stage
+  `choice`.
+Escape row: both Avoid and Run offered.
+
+### 13.3 Stage: `choice`
+Three buttons, no roll: **Avoid** (Stealth) → `avoid`; **Run** (Driving)
+→ `run`; **Fight** → `combat`.
+
+### 13.4 Stage: `avoid`
+Stealth roll, "Slip past `<name>`..."
+- **Fail**: → stage `combat` (forced fight).
+- **Partial/Full**: → stage `resolved-evade` (Hunt ends clean).
+Escape row: Run only (Avoid is redundant here).
+
+### 13.5 Stage: `combat`
+Two/three buttons (no `combatChoice` set yet): **Attack**, **Run
+(Driving)**, **Break Off (Stealth)** (→ `avoid`).
+- **Attack** (Combat roll, `combatBonus` applied once then cleared):
+  - Fail: a Combat-complication line + `applyHuntCombatFailFallout` — a
+    weighted pick from `failOutcomes.Combat`: `harm`→`applyHarm` (+Down
+    check), `gearDamage`→`degradeGearItem` on a random owned item,
+    `credLoss`→ -1 BOND. No wound scored.
+  - Partial/Full: `wounds++`. At **3 wounds**: `applyHuntKillReward` (see
+    §13.8). At **2 wounds**: archenemy "breaks and runs" → stage `chase`.
+- **Run**: → `renderHuntRun` (§13.6), reached the same way whether entered
+  from here or from an escape button elsewhere.
+
+### 13.6 The Run roll (shared, stage `run` or `combatChoice==="run"`)
+Driving roll, "Gun it and try to lose `<name>`."
+- **Full**: → `resolved-run-clean` (clean break, no cost).
+- **Partial**: `applyHarm(c)` → `resolved-run-hit`.
+- **Fail**: `applyHarm(c)`, then a 50/50 between `degradeGearItem` on a
+  random item OR losing `randInt(1,2)` BONDS → `resolved-run-bad`.
+
+### 13.7 Stage: `chase` (only reachable at 2 wounds)
+Driving roll, "`<name>` is wounded and running. Do you chase them down?"
+- **Full**: `wounds = 3` → `applyHuntKillReward`.
+- **Partial**: → `resolved-escape-win` (archenemy survives, but "the
+  fight's over").
+- **Fail**: → `resolved-escape-clean` (clean getaway for them).
+Also offers a no-roll **"Let Them Go"** button → `resolved-escape-clean`
+directly (the chase-specific bail option — no Stealth/Driving roll fits
+"give up mid-chase").
+
+### 13.8 Kill reward (`applyHuntKillReward`, any path reaching 3 wounds)
+- A free random **Professional-tier Combat** item added to gear.
+- `+3 BOOST` (capped 10).
+- `+2 BONDS` — can trigger the win screen.
+- `killPerson()` on the archenemy.
+- → stage `resolved-kill`.
+
+### 13.9 Resolution screen
+Every `resolved-*` stage renders a one-line summary (Appendix G has the
+exact text per outcome) + a **"Return to the Street"** button, which clears
+`G.hunt` and routes to `win` (if BONDS ≥20) or `hub`.
+
+**No Hunt outcome resets restCount again** — the clock was already zeroed
+the moment the Hunt was triggered (§12.4); only kill/evade/escape *state*
+differs, not clock accounting.
+
+---
+
+## 14. Ally Recruitment & Bloodbrother
+
+Shown in Gear Up as **"Call in a Favor"**, listing every Contact with
+`relationship >= 3` and not tagged `archenemy` — mutually exclusive with
+the random Hireling (picking either hides the other's UI for that job).
+
+- **Relationship 3-4**: "Bring along" → free to add, but **pays 1 BOND
+  from the job's payout** at Debrief if the job succeeds.
+- **Relationship ≥5**: "Bring along" → completely **free**.
+
+Either way: `job.ally = {person, tier: rel>=5?5:3, used:false}`, and a
+**one-time "+2 to this roll" checkbox** appears on every subsequent
+Challenge roll in the job (mission steps, encounters) alongside the BOOST
+checkbox — using it sets `used:true`, spent for the rest of the job.
+
+**Debrief resolution:**
+- Success (Full or Partial): Ally relationship **+1**. Tier 3: **-1 BOND**
+  off the payout (min bonds, floored at 0). Tier 5: **tagBloodbrother()**
+  on them.
+- Failure: Ally relationship **-2**, no payment either way (Failure always
+  pays 0 total).
+
+Once someone is a Bloodbrother: they unlock **Spend the Night** (§12.3) in
+Briefing and can be **called in for +2 on any Hunt roll**, once per Hunt
+(§13, `bloodbrotherUsed`).
+
+---
+
+## 15. Side Objective ("More BONDS")
+
+A Briefing-only toggle, **"Take on a side job (+2 BONDS)"**, hidden once
+taken. On click (`takeSideJob`):
+```
+type = random(Heist, Assassination)
+target = getPerson(c, type==="Assassination" ? "hostile" : "ally", job.excludeIds)
+extraSteps = MISSION_SEQUENCES[type].slice(1)   // drop the shared first "approach" step
+  .map(step => ({...step, desc: "[Side job — <target>] " + step.desc, sideObjective:true}))
+job.steps.push(...extraSteps)   // appended to the end of the main sequence
+job.sideObjective = {type, target, results: []}
+```
+Side-objective steps run through the exact same Challenge pipeline as main
+steps, but their results are tracked *separately*
+(`job.sideObjective.results`, not `job.stepResults`) — a botched side job
+can never affect the main contract's success ratio.
+
+**Debrief**: if `job.sideObjective` exists and **neither** of its two
+results came back `"fail"`, it pays **+2 BONDS** and, if the type was
+Assassination, kills the side target. Any fail on either step: no bonus,
+target unaffected, one log line noting the side job fell through.
+
+---
+
+## 16. Debrief
+
+`runDebrief()`:
+```
+score = sum over job.stepResults of (full=2, partial=1, fail=0)
+ratio = score / max(1, stepResults.length * 2)
+
+if isDown(c):            outcome="Failure", mult=0
+elif ratio >= 0.85:       outcome="Full Success", mult=1
+elif ratio >= 0.4:        outcome="Partial Success", mult=0.6
+else:                     outcome="Failure", mult=0
+```
+(Only `job.stepResults` — the *main* sequence — feeds this ratio; side
+objective results never do.)
+
+`payout = round(estimatePayout(job) * mult)`, added to BONDS immediately.
+Then, in order:
+1. **BOOST**: +1 per Full-success step (capped 10 total).
+2. **Employer relationship**: +1 (Full Success) / 0 (Partial) / -1
+   (Failure).
+3. **Faction standings + relations** (§8), only if not Failure.
+4. **Target outcome** (§7.4 deaths / Archenemy tagging §7.3, §10 — full
+   detail there).
+5. **Hireling relationship**: +1 (non-Failure) / -1 (Failure).
+6. **Ally resolution** (§14).
+7. **Side objective resolution** (§15).
+8. **Location decay** (§9).
+
+Final `job.payout` is the sum of the base payout plus/minus the Ally fee
+and Side Objective bonus — shown on the Debrief screen along with a
+full/partial/fail step tally. **"Return to the Street"** clears `G.job`
+and routes to `win` (if BONDS ≥20) or `hub`.
+
+---
+
+## 17. Win Condition
+
+`checkWinCondition()` = `character.bonds >= 20`. Checked at load
+(`init()`) and at every point control would otherwise route to Hub
+(Debrief's button, a Hunt resolution's button, a completed gear Sale).
+
+**Win screen** ("Ticket Off-World"): flavor text about buying passage off-
+world with the BONDS; **"Start a New Runner"** clears the save entirely and
+returns to Character Creation.
+
+---
+
+## 18. Save Migration
+
+`migrateCharacter(character)` runs on every `load()`, backfilling fields
+that didn't exist in older saves (never destructive to gameplay-relevant
+data unless the field genuinely didn't exist):
+- `graveyard`, `contacts` default to `[]`.
+- Every contact gets a stable `id` (assigned sequentially if missing) and
+  `relationship`/`profession` defaults; `nextPersonId` derived from the max
+  seen + 1.
+- `permanentInjury` defaults `false`.
+- `boost`: if missing, summed from a legacy per-track `rep` object (now
+  deleted) — a one-time value-preserving conversion from an earlier
+  Rep-track design.
+- `factionStandings`/`factionRelations` default via `defaultFactionStandings()`/`{}`.
+- Every gear item without a `tier` gets `"Street"`.
+- `bonds`: if missing, derived from a legacy `cred` field (`round(cred /
+  100)`, floored at 0) — the Cred→BOND currency-rescale conversion; `cred`
+  is then deleted.
+- `restCount` defaults `0`, `archenemyId` defaults `null`,
+  `pendingSaleItem` defaults `null`.
+
+---
+
+## Appendix A — Names
+**First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
+Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
+Zofia, Tomas, Léa, Viktor.
+
+**Handles (20)**: Ferro, Nera, Lupo, Fenrir, Ravn, Sabel, Noir, Vlk, Krähe,
+Ombra, Falke, Ghiaccio, Corvo, Mrok, Volkov, Eisen, Blitz, Rook, Kilo,
+Sturm.
+
+A generated name is always `"<first> \"<handle>\""`.
+
+## Appendix B — Full Gear Catalog
+| Tier | Combat (×2) | Stealth | Driving | Hacking | Social | heal | armor |
+|---|---|---|---|---|---|---|---|
+| Street (1 BOND) | Kessler Snub, Rusted Stiletto | Grigio Overcoat | Ostrava Runner | Bootleg Deck | Kiosk Chits | Field Trauma Wrap (1) | Padded Vest (1) |
+| Professional (2 BONDS) | Halvar Sidearm, Monofilament Edge | Notte Milano | Voss Coupé | Rime Breaker | Broker's Black Book | Dermal Weave (2) | Kevlar Weave Jacket (2) |
+| Military (3 BONDS) | Sturmgewehr SMG, Raptor Talons | Ombra Couture | Panzer AV | Blackline Shard | Ledger of Favors | MedCorp Platinum Chit (3) | Composite Plate (3) |
+
+(The Stealth line is deliberately named like fashion labels — "Clothing".)
+
+## Appendix C — Gear damage flavor
+- Partial (repair, no tier change): "A close call bends something —
+  you'll need a quick repair." / "Your gear takes a knock; nothing lost,
+  but it'll cost to fix."
+- Fail, final loss (already Street): "Wrecked beyond repair — you lose the
+  piece for good." / "It's trashed in the scuffle; that one's gone."
+- Fail, downgraded (survives): "It takes a beating but holds together —
+  knocked down a grade." / "Banged up bad; it'll still work, just not like
+  it used to."
+
+## Appendix D — Asset flavor (Heist/Transport/Hold/Delay)
+- **wealth**: "a case of untraceable BONDS", "a shipment of black-market
+  luxury goods", "a stash of counterfeit chits"
+- **rnd**: "a prototype cyberware core", "an encrypted R&D data shard", "a
+  stolen weapons blueprint"
+- **power**: "a crate of military-grade hardware", "a cache of restricted
+  munitions", "a captured enforcer"
+- **Delay** always uses: "You don't know what the real op needs from this
+  — could be anything. You're just buying time for someone else's job."
+
+## Appendix E — Complications (Partial/Fail flavor per attribute)
+| Attr | Partial | Fail |
+|---|---|---|
+| Combat | "You land it, but take a hit doing it." / "It works, but you burn through your ammo/charge." | "You catch a bad hit." / "You're pinned down and the shooting draws attention." |
+| Driving | "You make it, but scrape the vehicle up badly." / "You get there, but had to take the ugly route." | "You crash — the vehicle takes damage and so do you." / "You lose control and end up somewhere you didn't plan." |
+| Hacking | "You're in, but you trip a partial alarm." / "It works, but a trace starts crawling toward you." | "Full trace — ICE burns your deck and every camera in the block just woke up." / "The system locks you out hard and pings security." |
+| Social | "They go for it, but now you owe them one." / "You get the info, but they remember your face." | "They see right through you." / "Word gets back to the wrong people." |
+| Stealth | "You slip by, but someone clocks movement." / "You're through, barely — they know something's off now." | "You're spotted cold." / "A patrol catches you mid-move." |
+
+## Appendix F — Weighted Fallout Table (relative weights)
+| Attr | harm | gearDamage | credLoss | heat | relationship |
+|---|---|---|---|---|---|
+| Combat | 50 | 30 | 20 | – | – |
+| Driving | 35 | 45 | 20 | – | – |
+| Hacking | – | 35 | 25 | 40 | – |
+| Social | – | – | 35 | 25 | 40 |
+| Stealth | – | 20 | – | 55 | 25 |
+
+## Appendix G — Hunt resolution summary lines
+| Stage | Text |
+|---|---|
+| resolved-evade | "You give `<name>` the slip. For now." |
+| resolved-run-clean | "You put real distance between you and `<name>` tonight." |
+| resolved-run-hit | "Banged up, but clear. `<name>` is still out there." |
+| resolved-run-bad | "Ugly getaway, but a getaway. `<name>` is still out there." |
+| resolved-escape-win | "You come out on top, but `<name>` slips away to lick their wounds." |
+| resolved-escape-clean | "`<name>` gets away clean. This isn't over." |
+| resolved-kill | "`<name>` won't be a problem again." |
+
+## Appendix H — Encounter flavor (random, pre/post-job)
+"A patrol rounds the corner right into your path." / "A rival crew is
+working the same block." / "A drone sweep pings something out of place." /
+"A fixer's runner recognizes you from a past job." / "Corp security is
+doing a routine sweep tonight."
+
+## Appendix I — CSS design tokens (for a faithful visual rebuild)
+Dark theme, monospace-adjacent UI: `--bg:#0b0d12, --panel:#12151c,
+--panel-2:#171b24, --border:#262c38, --text:#d8dee9, --muted:#7c8496,
+--accent:#00e5c7 (teal), --accent-2:#ff2e63 (pink/red headers),
+--warn:#ffb703 (amber, BONDS/BOOST numbers), --danger:#ff4d4d`. 3-column
+CSS grid (260px / 1fr / 320px), collapsing to 1 column under 980px. Cards
+have rounded corners (8px), a max-width of 640px. A 5-segment Heat bar and
+a reused 4-segment Rest-clock bar are small colored squares (filled =
+`--danger`). Font: `"Segoe UI", system-ui, sans-serif`.
