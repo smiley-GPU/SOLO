@@ -17,11 +17,18 @@ function init() {
   const loaded = load();
   if (loaded) {
     G.character = loaded;
-    G.phase = "hub";
+    G.phase = checkWinCondition() ? "win" : "hub";
   } else {
     G.phase = "create";
   }
   render();
+}
+
+// 20 BONDS = game win (todo3.md) — call after anything that can push bonds
+// up, at whatever point control next reaches the Hub. Returns whether the
+// win condition is met (callers use this to pick "win" vs "hub").
+function checkWinCondition() {
+  return !!G.character && G.character.bonds >= 20;
 }
 
 function persist() {
@@ -75,30 +82,43 @@ function renderSheet() {
   if (!c) { els.sheet.innerHTML = ""; return; }
   const attrRows = Object.entries(c.attrs).map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
-  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name}${g.attr ? ` <em>(${g.tier || "Street"} ${g.attr})</em>` : ""}</li>`).join("") : "<li><em>none</em></li>";
+  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name} <em>(${g.tier || "Street"}${g.attr ? ` ${g.attr}` : g.heal ? " heal" : ""})</em></li>`).join("") : "<li><em>none</em></li>";
   // "People" is the full recurring-cast pool, not just friendly contacts —
   // Adversaries and Targets you've crossed paths with end up here too, with
   // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
-  const contactList = c.contacts.map(ct => `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})</li>`).join("");
+  const contactList = c.contacts.map(ct => `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})${ct.id === c.archenemyId ? ` <span class="archenemy-badge">⚠ Archenemy</span>` : ""}</li>`).join("");
   const graveyardSection = c.graveyard && c.graveyard.length
     ? `<div class="section"><h3>Graveyard</h3><ul>${c.graveyard.map(p => `<li>${p.name} — ${p.faction}</li>`).join("")}</ul></div>`
     : "";
   // The permanent 12-location map (gamedesc.md §6) — fills in as you visit.
   const locationsList = Object.entries(c.locations).map(([name, loc]) => `<li>${name} ${heatBarHtml(loc.heat)}</li>`).join("");
   const injuryBadge = c.permanentInjury ? `<div class="injury-badge">⚠ Permanent Injury — needs repair</div>` : "";
+  // Rest clock (todo3.md) — 4 Rest uses builds toward an Archenemy Hunt.
+  const restClock = c.restCount > 0
+    ? `<div class="section"><h3>Someone's Asking Around</h3><span class="heatbar">${Array.from({ length: 4 }, (_, i) => `<span class="heatseg${i < c.restCount ? " filled" : ""}"></span>`).join("")}</span></div>`
+    : "";
 
   els.sheet.innerHTML = `
-    <h2>${c.name}</h2>
+    <div class="sheet-header"><h2>${c.name}</h2><button id="retire-btn" class="danger btn-small">Retire</button></div>
     <div class="tag">${c.profession} / ${c.turf}</div>
     <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${injuryBadge}</div>
-    <div class="section"><h3>Cred</h3><div class="cred">¥${c.cred}</div></div>
+    <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
     <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
     <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
     ${graveyardSection}
     <div class="section"><h3>Locations</h3><ul>${locationsList || "<li><em>none visited yet</em></li>"}</ul></div>
+    ${restClock}
   `;
+  els.sheet.querySelector("#retire-btn").addEventListener("click", () => {
+    if (confirm("Retire this runner and start a new save? This cannot be undone.")) {
+      clearSave();
+      G.character = null;
+      G.phase = "create";
+      render();
+    }
+  });
 }
 
 function renderMain() {
@@ -110,7 +130,9 @@ function renderMain() {
     gearup: renderGearUp,
     encounter: renderEncounter,
     steps: renderSteps,
-    debrief: renderDebrief
+    debrief: renderDebrief,
+    hunt: renderHunt,
+    win: renderWin
   }[G.phase];
   if (fn) fn();
   els.main.appendChild(renderJournal());
@@ -161,11 +183,11 @@ function renderHub() {
 
   const medBtn = document.createElement("button");
   const openWounds = c.health.filter(h => h).length;
-  medBtn.textContent = `Medical (¥100 / box) — ${openWounds} wound(s)`;
+  medBtn.textContent = `Medical (1 BOND / box) — ${openWounds} wound(s)`;
   // Band-aids don't touch a Permanent Injury — that needs a real repair below.
-  medBtn.disabled = openWounds === 0 || c.cred < 100 || c.permanentInjury;
+  medBtn.disabled = openWounds === 0 || c.bonds < 1 || c.permanentInjury;
   medBtn.addEventListener("click", () => {
-    c.cred -= 100;
+    c.bonds -= 1;
     healBox(c);
     addLog(c, "You get patched up at a ripperdoc's clinic.");
     persist(); render();
@@ -178,11 +200,11 @@ function renderHub() {
     repairSection.innerHTML = "<h3>Permanent Injury</h3><p class=\"muted\">Every roll takes -1 until this is fixed.</p>";
     DATA.repairs.forEach(r => {
       const btn = document.createElement("button");
-      btn.textContent = `${r.name} — ¥${r.price}`;
+      btn.textContent = `${r.name} — ${r.price} BOND${r.price === 1 ? "" : "S"}`;
       btn.title = r.flavor;
-      btn.disabled = c.cred < r.price;
+      btn.disabled = c.bonds < r.price;
       btn.addEventListener("click", () => {
-        c.cred -= r.price;
+        c.bonds -= r.price;
         c.health = [false, false, false];
         c.permanentInjury = false;
         if (r.sideEffect) {
@@ -203,12 +225,12 @@ function renderHub() {
   train.className = "section";
   train.innerHTML = "<h3>Training</h3>";
   Object.entries(c.attrs).forEach(([attr, rank]) => {
-    const cost = (rank + 1) * 150;
+    const cost = rank; // rank 1→2 costs 1 BOND, 2→3 costs 2, … (todo3.md BOND scale)
     const btn = document.createElement("button");
-    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ¥${cost} + 1 BOOST`;
-    btn.disabled = rank >= 5 || c.cred < cost || c.boost < 1;
+    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ${cost} BOND${cost === 1 ? "" : "S"} + 1 BOOST`;
+    btn.disabled = rank >= 5 || c.bonds < cost || c.boost < 1;
     btn.addEventListener("click", () => {
-      c.cred -= cost;
+      c.bonds -= cost;
       c.boost -= 1;
       c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
       addLog(c, `You spend BOOST training ${attr} to ${c.attrs[attr]}.`);
@@ -217,19 +239,6 @@ function renderHub() {
     train.appendChild(btn);
   });
   wrap.appendChild(train);
-
-  const reset = document.createElement("button");
-  reset.className = "danger";
-  reset.textContent = "Retire this Runner (new game)";
-  reset.addEventListener("click", () => {
-    if (confirm("Retire this runner and start a new save? This cannot be undone.")) {
-      clearSave();
-      G.character = null;
-      G.phase = "create";
-      render();
-    }
-  });
-  wrap.appendChild(reset);
 
   els.main.appendChild(wrap);
 }
@@ -270,31 +279,116 @@ function renderBriefing() {
   wrap.className = "card";
   const adversaryList = mission.adversaries.map(a => `<li>${a.name} — ${a.profession} (${a.tier})</li>`).join("");
   const fieldRows = missionFieldRows(mission);
+  const payout = estimatePayout(G.job);
   wrap.innerHTML = `
     <h2>Mission Briefing</h2>
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
-    <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}</p>
+    <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}<br><strong>Payout:</strong> ${payout} BOND${payout === 1 ? "" : "S"}</p>
     ${fieldRows}
     <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction} turf` : ""}) — Heat ${location.heat} ${heatBarHtml(location.heat)}</p>
     <p><strong>Opposition:</strong></p><ul>${adversaryList}</ul>
-    <p class="muted">Estimated payout: ¥${estimatePayout(G.job)}</p>
   `;
+  els.main.appendChild(wrap);
+
+  // Mid-roll on the free "Night on the Street" option — show the Challenge
+  // UI in place of the accept/rest buttons until it resolves.
+  if (G.job.restStage === "night") {
+    const nightWrap = document.createElement("div");
+    nightWrap.innerHTML = `<h4>Where do you lay low tonight?</h4>`;
+    wrap.appendChild(nightWrap);
+    renderChallenge(nightWrap, { attr: "Combat", alt: "Social", desc: "Where do you lay low tonight?" }, finishNightOnStreet);
+    return;
+  }
+
   const acceptBtn = document.createElement("button");
   acceptBtn.textContent = "Accept the Job";
   acceptBtn.addEventListener("click", () => { G.phase = "gearup"; persist(); render(); });
   wrap.appendChild(acceptBtn);
 
-  const rerollBtn = document.createElement("button");
-  rerollBtn.textContent = "Pass — find something else (¥20)";
-  rerollBtn.disabled = G.job.rerolled || G.character.cred < 20;
-  rerollBtn.addEventListener("click", () => {
-    G.character.cred -= 20;
-    addLog(G.character, "You pass on the job and put the word out for something else.");
-    startJob(true);
-  });
-  wrap.appendChild(rerollBtn);
+  // Rest replaces the old Pass reroll (todo3.md) — two flavors, both gated
+  // by the same once-per-search rule Pass used (G.job.rerolled).
+  const restBtn = document.createElement("button");
+  restBtn.textContent = "Rest in Comfy Coffin Hotel (1 BOND)";
+  restBtn.disabled = G.job.rerolled || G.character.bonds < 1;
+  restBtn.addEventListener("click", () => restCoffinHotel());
+  wrap.appendChild(restBtn);
 
-  els.main.appendChild(wrap);
+  const nightBtn = document.createElement("button");
+  nightBtn.textContent = "Night on the Street (Free)";
+  nightBtn.disabled = G.job.rerolled;
+  nightBtn.addEventListener("click", () => { G.job.restStage = "night"; persist(); render(); });
+  wrap.appendChild(nightBtn);
+}
+
+// ---------- REST (Coffin Hotel / Night on the Street — todo3.md) ----------
+// The paid option: a flat BOND cost and a quick, un-rolled-on-screen 2d6 vs
+// the same 10+/7-9/6- thresholds every Challenge uses, modified by Combat
+// rank and any owned "health gear or body modification" (bestHealBonus).
+function restCoffinHotel() {
+  const c = G.character;
+  c.bonds -= 1;
+  const { sum } = roll2d6();
+  const total = sum + c.attrs.Combat + bestHealBonus(c);
+  const openWounds = c.health.filter(h => h).length;
+  if (total >= 10) {
+    if (openWounds > 0) { healBox(c); addLog(c, `You crash hard in a coffin pod and wake up steadier (rolled ${total}).`); }
+    else addLog(c, `You crash hard in a coffin pod — nothing to shake off, just a clean night's sleep (rolled ${total}).`);
+  } else if (total >= 7) {
+    if (openWounds === 1) { healBox(c); addLog(c, `A rough night, but you shake off the one thing bothering you (rolled ${total}).`); }
+    else addLog(c, `A rough night in the pod — you're still carrying what you came in with (rolled ${total}).`);
+  } else {
+    addLog(c, `You barely sleep in the pod, jumpy all night (rolled ${total}).`);
+  }
+  processRestTick();
+}
+
+// The free option reuses renderChallenge()'s Combat/Social pick + roll UI
+// as-is (see renderBriefing above) instead of a bespoke roll, since the
+// shape — pick an attr, roll 2d6+attr+mods — is identical to any Challenge.
+function finishNightOnStreet() {
+  const c = G.character;
+  const job = G.job;
+  const res = job.lastResult;
+  const flavor = res.usedAttr === "Combat" ? "a tough street night" : "talking your way into a shelter";
+  if (res.tier === "full") {
+    healBox(c);
+    addLog(c, `You get through ${flavor} — and actually catch some real rest.`);
+  } else if (res.tier === "fail") {
+    const wentDown = markHarm(c);
+    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+    addLog(c, `It's ${flavor}, and it costs you — you catch a hit out there.`);
+  } else {
+    addLog(c, `It's ${flavor}. You get by, nothing more.`);
+  }
+  job.pendingResult = null;
+  job.restStage = null;
+  processRestTick();
+}
+
+// Shared by both Rest flavors: ticks the clock toward an Archenemy Hunt
+// (todo3.md), locking in the Archenemy on the first use, then either
+// rerolls the job search (as Pass used to) or, at 4 uses, launches the Hunt.
+function processRestTick() {
+  const c = G.character;
+  c.restCount++;
+  if (c.restCount === 1) lockInArchenemy(c);
+  if (c.restCount >= 4) {
+    c.restCount = 0;
+    G.job = null;
+    persist();
+    startHunt();
+    return;
+  }
+  startJob(true);
+}
+
+function lockInArchenemy(c) {
+  if (!c.contacts.length) return;
+  const worst = c.contacts.reduce((min, p) => p.relationship < min.relationship ? p : min, c.contacts[0]);
+  c.archenemyId = worst.id;
+  worst.archenemy = true;
+  worst.tier = "tough";
+  addLog(c, `Word's out that ${worst.name} has a real problem with you. Someone's asking around about where you sleep.`);
 }
 
 function missionFieldRows(mission) {
@@ -317,12 +411,15 @@ function missionFieldRows(mission) {
   }
 }
 
+// BOND payout is a flat 1/2/3 off the mission's difficulty (todo3.md), not a
+// scaled Cred formula — relationship at this scale is a flat ±1 instead of
+// a percentage.
 function estimatePayout(job) {
-  const base = 100 + job.steps.length * 50 + job.location.heat * 20;
-  // Employer relationship shifts pay ±8% per point (clamped -5..5, so
-  // roughly 0.6x-1.4x): work for people you're square with, get paid better.
-  const relMult = 1 + (job.employer.relationship || 0) * 0.08;
-  return Math.round(base * relMult);
+  let payout = job.mission.difficulty || 1;
+  const rel = job.employer.relationship || 0;
+  if (rel >= 3) payout += 1;
+  else if (rel <= -3) payout = Math.max(1, payout - 1);
+  return payout;
 }
 
 // A small 5-segment Heat indicator, e.g. for Briefing and the Locations
@@ -340,22 +437,20 @@ function renderGearUp() {
 
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Better gear gives a lasting bonus to its matching Challenge — Professional +1, Military +2 — for as long as you own it.</p>`;
+  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Price is tied to quality — Street 1 BOND (+1), Professional 2 BONDS (+2), Military 3 BONDS (+3) — for as long as you own it.</p>`;
 
-  // A friendly Employer relationship also gets you a better rate from their
-  // fixer, ±4% per point (clamped -5..5, so roughly 0.8x-1.2x).
-  const priceMult = 1 - (job.employer.relationship || 0) * 0.04;
   job.offers.forEach(item => {
-    const price = Math.max(10, Math.round(item.price * priceMult));
+    const price = item.price;
     const row = document.createElement("div");
     row.className = "offer";
-    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${item.attr})</em></span><span>¥${price}</span>`;
+    const kind = item.attr ? item.attr : "heal";
+    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${kind})</em></span><span>${price} BOND${price === 1 ? "" : "S"}</span>`;
     const btn = document.createElement("button");
     btn.textContent = item.bought ? "Bought" : "Buy";
-    btn.disabled = c.cred < price || item.bought;
+    btn.disabled = c.bonds < price || item.bought;
     btn.addEventListener("click", () => {
-      c.cred -= price;
-      c.gear.push({ name: item.name, attr: item.attr, tier: item.tier });
+      c.bonds -= price;
+      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, tier: item.tier });
       item.bought = true;
       addLog(c, `You pick up a ${item.name} for the job — yours to keep.`);
       persist(); render();
@@ -369,12 +464,12 @@ function renderGearUp() {
   if (job.hireling) {
     hireRow.innerHTML = `<span>Hired: ${job.hireling.name} (+1 ${job.hireling.attr})</span>`;
   } else {
-    hireRow.innerHTML = `<span>Hire backup for this job</span><span>¥150</span>`;
+    hireRow.innerHTML = `<span>Hire backup for this job</span><span>1 BOND</span>`;
     const btn = document.createElement("button");
     btn.textContent = "Hire";
-    btn.disabled = c.cred < 150;
+    btn.disabled = c.bonds < 1;
     btn.addEventListener("click", () => {
-      c.cred -= 150;
+      c.bonds -= 1;
       const person = getPerson(c, "ally", job.excludeIds);
       const attr = pick(["Combat", "Driving", "Hacking", "Social", "Stealth"]);
       job.hireling = { ...person, attr };
@@ -533,7 +628,7 @@ function applyOutcome(c, job, attr, tier) {
     if (attr === "Combat" && tier === "fail" && loc) loc.heat = Math.min(5, loc.heat + 1);
   } else if (effect === "gearDamage") {
     if (tier === "partial") {
-      c.cred = Math.max(0, c.cred - 20);
+      c.bonds = Math.max(0, c.bonds - 1);
       addLog(c, pick(DATA.gearDamageFlavor.partial));
     } else {
       const matching = c.gear.filter(g => g.attr === attr);
@@ -547,11 +642,9 @@ function applyOutcome(c, job, attr, tier) {
   } else if (effect === "relationship") {
     nudgeRelationship(c, job.employer.id, tier === "fail" ? -2 : -1);
   } else if (effect === "credLoss") {
-    const pct = tier === "fail" ? 0.12 : 0.05;
-    const min = tier === "fail" ? 25 : 10;
-    const loss = Math.min(c.cred, Math.max(min, Math.round(c.cred * pct)));
-    c.cred -= loss;
-    addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-¥${loss})`);
+    const loss = Math.min(c.bonds, tier === "fail" ? 2 : 1);
+    c.bonds -= loss;
+    addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-${loss} BOND${loss === 1 ? "" : "S"})`);
   }
 }
 
@@ -565,7 +658,13 @@ function renderChallenge(container, step, onContinue) {
     return;
   }
 
-  const attrs = [step.attr, step.alt].filter(Boolean);
+  // Equipment gating (todo3.md): Hacking needs owned Hacking-attr gear ("a
+  // deck"); Driving on a medium/hard rural Transport leg needs owned
+  // Driving-attr gear ("a vehicle"). Never filter down to zero options —
+  // that would hard-lock the step.
+  const rawAttrs = [step.attr, step.alt].filter(Boolean);
+  const gatedAttrs = rawAttrs.filter(attr => attrAvailable(c, job, attr));
+  const attrs = gatedAttrs.length ? gatedAttrs : rawAttrs;
   attrs.forEach(attr => {
     const block = document.createElement("div");
     block.className = "challenge";
@@ -602,6 +701,15 @@ function renderChallenge(container, step, onContinue) {
     block.appendChild(rollBtn);
     container.appendChild(block);
   });
+}
+
+function attrAvailable(c, job, attr) {
+  if (attr === "Hacking") return ownsGearForAttr(c, "Hacking");
+  if (attr === "Driving" && job.mission && job.mission.type === "Transport" && job.mission.difficulty >= 2) {
+    const rural = job.location.area === "Rural" || (job.mission.fromLocation && job.mission.fromLocation.area === "Rural");
+    if (rural) return ownsGearForAttr(c, "Driving");
+  }
+  return true;
 }
 
 function computeModifiers(attr, spendBoost) {
@@ -664,7 +772,7 @@ function runDebrief() {
   else { outcome = "Failure"; mult = 0.2; }
 
   const payout = Math.round(estimatePayout(job) * mult);
-  c.cred += payout;
+  c.bonds += payout;
 
   // BOOST grows with full successes, replacing the old per-track Rep gain.
   const boostGained = job.stepResults.filter(r => r.tier === "full").length;
@@ -721,7 +829,7 @@ function runDebrief() {
 
   job.outcome = outcome;
   job.payout = payout;
-  addLog(c, `Job complete: ${outcome}. Paid ¥${payout} by ${job.employer.name}.`);
+  addLog(c, `Job complete: ${outcome}. Paid ${payout} BOND${payout === 1 ? "" : "S"} by ${job.employer.name}.`);
   persist();
 }
 
@@ -732,19 +840,344 @@ function renderDebrief() {
   wrap.innerHTML = `
     <h2>Debrief — ${job.outcome}</h2>
     <p>Employer: ${job.employer.name}</p>
-    <p>Payout: ¥${job.payout}</p>
+    <p>Payout: ${job.payout} BOND${job.payout === 1 ? "" : "S"}</p>
     <p class="muted">${job.stepResults.filter(r => r.tier === "full").length} full, ${job.stepResults.filter(r => r.tier === "partial").length} partial, ${job.stepResults.filter(r => r.tier === "fail").length} failed steps.</p>
   `;
   const btn = document.createElement("button");
   btn.textContent = "Return to the Street";
   btn.addEventListener("click", () => {
     G.job = null;
-    G.phase = "hub";
+    G.phase = checkWinCondition() ? "win" : "hub";
     persist();
     render();
   });
   wrap.appendChild(btn);
   els.main.appendChild(wrap);
+}
+
+// ---------- WIN ----------
+// 20 BONDS is the game's win condition (todo3.md) — a clean retirement
+// instead of a loss/failure screen.
+function renderWin() {
+  const c = G.character;
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>Ticket Off-World</h2>
+    <p>${c.bonds} BONDS. That's what a broker on the Beanstalk wants for a one-way
+    berth to the lunar colonies — no more Heat, no more fixers, no more looking
+    over your shoulder.</p>
+    <p>You clear out your gear, settle what you owe, and walk onto the shuttle
+    without looking back. Most runners don't get this far. You did.</p>
+    <p class="muted">${c.name} — retired, ${c.bonds} BONDS to their name.</p>
+  `;
+  const btn = document.createElement("button");
+  btn.textContent = "Start a New Runner";
+  btn.addEventListener("click", () => {
+    clearSave();
+    G.character = null;
+    G.job = null;
+    G.hunt = null;
+    G.phase = "create";
+    render();
+  });
+  wrap.appendChild(btn);
+  els.main.appendChild(wrap);
+}
+
+// ---------- ARCHENEMY HUNT (todo3.md) ----------
+// Triggered by processRestTick() once the Rest clock (character.restCount)
+// hits 4. A bespoke mini state machine — not the generic mission-step
+// sequence — since the branching (avoid/fight, wound tracking, chase/run)
+// doesn't fit that shape. Reuses resolve()/renderResultBlock() as-is.
+function startHunt() {
+  const c = G.character;
+  const archenemy = c.contacts.find(p => p.id === c.archenemyId);
+  if (!archenemy) {
+    // Safety net: the archenemy died some other way (e.g. an Assassination
+    // job) before the clock filled. No Hunt to run — just go back to Hub.
+    G.phase = "hub";
+    persist();
+    render();
+    return;
+  }
+  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null };
+  addLog(c, `${archenemy.name} finally catches up with you.`);
+  G.phase = "hunt";
+  persist();
+  render();
+}
+
+function renderHunt() {
+  const hunt = G.hunt;
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `<h2>Archenemy: ${hunt.archenemy.name}</h2>`;
+  els.main.appendChild(wrap);
+
+  const stageFns = {
+    notice: renderHuntNotice,
+    choice: renderHuntChoice,
+    avoid: renderHuntAvoid,
+    combat: renderHuntCombat,
+    chase: renderHuntChase
+  };
+  (stageFns[hunt.stage] || renderHuntResolution)(wrap);
+}
+
+// Mirrors the single-attribute half of renderChallenge(), but for the Hunt
+// — there's no G.job to hang modifiers off, so this builds its own: gear
+// bonus, Wounded/Permanent Injury penalties, BOOST spend, and the
+// Archenemy's own tier penalty (locked in "tough" — see lockInArchenemy).
+function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
+  const c = G.character;
+  const hunt = G.hunt;
+
+  if (hunt.pendingResult) {
+    const res = hunt.pendingResult;
+    renderResultBlock(container, res, () => { hunt.pendingResult = null; onResult(res); });
+    return;
+  }
+
+  const block = document.createElement("div");
+  block.className = "challenge";
+  const boostOption = c.boost >= 1
+    ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
+    : "";
+  block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}<div class="mods"></div>`;
+  const modsEl = block.querySelector(".mods");
+  const boostCheck = block.querySelector(".boost-check");
+
+  const buildMods = (spendBoost) => {
+    const mods = [];
+    const gearBonus = bestGearBonus(c, attr);
+    if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
+    const tp = tierPenalty(hunt.archenemy.tier);
+    if (tp) mods.push({ label: hunt.archenemy.name, value: tp });
+    if (extraBonus) mods.push({ label: "Caught them off guard", value: extraBonus });
+    if (spendBoost) mods.push({ label: "Boost", value: 1 });
+    const harmCount = c.health.filter(h => h).length;
+    if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
+    else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
+    if (c.permanentInjury) mods.push({ label: "Permanent Injury", value: -1 });
+    return mods;
+  };
+
+  const refreshMods = () => {
+    const mods = buildMods(boostCheck && boostCheck.checked);
+    modsEl.innerHTML = mods.length
+      ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
+      : `<span class="chip">no modifiers</span>`;
+  };
+  refreshMods();
+  if (boostCheck) boostCheck.addEventListener("change", refreshMods);
+
+  const rollBtn = document.createElement("button");
+  rollBtn.textContent = `Roll ${attr}`;
+  rollBtn.addEventListener("click", () => {
+    const spendBoost = !!(boostCheck && boostCheck.checked);
+    const mods = buildMods(spendBoost);
+    if (spendBoost) c.boost -= 1;
+    const result = resolve(c.attrs[attr], mods);
+    result.usedAttr = attr;
+    hunt.pendingResult = result;
+    persist();
+    render();
+  });
+  block.appendChild(rollBtn);
+  container.appendChild(block);
+}
+
+function renderHuntNotice(container) {
+  renderHuntRoll(container, "Social", "Something's off tonight. Do you notice the ambush coming?", 0, (res) => {
+    const c = G.character, hunt = G.hunt;
+    if (res.tier === "fail") {
+      addLog(c, `You don't see it coming. ${hunt.archenemy.name} is already on you.`);
+      hunt.stage = "combat";
+    } else {
+      hunt.combatBonus = res.tier === "full" ? 2 : 0;
+      addLog(c, res.tier === "full"
+        ? `You clock them a beat before they move — you've got the opening if you want it.`
+        : `You catch it just in time to have options.`);
+      hunt.stage = "choice";
+    }
+    persist(); render();
+  });
+}
+
+function renderHuntChoice(container) {
+  const hunt = G.hunt;
+  const block = document.createElement("div");
+  block.className = "challenge";
+  block.innerHTML = `<p class="step-desc">Avoid them, or meet them head-on${hunt.combatBonus ? ` (+${hunt.combatBonus} if you fight)` : ""}?</p>`;
+  container.appendChild(block);
+
+  const avoidBtn = document.createElement("button");
+  avoidBtn.textContent = "Avoid (Stealth)";
+  avoidBtn.addEventListener("click", () => { hunt.stage = "avoid"; persist(); render(); });
+  block.appendChild(avoidBtn);
+
+  const fightBtn = document.createElement("button");
+  fightBtn.textContent = "Fight";
+  fightBtn.addEventListener("click", () => { hunt.stage = "combat"; persist(); render(); });
+  block.appendChild(fightBtn);
+}
+
+function renderHuntAvoid(container) {
+  renderHuntRoll(container, "Stealth", "Slip past them before they close the distance.", 0, (res) => {
+    const c = G.character, hunt = G.hunt;
+    if (res.tier === "fail") {
+      addLog(c, `No good — they're on you. Fight's here whether you like it or not.`);
+      hunt.stage = "combat";
+    } else {
+      addLog(c, `You slide out of sight. Not tonight.`);
+      hunt.stage = "resolved-evade";
+    }
+    persist(); render();
+  });
+}
+
+// A light, existing-style Combat-fail consequence for a whiffed Attack roll
+// — reuses the normal weighted fallout table rather than new bespoke text.
+function applyHuntCombatFailFallout(c) {
+  const effect = pickWeighted(DATA.failOutcomes.Combat);
+  if (effect === "harm" || (effect === "gearDamage" && c.gear.length === 0)) {
+    const wentDown = markHarm(c);
+    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+  } else if (effect === "gearDamage") {
+    const idx = randInt(0, c.gear.length - 1);
+    const [lost] = c.gear.splice(idx, 1);
+    addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${lost.name})`);
+  } else if (effect === "credLoss" && c.bonds > 0) {
+    c.bonds -= 1;
+    addLog(c, `${pick(DATA.credLossFlavor.fail)} (-1 BOND)`);
+  }
+}
+
+function renderHuntCombat(container) {
+  const hunt = G.hunt;
+
+  if (hunt.combatChoice === "attack") {
+    renderHuntRoll(container, "Combat", `Wounds landed: ${hunt.wounds}/3.`, hunt.combatBonus, (res) => {
+      const c = G.character;
+      hunt.combatBonus = 0;
+      hunt.combatChoice = null;
+      if (res.tier === "fail") {
+        addLog(c, pick(DATA.complications.Combat.fail));
+        applyHuntCombatFailFallout(c);
+      } else {
+        hunt.wounds++;
+        addLog(c, `You land a hit on ${hunt.archenemy.name} (${hunt.wounds}/3).`);
+        if (hunt.wounds >= 3) applyHuntKillReward(c);
+        else if (hunt.wounds === 2) { addLog(c, `${hunt.archenemy.name} breaks and runs for it.`); hunt.stage = "chase"; }
+      }
+      persist(); render();
+    });
+    return;
+  }
+
+  if (hunt.combatChoice === "run") {
+    renderHuntRoll(container, "Driving", "Gun it and try to lose them.", 0, (res) => {
+      const c = G.character;
+      hunt.combatChoice = null;
+      if (res.tier === "full") {
+        addLog(c, "Clean break. You lose them in the traffic.");
+        hunt.stage = "resolved-run-clean";
+      } else if (res.tier === "partial") {
+        const wentDown = markHarm(c);
+        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+        addLog(c, "You get away, but they clip you on the way out.");
+        hunt.stage = "resolved-run-hit";
+      } else {
+        const wentDown = markHarm(c);
+        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+        if (c.gear.length && Math.random() < 0.5) {
+          const idx = randInt(0, c.gear.length - 1);
+          const [lost] = c.gear.splice(idx, 1);
+          addLog(c, `Bad break — you're hit, and ${lost.name} goes flying in the crash.`);
+        } else {
+          const loss = Math.min(c.bonds, randInt(1, 2));
+          c.bonds -= loss;
+          addLog(c, `Bad break — you're hit, and it costs you ${loss} BOND${loss === 1 ? "" : "S"} to smooth things over after.`);
+        }
+        hunt.stage = "resolved-run-bad";
+      }
+      persist(); render();
+    });
+    return;
+  }
+
+  const block = document.createElement("div");
+  block.className = "challenge";
+  block.innerHTML = `<p class="step-desc">${hunt.archenemy.name} is on you. Wounds landed: ${hunt.wounds}/3.</p>`;
+  container.appendChild(block);
+  const attackBtn = document.createElement("button");
+  attackBtn.textContent = `Attack${hunt.combatBonus ? ` (+${hunt.combatBonus})` : ""}`;
+  attackBtn.addEventListener("click", () => { hunt.combatChoice = "attack"; persist(); render(); });
+  block.appendChild(attackBtn);
+  const runBtn = document.createElement("button");
+  runBtn.textContent = "Run (Driving)";
+  runBtn.addEventListener("click", () => { hunt.combatChoice = "run"; persist(); render(); });
+  block.appendChild(runBtn);
+}
+
+function renderHuntChase(container) {
+  renderHuntRoll(container, "Driving", `${G.hunt.archenemy.name} is wounded and running. Do you chase them down?`, 0, (res) => {
+    const c = G.character, hunt = G.hunt;
+    if (res.tier === "full") {
+      hunt.wounds = 3;
+      addLog(c, `You run them down and finish it.`);
+      applyHuntKillReward(c);
+    } else if (res.tier === "partial") {
+      addLog(c, `You lose them in the chase, but the fight's over — ${hunt.archenemy.name} won't forget this.`);
+      hunt.stage = "resolved-escape-win";
+    } else {
+      addLog(c, `They get away clean.`);
+      hunt.stage = "resolved-escape-clean";
+    }
+    persist(); render();
+  });
+}
+
+// One-time reward on the killing blow (todo3.md) — a free Professional-tier
+// Combat item, +3 BOOST, +2 BONDS, and the Archenemy moves to the Graveyard.
+function applyHuntKillReward(c) {
+  const hunt = G.hunt;
+  const weapon = pick(DATA.gear.Professional.filter(g => g.attr === "Combat"));
+  c.gear.push({ name: weapon.name, attr: weapon.attr, tier: "Professional" });
+  c.boost = Math.min(10, c.boost + 3);
+  c.bonds += 2;
+  addLog(c, `${hunt.archenemy.name} goes down for good. You walk away with a ${weapon.name}, a surge of BOOST, and 2 more BONDS.`);
+  killPerson(c, hunt.archenemy.id);
+  hunt.stage = "resolved-kill";
+}
+
+const HUNT_SUMMARY = {
+  "resolved-evade": hunt => `You give ${hunt.archenemy.name} the slip. For now.`,
+  "resolved-run-clean": hunt => `You put real distance between you and ${hunt.archenemy.name} tonight.`,
+  "resolved-run-hit": hunt => `Banged up, but clear. ${hunt.archenemy.name} is still out there.`,
+  "resolved-run-bad": hunt => `Ugly getaway, but a getaway. ${hunt.archenemy.name} is still out there.`,
+  "resolved-escape-win": hunt => `You come out on top, but ${hunt.archenemy.name} slips away to lick their wounds.`,
+  "resolved-escape-clean": hunt => `${hunt.archenemy.name} gets away clean. This isn't over.`,
+  "resolved-kill": hunt => `${hunt.archenemy.name} won't be a problem again.`
+};
+
+function renderHuntResolution(container) {
+  const hunt = G.hunt;
+  const block = document.createElement("div");
+  block.className = "card";
+  const text = (HUNT_SUMMARY[hunt.stage] || (() => ""))(hunt);
+  block.innerHTML = `<h3>${hunt.stage === "resolved-kill" ? "Archenemy Down" : "It's Over — For Now"}</h3><p class="step-desc">${text}</p>`;
+  const btn = document.createElement("button");
+  btn.textContent = "Return to the Street";
+  btn.addEventListener("click", () => {
+    G.hunt = null;
+    G.phase = checkWinCondition() ? "win" : "hub";
+    persist();
+    render();
+  });
+  block.appendChild(btn);
+  container.appendChild(block);
 }
 
 document.addEventListener("DOMContentLoaded", init);

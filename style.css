@@ -47,6 +47,13 @@ header h1 {
 #main { background: var(--bg); }
 
 #sheet h2 { color: var(--accent); margin-top: 0; font-size: 18px; }
+.sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sheet-header h2 { margin: 0; }
+.btn-small { padding: 4px 8px; font-size: 11px; margin: 0; }
+.archenemy-badge {
+  font-size: 11px; color: var(--danger);
+  border: 1px solid var(--danger); border-radius: 10px; padding: 1px 6px;
+}
 #sheet .tag {
   display: inline-block;
   color: var(--muted);
