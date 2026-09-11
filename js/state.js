@@ -10,9 +10,9 @@ const PROFESSIONS = {
 };
 
 const TURFS = {
-  Nomad: { boost: "Driving", cred: 200, contactFaction: "Aldecaldos", gear: [{ name: "Beater Car", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
-  Corpo: { boost: "Hacking", cred: 300, contactFaction: "Arasaka", gear: [], desc: "+Hacking. Extra starting Cred and a Corp contact (a favor owed either way)." },
-  Street: { boost: "Stealth", cred: 200, contactFaction: "Valentinos", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Gang contact and a point of BOOST." }
+  Nomad: { boost: "Driving", bonds: 2, contactFaction: "Aldecaldos", gear: [{ name: "Beater Car", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
+  Corpo: { boost: "Hacking", bonds: 3, contactFaction: "Arasaka", gear: [], desc: "+Hacking. Extra starting BONDS and a Corp contact (a favor owed either way)." },
+  Street: { boost: "Stealth", bonds: 2, contactFaction: "Valentinos", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Gang contact and a point of BOOST." }
 };
 
 function defaultCharacter(name, profession, turf) {
@@ -28,7 +28,7 @@ function defaultCharacter(name, profession, turf) {
     boost: trf.boostBonus || 0, // spendable pool — see bestGearBonus/renderChallenge (game.js)
     health: [false, false, false], // true = Harm marked
     permanentInjury: false, // going Down leaves this until a repair is paid for
-    cred: trf.cred,
+    bonds: trf.bonds, // BOND — the abstracted currency (todo3.md), replaces Cred. Win at 20.
     gear: [...prof.gear, ...trf.gear].map(g => ({ ...g, tier: g.tier || "Street" })),
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
     // or generated lives here (not just friendly contacts). See getPerson().
@@ -38,6 +38,8 @@ function defaultCharacter(name, profession, turf) {
     locations: {}, // name -> {area, faction, heat}
     factionStandings: defaultFactionStandings(),
     factionRelations: {}, // lazy pairwise map, see nudgeFactionRelation()
+    restCount: 0, // Coffin Hotel / Night on the Street uses since the last Hunt (todo3.md)
+    archenemyId: null, // locked in on the first Rest — see processRestTick() in game.js
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
 }
@@ -98,6 +100,17 @@ function migrateCharacter(character) {
   (character.gear || []).forEach(item => {
     if (!item.tier) item.tier = "Street";
   });
+
+  // Cred→BOND (todo3.md): old saves had hundreds of Cred, BONDS are a much
+  // smaller abstract scale — carry the rough value forward rather than
+  // losing it, then drop the old field for good.
+  if (typeof character.bonds !== "number") {
+    character.bonds = Math.max(0, Math.round((character.cred || 0) / 100));
+  }
+  delete character.cred;
+
+  if (typeof character.restCount !== "number") character.restCount = 0;
+  if (character.archenemyId === undefined) character.archenemyId = null;
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -215,6 +228,25 @@ function bestGearBonus(character, attr) {
     if (item.attr !== attr) return;
     const bonus = DATA.gearTierBonus[item.tier] || 0;
     if (!best || bonus > best.bonus) best = { name: item.name, bonus };
+  });
+  return best;
+}
+
+// Equipment gating (todo3.md): owning ANY gear with a matching attr counts
+// as "having a vehicle" (Driving) or "having a deck" (Hacking) — see
+// renderChallenge() in game.js, which hides the gated attribute option
+// when this comes back false.
+function ownsGearForAttr(character, attr) {
+  return character.gear.some(item => item.attr === attr);
+}
+
+// Highest-tier owned "health gear or body modification" — items tagged
+// `heal` instead of `attr` (DATA.gear) — added to the Rest healing roll.
+// Mirrors bestGearBonus() but matches item.heal instead of item.attr.
+function bestHealBonus(character) {
+  let best = 0;
+  character.gear.forEach(item => {
+    if (item.heal && item.heal > best) best = item.heal;
   });
   return best;
 }

@@ -142,6 +142,12 @@ function genMission(location, character, excludeIds) {
     assetFlavor = type === "Delay" ? DATA.delayFlavor : pick(DATA.assetTypes[assetType]);
   }
 
+  // 1/2/3 (easy/medium/hard) — drives the BOND payout table (game.js
+  // estimatePayout) and the vehicle-gating rule (renderChallenge in game.js).
+  const tierDifficulty = { weak: 1, tough: 2, elite: 3 };
+  let difficulty = tierDifficulty[worstTier] || 1;
+  if (timePeriod === 3) difficulty = Math.min(3, difficulty + 1);
+
   return {
     type,
     flavor: DATA.missionFlavor[type],
@@ -151,6 +157,7 @@ function genMission(location, character, excludeIds) {
     adversaries,
     worstTier,
     timePeriod,
+    difficulty,
     assetType,
     assetFlavor
   };

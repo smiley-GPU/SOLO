@@ -59,30 +59,37 @@ const DATA = {
     { name: "The Rustbelt Outpost", area: "Rural", faction: null }
   ],
 
+  // Prices/bonuses are BOND-scale (todo3.md): Street +1 for 1 BOND,
+  // Professional +2 for 2 BONDS, Military +3 for 3 BONDS. A few entries
+  // carry `heal` instead of `attr` — "health gear or body modifications"
+  // that boost the Rest healing roll (see bestHealBonus in state.js).
   gear: {
     Street: [
-      { name: "Snub Pistol", attr: "Combat", price: 80 },
-      { name: "Rusty Blade", attr: "Combat", price: 60 },
-      { name: "Padded Jacket", attr: "Stealth", price: 70 },
-      { name: "Beater Bike", attr: "Driving", price: 150 },
-      { name: "Burner Deck", attr: "Hacking", price: 90 },
-      { name: "Street Cred Chips", attr: "Social", price: 50 }
+      { name: "Snub Pistol", attr: "Combat", price: 1 },
+      { name: "Rusty Blade", attr: "Combat", price: 1 },
+      { name: "Padded Jacket", attr: "Stealth", price: 1 },
+      { name: "Beater Bike", attr: "Driving", price: 1 },
+      { name: "Burner Deck", attr: "Hacking", price: 1 },
+      { name: "Street Cred Chips", attr: "Social", price: 1 },
+      { name: "Trauma Kit", heal: 1, price: 1 }
     ],
     Professional: [
-      { name: "Tech Pistol", attr: "Combat", price: 220 },
-      { name: "Monoblade", attr: "Combat", price: 200 },
-      { name: "Optical Camo Cloak", attr: "Stealth", price: 260 },
-      { name: "Tuned Sedan", attr: "Driving", price: 350 },
-      { name: "Icebreaker Deck", attr: "Hacking", price: 300 },
-      { name: "Fixer's Rolodex", attr: "Social", price: 240 }
+      { name: "Tech Pistol", attr: "Combat", price: 2 },
+      { name: "Monoblade", attr: "Combat", price: 2 },
+      { name: "Optical Camo Cloak", attr: "Stealth", price: 2 },
+      { name: "Tuned Sedan", attr: "Driving", price: 2 },
+      { name: "Icebreaker Deck", attr: "Hacking", price: 2 },
+      { name: "Fixer's Rolodex", attr: "Social", price: 2 },
+      { name: "Subdermal Mesh", heal: 2, price: 2 }
     ],
     Military: [
-      { name: "Smart SMG", attr: "Combat", price: 600 },
-      { name: "Mantis Blades", attr: "Combat", price: 650 },
-      { name: "Ghost Cloak", attr: "Stealth", price: 700 },
-      { name: "Armored AV", attr: "Driving", price: 900 },
-      { name: "Blackwall Shard", attr: "Hacking", price: 800 },
-      { name: "Corp Blackmail File", attr: "Social", price: 750 }
+      { name: "Smart SMG", attr: "Combat", price: 3 },
+      { name: "Mantis Blades", attr: "Combat", price: 3 },
+      { name: "Ghost Cloak", attr: "Stealth", price: 3 },
+      { name: "Armored AV", attr: "Driving", price: 3 },
+      { name: "Blackwall Shard", attr: "Hacking", price: 3 },
+      { name: "Corp Blackmail File", attr: "Social", price: 3 },
+      { name: "Trauma Team Platinum Card", heal: 3, price: 3 }
     ]
   },
 
@@ -107,9 +114,10 @@ const DATA = {
   },
   delayFlavor: "You don't know what the real op needs from this — could be anything. You're just buying time for someone else's job.",
 
-  // Gear bonus scales with quality, per todo2.md — applied by bestGearBonus()
-  // in state.js against any owned item whose attr matches the roll.
-  gearTierBonus: { Street: 0, Professional: 1, Military: 2 },
+  // Gear bonus scales with quality, per todo2.md/todo3.md — applied by
+  // bestGearBonus() in state.js against any owned item whose attr matches
+  // the roll. BOND-scale: Street +1, Professional +2, Military +3.
+  gearTierBonus: { Street: 1, Professional: 2, Military: 3 },
 
   // Weighted table of what a Partial/Fail actually costs you, per Challenge
   // type, per todo2.md ("failed check should not always result to damage").
@@ -161,8 +169,8 @@ const DATA = {
   // is the cheap, standard fix but leaves a lasting rough edge; Biovat costs
   // more but grows back clean.
   repairs: [
-    { name: "Cybernetic Replacement", price: 400, sideEffect: true, flavor: "Quick and cheap. It works — but it's never quite the same." },
-    { name: "Biovat Regrowth", price: 900, sideEffect: false, flavor: "Slow and expensive. Grown clean, no compromises." }
+    { name: "Cybernetic Replacement", price: 2, sideEffect: true, flavor: "Quick and cheap. It works — but it's never quite the same." },
+    { name: "Biovat Regrowth", price: 3, sideEffect: false, flavor: "Slow and expensive. Grown clean, no compromises." }
   ],
 
   encounterFlavor: [
