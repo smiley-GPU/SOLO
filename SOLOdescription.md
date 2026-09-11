@@ -209,6 +209,12 @@ from a killed Archenemy (+3), and from various Rest/Hunt minor events.
 Spent as +1 to any single roll (1 BOOST), or to upgrade a roll's tier (3
 BOOST, see §2), or on Training (1 BOOST + BONDS per rank).
 
+### 4.7 Reputation
+A second character stat, **REPUTATION**, `1-20`, starting at `1`. It is
+never spent — it only accumulates and gates the Mission Board. Full rules,
+gain conditions, and Tier table are in §19.1; it's called out here because
+it lives on the character sheet alongside BONDS and BOOST.
+
 ---
 
 ## 5. Currency: BONDS
@@ -225,7 +231,8 @@ replaced). Small numbers, 0–20+.
   adjustment: **+1** if relationship ≥3, **-1** (floored at 1) if
   relationship ≤-3. At Debrief this base is multiplied by an outcome
   multiplier (see §11) and further adjusted by an Ally fee and/or a Side
-  Objective bonus.
+  Objective bonus. A **Special Mission** (§19.5) adds a flat **+2 BONDS**
+  to this base before the outcome multiplier is applied.
 - **`mission.difficulty`** (1/2/3) is set at mission generation:
   `{weak:1, tough:2, elite:3}[worstAdversaryTier]`, bumped to a max of 3 if
   the mission's Time period is "Long" (3).
@@ -383,6 +390,12 @@ higher than it started (i.e. the job "made noise"), tension rises -1
 between the Employer's faction and the Target's faction (only if they
 differ and both are real tracked factions — never for "Freelance").
 
+**Revision (§19)**: §19.2, §19.4, and §19.6–§19.8 extend the above with
+per-mission-type standing magnitudes, Employer/Target faction-pairing
+constraints, Faction Tiers, and a Power-driven faction-destruction
+mechanic. Where they disagree with the simple ±1 rule above, §19 is
+canonical.
+
 ---
 
 ## 9. Locations & Heat
@@ -425,7 +438,9 @@ combined, Heat persists forever once rolled.
    maps directly to 1-3 repeated Challenge steps.
 4. **Target**: Assassination casts from the `"hostile"` pool (the kill
    target); every other type casts `"ally"` (the person/cargo being
-   stolen/moved/delayed/held).
+   stolen/moved/delayed/held). The Target's faction must satisfy the
+   Employer/Target pairing rule (§19.4) unless the job is a Special
+   Mission (§19.5).
 5. **Transport's origin** (`fromLocation`): a second, distinct Location
    (never the destination) resolved the same way as the main location —
    the job's primary `location` is always the *destination*.
@@ -435,6 +450,11 @@ combined, Heat persists forever once rolled.
    for Delay ("You don't know what the real op needs...").
 7. **`difficulty`**: `{weak:1,tough:2,elite:3}[worstTier]`, +1 (capped 3)
    if `timePeriod === 3`.
+
+**Two jobs, tiered**: the Hub now generates and offers **two** Briefings
+this way at once rather than one, gated by the player's Reputation Tier,
+with an escalating chance of a tougher second offer — see §19.3. Its
+higher-tier slot can also roll into a Special Mission — see §19.5.
 
 ### 10.1 Mission Sequences (the ordered Challenge steps)
 Fixed per type (`MISSION_SEQUENCES`), each entry `{attr, alt?, desc}`:
@@ -466,6 +486,9 @@ button shows live modifier chips before rolling:
   use, §14).
 - -1 (1 Wounded box) or -2 (2+ boxes).
 - -1 if `permanentInjury`.
+- `-(tier - 1)` when the Challenge is against a specific hostile faction
+  (Tier 1: 0, Tier 2: -1, Tier 3: -2, Tier 4: -3) — see Faction Tiers,
+  §19.6.
 
 **On Full**: logs "Full success on `<attr>`." — no further consequence.
 
@@ -498,6 +521,12 @@ side-objective steps):
 
 Going Down mid-sequence (`isDown`) immediately ends the job (Failure,
 straight to Debrief).
+
+**Revision**: §19.9 replaces the weighted-random fallout above with a
+deterministic per-attribute effect table (including a new "wounded
+helper" consequence for Hirelings/Allies, and a Special Mission variant
+that can kill a Bloodbrother outright). Treat §19.9 as canonical where
+the two disagree.
 
 ### 10.3 Equipment gating (`attrAvailable`)
 Before offering attr buttons, filter out:
@@ -724,6 +753,7 @@ directly (the chase-specific bail option — no Stealth/Driving roll fits
 - `+3 BOOST` (capped 10).
 - `+2 BONDS` — can trigger the win screen.
 - `killPerson()` on the archenemy.
+- `+2 Reputation` (§19.1), logged as the title *"Killer of `<name>`"*.
 - → stage `resolved-kill`.
 
 ### 13.9 Resolution screen
@@ -755,7 +785,8 @@ checkbox — using it sets `used:true`, spent for the rest of the job.
 **Debrief resolution:**
 - Success (Full or Partial): Ally relationship **+1**. Tier 3: **-1 BOND**
   off the payout (min bonds, floored at 0). Tier 5: **tagBloodbrother()**
-  on them.
+  on them, plus **+1 Reputation** (§19.1), logged as *"Friend of
+  `<name>`"*.
 - Failure: Ally relationship **-2**, no payment either way (Failure always
   pays 0 total).
 
@@ -816,16 +847,22 @@ Then, in order:
 6. **Ally resolution** (§14).
 7. **Side objective resolution** (§15).
 8. **Location decay** (§9).
+9. **Reputation** (§19.1): if the outcome wasn't a Failure, +1; a further
+   +1 if the job's base payout was ≥4 BONDS; a further +1 if
+   `mission.type === "Assassination"`; a further +1 if the job was a
+   Special Mission (§19.5).
 
 Final `job.payout` is the sum of the base payout plus/minus the Ally fee
 and Side Objective bonus — shown on the Debrief screen along with a
 full/partial/fail step tally. **"Return to the Street"** clears `G.job`
-and routes to `win` (if BONDS ≥20) or `hub`.
+and routes to `win` (if BONDS ≥20), `loss` (if the MULTI-CORP condition
+just triggered — §19.8), or `hub`.
 
 ---
 
-## 17. Win Condition
+## 17. Win & Loss Conditions
 
+### 17.1 Win
 `checkWinCondition()` = `character.bonds >= 20`. Checked at load
 (`init()`) and at every point control would otherwise route to Hub
 (Debrief's button, a Hunt resolution's button, a completed gear Sale).
@@ -833,6 +870,12 @@ and routes to `win` (if BONDS ≥20) or `hub`.
 **Win screen** ("Ticket Off-World"): flavor text about buying passage off-
 world with the BONDS; **"Start a New Runner"** clears the save entirely and
 returns to Character Creation.
+
+### 17.2 Loss — MULTI-CORP
+See §19.8: if the Corpo faction category is ever reduced to a single
+survivor, that faction becomes MULTI-CORP and the game is lost. Checked
+alongside the win condition, at the same routing points. **"Start a New
+Runner"** on the loss screen behaves identically to the win screen's.
 
 ---
 
@@ -856,6 +899,194 @@ data unless the field genuinely didn't exist):
   is then deleted.
 - `restCount` defaults `0`, `archenemyId` defaults `null`,
   `pendingSaleItem` defaults `null`.
+- `reputation` defaults to `1` (§19.1).
+- Every faction in `factionStandings` gets a `tier` (defaulted via §19.6's
+  starting-Tier rule from its category) and `destroyed: false` if missing
+  (§19.7).
+
+---
+
+## 19. Reputation, Faction Power & Special Missions
+
+Design additions layered on top of every system above (`todo3.md`, "ADD2"
+section onward). Where a rule here conflicts with an earlier, simpler
+rule stated in §§1-18, this section is the canonical one; the earlier
+sections carry pointers back here rather than being rewritten in place.
+
+### 19.1 Reputation
+A second character stat, **REPUTATION**, `1-20`, starting at `1` (see
+§4.7). It is never spent — it only accumulates and gates the Mission
+Board (§19.3).
+
+Gained at Debrief (§16) for a non-Failure outcome:
+- **+1** for the mission succeeding at all (Full or Partial Success).
+- **+1** if the job's base payout (§5, before outcome multiplier/Ally
+  fee/Side Objective) was **≥4 BONDS**.
+- **+1** if `mission.type === "Assassination"` — logged with the flavor
+  title *"Shadow of `<Location>`"*.
+- **+1** if the job was a Special Mission (§19.5).
+- **+2** whenever an Archenemy is killed (§13.8) — logged as *"Killer of
+  `<name>`"*.
+- **+1** whenever a contact becomes a Bloodbrother (§14) — logged as
+  *"Friend of `<name>`"*.
+
+Capped at 20, never decreases. Reputation Tiers:
+
+| Reputation | Tier | Title |
+|---|---|---|
+| 1-5 | 1 | Street Rat |
+| 6-10 | 2 | Warhound |
+| 11-15 | 3 | Operative |
+| 16-20 | 4 | Legend |
+
+The player's Reputation Tier gates the Mission Board (§19.3).
+
+### 19.2 Per-mission-type faction standing effects
+Supersedes §8's flat ±1 rule. At Debrief, on a non-Failure outcome, the
+Employer's and Target's factions move by mission type instead of a flat
+amount:
+
+| Type | Target's faction | Employer's faction |
+|---|---|---|
+| Assassination | Power **-2** | Power **+2** |
+| Delay | Wealth **-2**, R&D **-1** | Wealth **+2** |
+| Heist | Wealth **-1**, R&D **-2** | R&D **+2** |
+| Hold | Wealth **-1**, Power **-1** | Power **+1** |
+| Transport | Wealth **-1**, Power **-1** | Wealth **+1** |
+
+("Target's faction" for Hold/Transport means the faction whose forces are
+attacking/chasing — the opposition the job defeats.) The existing
+`factionRelations` tension rule (§8) is unchanged. On a Special Mission
+(§19.5), every value in this table is one point further from zero.
+
+### 19.3 The Mission Board: two jobs, tiered
+The Hub now always offers **two Briefings** at once (both built the usual
+way, §10-11) instead of one; accepting either starts that Job, declining
+both is a Rest action (§12) as before.
+
+- The **first** job is always at or below the player's Reputation Tier:
+  `mission.difficulty <= min(reputationTier, 3)` (difficulty is still
+  1-3, §10; Tier 4 "Legend" characters stay capped at difficulty 3 for
+  ordinary jobs — Special Missions, §19.5, are their outlet for
+  higher-stakes work).
+- The **second** job uses the same cap, but has a **10% base chance** of
+  instead being pitched one tier higher (`min(reputationTier + 1, 3)`).
+  This chance is **cumulative +10% per Rest tick**, reusing
+  `character.restCount` (§12.4): `chance = 10% + 10% * restCount`. It
+  resets to the 10% base once a job is finally accepted.
+- Whenever the second job rolls "one tier higher", it additionally has a
+  **10% chance of being a Special Mission** (§19.5) instead of an
+  ordinary higher-tier job.
+
+### 19.4 Employer/Target faction pairing
+When the Employer and the mission Target are cast (§10 step 4, §7.1),
+their factions are constrained:
+- Same category (Corpo↔Corpo, Crime↔Crime, Nomad↔Nomad), **or**
+- Adjacent categories: Corpo↔Crime or Crime↔Nomad. Corpo↔Nomad is never
+  allowed directly.
+- **Authority** factions (EurCop, SwissGuard) may only be cast as the
+  Target, **never** as the Employer.
+- "Freelance" people (§3) are exempt from this constraint on either side.
+
+**Special Missions (§19.5) ignore this rule entirely** — either role can
+be filled by any faction.
+
+### 19.5 Special Missions
+Only the Mission Board's higher-tier second slot can roll a Special
+Mission (10% chance there, §19.3). It differs from an ordinary job:
+- **Faction pairing is unrestricted** (§19.4 exception).
+- **Tier**: one full tier above what pairing/difficulty would otherwise
+  give, and every Challenge in it carries an extra **-1** modifier on top
+  of its normal modifiers (§10.2).
+- **Dangerous**: if a Bloodbrother is riding along as the job's Ally
+  (§14) — a Combat Challenge **Partial** wounds them (they stop
+  contributing their +2 for the rest of the job, §19.9); any
+  main-sequence **Fail** kills them (`killPerson`, §7.4) outright.
+- **Payment**: the job's base payout gets a flat **+2 BONDS** on top of
+  the usual `1 + difficulty` (§5).
+- **Amplified relationships**: every relationship delta the job would
+  normally apply (Employer, Target, Ally, Hireling — §16, §14) and every
+  faction-standing change (§19.2) is one point further from zero.
+- **Reputation**: completing one grants the usual mission Reputation plus
+  a flat **+1** "Special Mission" bonus (§19.1).
+- **Name**: generated once at mission creation from Appendix J —
+  `"Mission: <GREEK> <SHAPE> <COLOR> <NN>"`, e.g. *"Mission: ALPHA HEX
+  CYAN 77"* — shown in place of the normal Job-type line on the Briefing
+  and Debrief screens.
+
+### 19.6 Faction Tiers
+Every faction also carries a **Tier** (a separate number from Reputation
+Tiers, §19.1, though scaled the same way):
+
+| Faction | Tier range | Starts at |
+|---|---|---|
+| Corpo factions | 3 or 4 | 3 (lower) |
+| Crime factions | 2 or 3 | 2 (lower) |
+| Nomad factions | 1 or 2 | 1 (lower) |
+| EurCop | always 2 | 2 |
+| SwissGuard | always 3 | 3 |
+
+- **R&D ≥10** promotes the faction to its category's higher Tier; if R&D
+  later drops back below **8**, it demotes again.
+- **Wealth ≥10** while the faction already sits at its category's
+  *higher* Tier promotes it into the next category up, keeping that Tier
+  number: a Nomad faction at Tier 2 becomes a Crime faction at Tier 2; a
+  Crime faction at Tier 3 becomes a Corpo faction at Tier 3. (EurCop/
+  SwissGuard never move.)
+- **Challenge modifier**: a Challenge against a specific hostile faction
+  applies `-(tier - 1)` — Tier 1: 0, Tier 2: -1, Tier 3: -2, Tier 4: -3 —
+  folded into `computeModifiers` (§10.2).
+
+### 19.7 Power struggles & faction destruction
+Any faction whose **Power ≥10** attempts to destroy a rival in its own
+category. Checked once per Rest tick (§12.4 — the closest thing this
+single-player game has to a "round"):
+
+```
+atkMod = count(attacker.{wealth,rnd,power} >= 10) + (attacker.tier > target.tier ? 1 : 0)
+defMod = count(target.{wealth,rnd,power} >= 10)   + (target.tier > attacker.tier ? 1 : 0)
+roll = 2d6 + atkMod - defMod
+```
+- **≤6**: the attempt fails; the attacking faction loses **1 Power**.
+- **7-9**: it opens a **guaranteed** Special Mission (§19.5, 100% chance,
+  bypassing its normal 10% odds) — an Assassination-flavored contract
+  against the target faction. If that job succeeds, the target faction is
+  **destroyed**.
+- **10+**: the target faction is destroyed immediately, no mission
+  needed.
+
+A destroyed faction is flagged `destroyed: true`, drops out of every
+Employer/Target/Adversary draw pool, and is shown in the right-hand panel
+greyed out and marked "DESTROYED"; its surviving Contacts become
+Freelance (§3).
+
+### 19.8 The MULTI-CORP loss condition
+If the Corpo category is ever reduced to a **single remaining faction**
+(the other two destroyed via §19.7), that faction absorbs the entire
+Corpo tier and becomes **MULTI-CORP** — the game is **lost** (§17.2). A
+dedicated loss screen plays instead of the Hub, with flavor text about the
+last independent voice in the SuperState going dark and the world folding
+under one logo; the only action offered is **"Start a New Runner"**
+(as on the Win screen, §17.1), clearing the save.
+
+### 19.9 Revised Mission Challenge fallout (supersedes Appendix F)
+Replaces the weighted-random fallout of §10.2/Appendix F with a fixed,
+deterministic set of consequences per attribute and tier. Combat
+Challenges **always** add Heat, win or lose, on top of anything below.
+
+| Attr | 7-9 Partial | ≤6 Fail |
+|---|---|---|
+| Combat | 1 Harm box, **or** lost equipment, **or** a wounded helper | 2 Harm boxes **and** (lost equipment **or** a wounded helper) |
+| Driving | vehicle damage, **or** 1 Harm box, **or** lost equipment; +Heat | 1 Harm box **and** lose the vehicle; +Heat |
+| Hacking | +Heat, **or** lose equipment (deck/ICE) | +Heat **and** (1 Harm box **or** lost equipment — deck/software) |
+| Social | +Heat, **or** lose equipment | +Heat **and** lose equipment |
+| Stealth | +Heat, **or** lose equipment | +2 Heat **and** 1 Harm box |
+
+"Lost equipment" still resolves via `degradeGearItem` (§6.2). A **wounded
+helper** is a new consequence: the job's Hireling or Ally stops
+contributing their bonus (and, for an Ally, forfeits their one-time +2 if
+unused) for the rest of the job — see §19.5 for the harsher Special
+Mission variant, which can kill a Bloodbrother outright instead.
 
 ---
 
@@ -943,3 +1174,16 @@ CSS grid (260px / 1fr / 320px), collapsing to 1 column under 980px. Cards
 have rounded corners (8px), a max-width of 640px. A 5-segment Heat bar and
 a reused 4-segment Rest-clock bar are small colored squares (filled =
 `--danger`). Font: `"Segoe UI", system-ui, sans-serif`.
+
+## Appendix J — Special Mission Name Generator (§19.5)
+**Greek letters (12)**: Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Theta,
+Kappa, Sigma, Omega, Rho, Omicron.
+
+**Shapes (12)**: Hex, Cube, Prism, Spiral, Vertex, Wedge, Torus, Rhombus,
+Helix, Shard, Obelisk, Lattice.
+
+**Colors (12)**: Cyan, Magenta, Crimson, Amber, Jade, Cobalt, Onyx,
+Violet, Ember, Slate, Indigo, Bone.
+
+Format: `"Mission: <GREEK> <SHAPE> <COLOR> <NN>"` (all uppercase), `NN` =
+`randInt(10,99)`. Example: *"Mission: ALPHA HEX CYAN 77"*.

@@ -43,4 +43,96 @@ you need to sell 2 street level items to get 1 BOND, or 1 Professional or Milita
 add avoid / run to all steps
 give descriptions what has happened: "You have managed to ambush ...." "You are looking for ARCHENEMY when a car serves behind a corner and ARCHENEMY come guns blazing towards you!"
 
-  
+ 
+## ADD2
+##
+## ARCHENEMY
+    Anytime you kill Archenemy, you get one Tier 2 (cost 2 BONDS/+2) weapon and get +3 boost and 2 BONDS. 
+
+
+
+## CHARACTER
+Add to Character a REPUTATION. REPUTATION starts from 1 and can go up to 20. 
+You get REPUTATION in a following way:
++ 1 per successful mission
++ 1 if the mission was worth 4 or more BONDS
++ 1 if it was ASSASSINATION ("Shadow of mission LOCATION")
++ 2 when you kill your ARCHENEMY ("Killer of ARCHENEMY NICKNAME")
++ 1 when you gain a BLOODBROTHER ("FRIEND OF BLOODBROTHER NICKNAME")
++ 1 if the mission is SPECIAL MISSION.
+
+REPUTATION levels are:
+1-5 Street Rat (Tier 1)
+6-10 Warhound (Tier 2)
+11-15 Operative (Tier 3)
+16-20 Legend (Tier 4)
+
+## Missions
+There should be always two jobs that are offered.
+You will be only offered missions of your own level or lower or there is 10% chance that one of the jobs is a one level higher job.
+There is always cumulative +10% to the chance that the second job is one level higher for each re-roll/night you have spent. The other job is always your own level or lower.
+
+ASSASINATION: 
+If Target is killed the Faction target belonged too looses 2 power. The Faction giving the job gains 2 power. 
+DELAY:  
+If the Delay is successful the target faction loses 2 WEALTH and 1 R&D. Employing Faction gains 2 Wealth.   
+HEIST:
+If the Heist is successful the target faction where the target was stolen loses 1 WEALTH and 2 R&D. Employing Faction gains 2 R&D.   
+HOLD: 
+If the Hold is successful the attacking faction that fails loses 1 WEALTH and 1 POWER. Employing Faction gains 1 POWER.  
+TRANSPORT:
+If the Transport is successful the chasing loses 1 WEALTH and 1 POWER. Employing Faction gains 1 WEALTH.
+
+Factions in missions (target, employer) should be always on a same category (CORPO/CRIME/NOMAD) or from pairs (CORPO/CRIME), (CRIME/NOMAD). Authority factions can only be targets, never employers.
+
+There is 10% change that the higher Tier mission is a SPECIAL MISSION.
+SPECIAL MISSION is different as:
+* factions can be in any roles
+* it is higher Tier, and challanges get extra -1 modifier.
+* it is DANGEROUS (BLOODBROTHER can die on FAILURE or be wounded on PARTIAL combat challenges).
+* it has higher payment, +2 BOND
+* they have a mission name (Greek Alphabet + geometric shape + color + double digit number) e.g. Mission: ALPHA HEX CYAN 77
+* relationship results will be +1 or -1 higher or lower.
+
+## FACTIONS
+Factions are also placed to Tiers:
+CORPO = Tier 3 or 4
+CRIME = Tier 2 or 3
+NOMAD = Tier 1 or 2
+EurCop = always Tier 2
+SwissGuard = always Tier 3
+
+Factions start from lower tier if they have two. 
+R&D 10 or higher advances Faction to higher Tier. It will go lower of R&D goes lower than 8 after the increase. 
+Wealth 10 higher increases Faction tier to next category if it has also higher Tier (NOMAD Tier 2 to CRIME Tier 2) or (CRIME Tier 3 to CORPO Tier 3).
+Power 10 or higher faction tries to destroy other same category (CORPO/CRIME/NOMAD) faction. Each round/night roll 2d6: if 6 or less it doesn't succeed and loses 1 power. 7-9: it starts a assasination mission (SPECIAL MISSION, 100% change) against to target faction, if the mission succeeds then it destroys the target faction; 10+ it succeeds in destroying the target faction. Attacking faction gains +1 for each attribute of 10 and if it has higher tier than target. Also target's each attribute of 10 gives -1 and if target is higher tier -1.
+If a faction is only faction in CORPO category then game is lost as MULTI-CORP is born and oppresses everyone. Create appropriate descriptions.
+
+Tier effects to missions:
+Challenges agains a faction have a modifier of Tier level -1.
+
+## MISSION CHALLENGES
+Combat: add heat always.
+10+ : success. All good.
+7-9: partial. one box damage or lost equipments or wounded helper (hired help or bloodbrother)
+<6: failure. two box damage and lost equipment or wounded help.
+
+Driving
+10+ : success
+7-9: partial. damage to vehicle or one box damage or lost equipment. add heat.
+<6: failure. one box damage and lose vehicle. add heat.
+
+Hacking
+10+ : success
+7-9: partial. add heat or lose equipment (deck or ICE)
+<6: failure. add heat and one box damage or lost equipment (deck or software)
+
+Social
+10+ : success
+7-9: partial. add heat or lose equipment
+<6: failure. add heat and lose equipment
+
+Stealth
+10+ : success
+7-9: partial. add heat or lose equipment
+<6: failure. add 2 heat and one box damage.
