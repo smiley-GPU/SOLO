@@ -861,6 +861,26 @@ function finalizeStep(step) {
 // A failed/partial check no longer always means Harm (todo2.md) — each
 // Challenge type has a weighted table of what actually goes wrong
 // (DATA.failOutcomes), and the tier (partial vs fail) sets how bad it is.
+// Gear damage downgrades a tier instead of destroying outright
+// (Corrections.md: "gear damage should lower the gear grade or remove it
+// if it goes below street") — Military -> Professional -> Street -> gone.
+// Shared by every "you lose/damage a piece of gear" consequence: the
+// Combat/Driving fail table below, Hunt's combat fallout, and a bad Hunt
+// Run.
+const GEAR_TIER_ORDER = ["Street", "Professional", "Military"];
+function degradeGearItem(c, item) {
+  const idx = c.gear.indexOf(item);
+  if (idx === -1) return;
+  const tierIdx = GEAR_TIER_ORDER.indexOf(item.tier || "Street");
+  if (tierIdx <= 0) {
+    c.gear.splice(idx, 1);
+    addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${item.name})`);
+  } else {
+    item.tier = GEAR_TIER_ORDER[tierIdx - 1];
+    addLog(c, `${pick(DATA.gearDamageFlavor.degrade)} (${item.name} degrades to ${item.tier})`);
+  }
+}
+
 function applyOutcome(c, job, attr, tier) {
   const table = DATA.complications[attr];
   if (tier === "full") {
@@ -885,9 +905,7 @@ function applyOutcome(c, job, attr, tier) {
     } else {
       const matching = c.gear.filter(g => g.attr === attr);
       const pool = matching.length ? matching : c.gear;
-      const idx = c.gear.indexOf(pick(pool));
-      const [lost] = c.gear.splice(idx, 1);
-      addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${lost.name})`);
+      degradeGearItem(c, pick(pool));
     }
   } else if (effect === "heat") {
     if (loc) loc.heat = Math.min(5, loc.heat + (tier === "fail" ? 2 : 1));
@@ -1243,9 +1261,36 @@ function renderHunt() {
     choice: renderHuntChoice,
     avoid: renderHuntAvoid,
     combat: renderHuntCombat,
-    chase: renderHuntChase
+    chase: renderHuntChase,
+    run: renderHuntRun
   };
   (stageFns[hunt.stage] || renderHuntResolution)(wrap);
+}
+
+// Bail-out options offered on most Hunt steps (todo3.md HUNT: "add avoid /
+// run to all steps") — Avoid reuses the dedicated Stealth roll/stage, Run
+// reuses the dedicated Driving roll/stage. Hidden mid-roll (a pendingResult
+// already on screen) and each skippable per-stage so a step never offers a
+// redundant duplicate of its own option.
+function renderHuntEscape(container, options) {
+  const hunt = G.hunt;
+  if (hunt.pendingResult) return;
+  const opts = options || {};
+  const row = document.createElement("div");
+  row.className = "offer";
+  if (!opts.skipAvoid) {
+    const avoidBtn = document.createElement("button");
+    avoidBtn.textContent = "Try to Slip Away (Stealth)";
+    avoidBtn.addEventListener("click", () => { hunt.stage = "avoid"; persist(); render(); });
+    row.appendChild(avoidBtn);
+  }
+  if (!opts.skipRun) {
+    const runBtn = document.createElement("button");
+    runBtn.textContent = "Try to Run (Driving)";
+    runBtn.addEventListener("click", () => { hunt.stage = "run"; persist(); render(); });
+    row.appendChild(runBtn);
+  }
+  container.appendChild(row);
 }
 
 // Mirrors the single-attribute half of renderChallenge(), but for the Hunt
@@ -1323,20 +1368,21 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
 }
 
 function renderHuntNotice(container) {
-  renderHuntRoll(container, "Social", "Something's off tonight. Do you notice the ambush coming?", 0, (res) => {
+  renderHuntRoll(container, "Social", `Something's off tonight. Do you notice ${G.hunt.archenemy.name} closing in?`, 0, (res) => {
     const c = G.character, hunt = G.hunt;
     if (res.tier === "fail") {
-      addLog(c, `You don't see it coming. ${hunt.archenemy.name} is already on you.`);
+      addLog(c, `You're watching the wrong corner when a car swerves out of nowhere — ${hunt.archenemy.name} comes out guns blazing!`);
       hunt.stage = "combat";
     } else {
       hunt.combatBonus = res.tier === "full" ? 2 : 0;
       addLog(c, res.tier === "full"
-        ? `You clock them a beat before they move — you've got the opening if you want it.`
-        : `You catch it just in time to have options.`);
+        ? `You have managed to ambush ${hunt.archenemy.name} — you've got the opening if you want it.`
+        : `You catch the movement just in time to have options.`);
       hunt.stage = "choice";
     }
     persist(); render();
   });
+  renderHuntEscape(container);
 }
 
 // The player-initiated Hunt's own Social table (todo3.md Persons) —
@@ -1349,32 +1395,38 @@ function renderHuntTrack(container) {
     const c = G.character, hunt = G.hunt;
     if (res.tier === "full") {
       hunt.combatBonus = 2;
-      addLog(c, `You find them first and get the drop.`);
+      addLog(c, `You have managed to ambush ${hunt.archenemy.name} before they even knew you were there.`);
       hunt.stage = "combat";
     } else if (res.tier === "partial") {
-      addLog(c, `You track them down. No surprises either way.`);
+      addLog(c, `You track ${hunt.archenemy.name} down. No surprises either way.`);
       hunt.stage = "choice";
     } else {
-      addLog(c, `They clock you before you clock them.`);
+      addLog(c, `You're looking for ${hunt.archenemy.name} when a car swerves round the corner — ${hunt.archenemy.name} comes out guns blazing!`);
       const wentDown = applyHarm(c);
       if (wentDown && !c.permanentInjury) resolveDownEvent(c);
       hunt.stage = "choice";
     }
     persist(); render();
   });
+  renderHuntEscape(container);
 }
 
 function renderHuntChoice(container) {
   const hunt = G.hunt;
   const block = document.createElement("div");
   block.className = "challenge";
-  block.innerHTML = `<p class="step-desc">Avoid them, or meet them head-on${hunt.combatBonus ? ` (+${hunt.combatBonus} if you fight)` : ""}?</p>`;
+  block.innerHTML = `<p class="step-desc">${hunt.archenemy.name} is close. Avoid them, run for it, or meet them head-on${hunt.combatBonus ? ` (+${hunt.combatBonus} if you fight)` : ""}?</p>`;
   container.appendChild(block);
 
   const avoidBtn = document.createElement("button");
   avoidBtn.textContent = "Avoid (Stealth)";
   avoidBtn.addEventListener("click", () => { hunt.stage = "avoid"; persist(); render(); });
   block.appendChild(avoidBtn);
+
+  const runBtn = document.createElement("button");
+  runBtn.textContent = "Run (Driving)";
+  runBtn.addEventListener("click", () => { hunt.stage = "run"; persist(); render(); });
+  block.appendChild(runBtn);
 
   const fightBtn = document.createElement("button");
   fightBtn.textContent = "Fight";
@@ -1383,30 +1435,31 @@ function renderHuntChoice(container) {
 }
 
 function renderHuntAvoid(container) {
-  renderHuntRoll(container, "Stealth", "Slip past them before they close the distance.", 0, (res) => {
+  renderHuntRoll(container, "Stealth", `Slip past ${G.hunt.archenemy.name} before they close the distance.`, 0, (res) => {
     const c = G.character, hunt = G.hunt;
     if (res.tier === "fail") {
-      addLog(c, `No good — they're on you. Fight's here whether you like it or not.`);
+      addLog(c, `No good — ${hunt.archenemy.name} is on you. The fight's here whether you like it or not.`);
       hunt.stage = "combat";
     } else {
-      addLog(c, `You slide out of sight. Not tonight.`);
+      addLog(c, `You slide out of sight. Not tonight, ${hunt.archenemy.name}.`);
       hunt.stage = "resolved-evade";
     }
     persist(); render();
   });
+  renderHuntEscape(container, { skipAvoid: true });
 }
 
 // A light, existing-style Combat-fail consequence for a whiffed Attack roll
 // — reuses the normal weighted fallout table rather than new bespoke text.
+// gearDamage downgrades a tier instead of destroying outright (Corrections.md
+// — see degradeGearItem() near applyOutcome()).
 function applyHuntCombatFailFallout(c) {
   const effect = pickWeighted(DATA.failOutcomes.Combat);
   if (effect === "harm" || (effect === "gearDamage" && c.gear.length === 0)) {
     const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
   } else if (effect === "gearDamage") {
-    const idx = randInt(0, c.gear.length - 1);
-    const [lost] = c.gear.splice(idx, 1);
-    addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${lost.name})`);
+    degradeGearItem(c, c.gear[randInt(0, c.gear.length - 1)]);
   } else if (effect === "credLoss" && c.bonds > 0) {
     c.bonds -= 1;
     addLog(c, `${pick(DATA.credLossFlavor.fail)} (-1 BOND)`);
@@ -1417,7 +1470,7 @@ function renderHuntCombat(container) {
   const hunt = G.hunt;
 
   if (hunt.combatChoice === "attack") {
-    renderHuntRoll(container, "Combat", `Wounds landed: ${hunt.wounds}/3.`, hunt.combatBonus, (res) => {
+    renderHuntRoll(container, "Combat", `Wounds landed on ${hunt.archenemy.name}: ${hunt.wounds}/3.`, hunt.combatBonus, (res) => {
       const c = G.character;
       hunt.combatBonus = 0;
       hunt.combatChoice = null;
@@ -1435,36 +1488,7 @@ function renderHuntCombat(container) {
     return;
   }
 
-  if (hunt.combatChoice === "run") {
-    renderHuntRoll(container, "Driving", "Gun it and try to lose them.", 0, (res) => {
-      const c = G.character;
-      hunt.combatChoice = null;
-      if (res.tier === "full") {
-        addLog(c, "Clean break. You lose them in the traffic.");
-        hunt.stage = "resolved-run-clean";
-      } else if (res.tier === "partial") {
-        const wentDown = applyHarm(c);
-        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-        addLog(c, "You get away, but they clip you on the way out.");
-        hunt.stage = "resolved-run-hit";
-      } else {
-        const wentDown = applyHarm(c);
-        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-        if (c.gear.length && Math.random() < 0.5) {
-          const idx = randInt(0, c.gear.length - 1);
-          const [lost] = c.gear.splice(idx, 1);
-          addLog(c, `Bad break — you're hit, and ${lost.name} goes flying in the crash.`);
-        } else {
-          const loss = Math.min(c.bonds, randInt(1, 2));
-          c.bonds -= loss;
-          addLog(c, `Bad break — you're hit, and it costs you ${loss} BOND${loss === 1 ? "" : "S"} to smooth things over after.`);
-        }
-        hunt.stage = "resolved-run-bad";
-      }
-      persist(); render();
-    });
-    return;
-  }
+  if (hunt.combatChoice === "run") { renderHuntRun(container); return; }
 
   const block = document.createElement("div");
   block.className = "challenge";
@@ -1478,6 +1502,42 @@ function renderHuntCombat(container) {
   runBtn.textContent = "Run (Driving)";
   runBtn.addEventListener("click", () => { hunt.combatChoice = "run"; persist(); render(); });
   block.appendChild(runBtn);
+  const avoidBtn = document.createElement("button");
+  avoidBtn.textContent = "Break Off (Stealth)";
+  avoidBtn.addEventListener("click", () => { hunt.stage = "avoid"; persist(); render(); });
+  block.appendChild(avoidBtn);
+}
+
+// The Run roll (todo3.md HUNT: "add avoid / run to all steps") — reached
+// either mid-combat (hunt.combatChoice === "run") or directly as its own
+// stage from anywhere renderHuntEscape() offers it.
+function renderHuntRun(container) {
+  renderHuntRoll(container, "Driving", `Gun it and try to lose ${G.hunt.archenemy.name}.`, 0, (res) => {
+    const c = G.character, hunt = G.hunt;
+    hunt.combatChoice = null;
+    if (res.tier === "full") {
+      addLog(c, `Clean break. You lose ${hunt.archenemy.name} in the traffic.`);
+      hunt.stage = "resolved-run-clean";
+    } else if (res.tier === "partial") {
+      const wentDown = applyHarm(c);
+      if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+      addLog(c, `You get away, but ${hunt.archenemy.name} clips you on the way out.`);
+      hunt.stage = "resolved-run-hit";
+    } else {
+      const wentDown = applyHarm(c);
+      if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+      if (c.gear.length && Math.random() < 0.5) {
+        degradeGearItem(c, c.gear[randInt(0, c.gear.length - 1)]);
+        addLog(c, "Bad break — you're hit, and the crash bangs up your gear.");
+      } else {
+        const loss = Math.min(c.bonds, randInt(1, 2));
+        c.bonds -= loss;
+        addLog(c, `Bad break — you're hit, and it costs you ${loss} BOND${loss === 1 ? "" : "S"} to smooth things over after.`);
+      }
+      hunt.stage = "resolved-run-bad";
+    }
+    persist(); render();
+  });
 }
 
 function renderHuntChase(container) {
@@ -1485,17 +1545,34 @@ function renderHuntChase(container) {
     const c = G.character, hunt = G.hunt;
     if (res.tier === "full") {
       hunt.wounds = 3;
-      addLog(c, `You run them down and finish it.`);
+      addLog(c, `You run ${hunt.archenemy.name} down and finish it.`);
       applyHuntKillReward(c);
     } else if (res.tier === "partial") {
       addLog(c, `You lose them in the chase, but the fight's over — ${hunt.archenemy.name} won't forget this.`);
       hunt.stage = "resolved-escape-win";
     } else {
-      addLog(c, `They get away clean.`);
+      addLog(c, `${hunt.archenemy.name} gets away clean.`);
       hunt.stage = "resolved-escape-clean";
     }
     persist(); render();
   });
+  // The chase-specific bail option (todo3.md HUNT: "add avoid / run to all
+  // steps") — ending it clean, without rolling, rather than a Stealth/
+  // Driving check that wouldn't fit "give up mid-chase".
+  if (!G.hunt.pendingResult) {
+    const row = document.createElement("div");
+    row.className = "offer";
+    const letGoBtn = document.createElement("button");
+    letGoBtn.textContent = "Let Them Go";
+    letGoBtn.addEventListener("click", () => {
+      const c = G.character, hunt = G.hunt;
+      addLog(c, `You ease off — ${hunt.archenemy.name} gets away clean.`);
+      hunt.stage = "resolved-escape-clean";
+      persist(); render();
+    });
+    row.appendChild(letGoBtn);
+    container.appendChild(row);
+  }
 }
 
 // One-time reward on the killing blow (todo3.md) — a free Professional-tier

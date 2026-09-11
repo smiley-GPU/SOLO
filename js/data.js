@@ -150,7 +150,11 @@ const DATA = {
   // alongside the existing per-attribute complications below.
   gearDamageFlavor: {
     partial: ["A close call bends something — you'll need a quick repair.", "Your gear takes a knock; nothing lost, but it'll cost to fix."],
-    fail: ["Wrecked beyond repair — you lose the piece for good.", "It's trashed in the scuffle; that one's gone."]
+    // "fail" is the final-loss line (Street-tier gear damaged with nowhere
+    // left to downgrade to); "degrade" is Corrections.md's softer outcome —
+    // the piece survives, just knocked down a grade.
+    fail: ["Wrecked beyond repair — you lose the piece for good.", "It's trashed in the scuffle; that one's gone."],
+    degrade: ["It takes a beating but holds together — knocked down a grade.", "Banged up bad; it'll still work, just not like it used to."]
   },
   credLossFlavor: {
     partial: ["You grease a palm to make this go away.", "A quiet bribe smooths it over."],
