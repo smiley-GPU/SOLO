@@ -7,4 +7,8 @@ Arasaka = Hammerstein GmbH
 Militech = Bulldog Ltd.
 KangTao = Styletto 
 GANGS are CRIME: EuroMafia, Vikings, Hooligans
-NOMADS are 
+NOMADS are Vlads, Sombra 43, Odin's Ax
+Change all names and street names to more european variants: french, italian, nordic and east european names
+Equipments should also have original names
+Clothing gives stealth bonuses - put some fashion brand like names here
+Armor - gives you a chance to absorp damage, but then the armor is damaged (if 0, remove item as broken)

@@ -3,16 +3,18 @@
 
 const SAVE_KEY = "solo_game_save_v1";
 
+// Starting gear names match the Street-tier catalog in data.js where the
+// item is mechanically identical (original Europunk names — Corrections.md).
 const PROFESSIONS = {
-  Solo: { boosts: ["Combat", "Stealth"], gear: [{ name: "Sidearm", attr: "Combat" }, { name: "Light Armor", attr: "Stealth" }], desc: "Combat & Stealth. Starts armed and armored." },
-  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Netrunner Deck", attr: "Hacking" }, { name: "Icebreaker Program", attr: "Hacking" }], desc: "Hacking & Social. Starts with a deck and a program." },
-  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Motorcycle", attr: "Driving" }], desc: "Social & Driving. Starts with a ride and a crew contact." }
+  Solo: { boosts: ["Combat", "Stealth"], gear: [{ name: "Kessler Snub", attr: "Combat" }, { name: "Padded Vest", armor: 1 }], desc: "Combat & Stealth. Starts armed and armored." },
+  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Bootleg Deck", attr: "Hacking" }, { name: "Patchwork ICE Program", attr: "Hacking" }], desc: "Hacking & Social. Starts with a deck and a program." },
+  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Ostrava Runner", attr: "Driving" }], desc: "Social & Driving. Starts with a ride and a crew contact." }
 };
 
 const TURFS = {
-  Nomad: { boost: "Driving", bonds: 2, contactFaction: "Aldecaldos", gear: [{ name: "Beater Car", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
-  Corpo: { boost: "Hacking", bonds: 3, contactFaction: "Arasaka", gear: [], desc: "+Hacking. Extra starting BONDS and a Corp contact (a favor owed either way)." },
-  Street: { boost: "Stealth", bonds: 2, contactFaction: "Valentinos", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Gang contact and a point of BOOST." }
+  Nomad: { boost: "Driving", bonds: 2, contactFaction: "Vlads", gear: [{ name: "Kombi Wagon", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
+  Corpo: { boost: "Hacking", bonds: 3, contactFaction: "Hammerstein GmbH", gear: [], desc: "+Hacking. Extra starting BONDS and a Corp contact (a favor owed either way)." },
+  Street: { boost: "Stealth", bonds: 2, contactFaction: "EuroMafia", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Crime contact and a point of BOOST." }
 };
 
 function defaultCharacter(name, profession, turf) {
@@ -199,6 +201,27 @@ function markHarm(character) {
 function healBox(character) {
   const idx = character.health.findIndex(h => h);
   if (idx !== -1) character.health[idx] = false;
+}
+
+// Armor (Corrections.md): a flat chance to fully absorb a Harm mark
+// instead of taking it, at the cost of one durability point off the armor
+// (`item.armor`, set to the tier's charge count at purchase — see
+// DATA.gear in data.js); broken (0 durability) armor is removed. Tier only
+// sets how many hits an armor item can take, not the odds. This is the one
+// path anything should use in place of a bare markHarm() call.
+const ARMOR_ABSORB_CHANCE = 0.5;
+function applyHarm(character) {
+  const armor = character.gear.find(item => item.armor > 0);
+  if (armor && Math.random() < ARMOR_ABSORB_CHANCE) {
+    armor.armor -= 1;
+    addLog(character, `${armor.name} takes the hit for you.`);
+    if (armor.armor <= 0) {
+      character.gear = character.gear.filter(item => item !== armor);
+      addLog(character, `${armor.name} is wrecked — it won't stop another one.`);
+    }
+    return false; // absorbed clean — no Health box marked, so never "wentDown" here
+  }
+  return markHarm(character);
 }
 
 // Fires exactly once, the moment a character goes Down (all 3 Health boxes

@@ -2,94 +2,110 @@
 // per gamedesc.md §9 ("data-driven tables").
 
 const DATA = {
+  // European first-name pool (Corrections.md: "french, italian, nordic and
+  // east european names") — mixed nationalities on purpose, no single-origin
+  // block.
   firstNames: [
-    "Viper", "Kai", "Ash", "Rin", "Dax", "Nova", "Ezra", "Six", "Juno", "Cass",
-    "Rook", "Mika", "Zed", "Lena", "Tobi", "Yara", "Ren", "Wick", "Suki", "Blaze"
+    "Luca", "Amara", "Bjorn", "Elin", "Mateusz", "Ines", "Dimitri", "Freya",
+    "Giulia", "Sven", "Katarina", "Marco", "Ingrid", "Nikolai", "Chiara",
+    "Anders", "Zofia", "Tomas", "Léa", "Viktor"
   ],
+  // Street/hacker handles — same European mix, kept short and punchy.
   handles: [
-    "Ferro", "Nightwire", "Chrome", "Static", "Wraith", "Ratchet", "Glitch",
-    "Talon", "Slate", "Vega", "Riot", "Marrow", "Fuse", "Halo", "Kestrel",
-    "Bramble", "Doss", "Kilo", "Snapback", "Torque"
+    "Ferro", "Nera", "Lupo", "Fenrir", "Ravn", "Sabel", "Noir", "Vlk",
+    "Krähe", "Ombra", "Falke", "Ghiaccio", "Corvo", "Mrok", "Volkov",
+    "Eisen", "Blitz", "Rook", "Kilo", "Sturm"
   ],
 
-  // Exactly 3 factions per level (Corpo/Gang/Nomad) plus 2 Authority factions,
-  // per todo2.md. Each has a Wealth/R&D/Power standing tracked per-character in
+  // Exactly 3 factions per level (Corpo/Crime/Nomad) plus 2 Authority
+  // factions, per todo2.md. Original Europunk names (Corrections.md) — this
+  // is the European SuperState, not any other setting. Each has a
+  // Wealth/R&D/Power standing tracked per-character in
   // character.factionStandings (state.js), seeded from factionBaseStats below.
   factions: [
-    { name: "Arasaka", type: "Corpo" },
-    { name: "Militech", type: "Corpo" },
-    { name: "Kang Tao", type: "Corpo" },
-    { name: "Valentinos", type: "Gang" },
-    { name: "Maelstrom", type: "Gang" },
-    { name: "Tyger Claws", type: "Gang" },
-    { name: "Aldecaldos", type: "Nomad" },
-    { name: "Wraiths", type: "Nomad" },
-    { name: "Bakkers", type: "Nomad" },
-    { name: "NCPD", type: "Authority" },
-    { name: "NCNG", type: "Authority" }
+    { name: "Hammerstein GmbH", type: "Corpo" },
+    { name: "Bulldog Ltd.", type: "Corpo" },
+    { name: "Styletto", type: "Corpo" },
+    { name: "EuroMafia", type: "Crime" },
+    { name: "Vikings", type: "Crime" },
+    { name: "Hooligans", type: "Crime" },
+    { name: "Vlads", type: "Nomad" },
+    { name: "Sombra 43", type: "Nomad" },
+    { name: "Odin's Ax", type: "Nomad" },
+    { name: "EurCop", type: "Authority" },
+    { name: "SwissGuard", type: "Authority" }
   ],
 
   // Starting Wealth/R&D/Power per faction type — see factionStandings in state.js.
   factionBaseStats: {
     Corpo: { wealth: 8, rnd: 8, power: 4 },
-    Gang: { wealth: 3, rnd: 1, power: 6 },
+    Crime: { wealth: 3, rnd: 1, power: 6 },
     Nomad: { wealth: 4, rnd: 2, power: 4 },
     Authority: { wealth: 5, rnd: 3, power: 8 }
   },
 
   npcProfessions: [
     "Fixer", "Corp Exec", "Ganger", "Nomad Rider", "Netrunner", "Solo",
-    "Media", "Cop", "Civilian", "Medtech", "Techie", "Ripperdoc"
+    "Media", "Cop", "Civilian", "Medtech", "Techie", "Body Doc"
   ],
 
   // Fixed, permanent world map — always these 12, never randomly combined.
-  // faction is null for open/neutral turf. See gamedesc.md §6.
+  // faction is null for open/neutral turf. See gamedesc.md §6. Original
+  // European names (Corrections.md) mixing French/Italian/Nordic/German/
+  // East European flavor.
   locations: [
-    { name: "Neon Wash", area: "Urban", faction: "Valentinos" },
-    { name: "Undercroft Row", area: "Urban", faction: "Maelstrom" },
-    { name: "Rustline Market", area: "Urban", faction: null },
-    { name: "The Hollow Mile", area: "Urban", faction: "Tyger Claws" },
-    { name: "Arasaka Spire", area: "Corpo", faction: "Arasaka" },
-    { name: "Zenith Campus", area: "Corpo", faction: "Militech" },
-    { name: "Meridian Atrium", area: "Corpo", faction: "Kang Tao" },
-    { name: "The Glass Exchange", area: "Corpo", faction: null },
-    { name: "Saltflat Depot", area: "Rural", faction: "Aldecaldos" },
-    { name: "Ashwind Highway", area: "Rural", faction: "Wraiths" },
-    { name: "Bonepile Yards", area: "Rural", faction: "Bakkers" },
-    { name: "The Rustbelt Outpost", area: "Rural", faction: null }
+    { name: "Rive Nord", area: "Urban", faction: "EuroMafia" },
+    { name: "Nedre Kvartal", area: "Urban", faction: "Vikings" },
+    { name: "Mercato Vecchio", area: "Urban", faction: null },
+    { name: "Pustý Blok", area: "Urban", faction: "Hooligans" },
+    { name: "Hammerstein Turm", area: "Corpo", faction: "Hammerstein GmbH" },
+    { name: "Campus Bulldog", area: "Corpo", faction: "Bulldog Ltd." },
+    { name: "Atrio Styletto", area: "Corpo", faction: "Styletto" },
+    { name: "La Bourse de Verre", area: "Corpo", faction: null },
+    { name: "Depozit Vlad", area: "Rural", faction: "Vlads" },
+    { name: "Askeveien", area: "Rural", faction: "Sombra 43" },
+    { name: "Beinhaugen", area: "Rural", faction: "Odin's Ax" },
+    { name: "Posterunek Rdzy", area: "Rural", faction: null }
   ],
 
   // Prices/bonuses are BOND-scale (todo3.md): Street +1 for 1 BOND,
   // Professional +2 for 2 BONDS, Military +3 for 3 BONDS. A few entries
   // carry `heal` instead of `attr` — "health gear or body modifications"
   // that boost the Rest healing roll (see bestHealBonus in state.js).
+  // Original item names throughout (Corrections.md) — Clothing (the
+  // Stealth-attr line) is named like fashion labels on purpose; Armor
+  // entries carry `armor` instead of `attr` — absorb charges for the
+  // damage-absorption mechanic (see applyHarm() in state.js).
   gear: {
     Street: [
-      { name: "Snub Pistol", attr: "Combat", price: 1 },
-      { name: "Rusty Blade", attr: "Combat", price: 1 },
-      { name: "Padded Jacket", attr: "Stealth", price: 1 },
-      { name: "Beater Bike", attr: "Driving", price: 1 },
-      { name: "Burner Deck", attr: "Hacking", price: 1 },
-      { name: "Street Cred Chips", attr: "Social", price: 1 },
-      { name: "Trauma Kit", heal: 1, price: 1 }
+      { name: "Kessler Snub", attr: "Combat", price: 1 },
+      { name: "Rusted Stiletto", attr: "Combat", price: 1 },
+      { name: "Grigio Overcoat", attr: "Stealth", price: 1 },
+      { name: "Ostrava Runner", attr: "Driving", price: 1 },
+      { name: "Bootleg Deck", attr: "Hacking", price: 1 },
+      { name: "Kiosk Chits", attr: "Social", price: 1 },
+      { name: "Field Trauma Wrap", heal: 1, price: 1 },
+      { name: "Padded Vest", armor: 1, price: 1 }
     ],
     Professional: [
-      { name: "Tech Pistol", attr: "Combat", price: 2 },
-      { name: "Monoblade", attr: "Combat", price: 2 },
-      { name: "Optical Camo Cloak", attr: "Stealth", price: 2 },
-      { name: "Tuned Sedan", attr: "Driving", price: 2 },
-      { name: "Icebreaker Deck", attr: "Hacking", price: 2 },
-      { name: "Fixer's Rolodex", attr: "Social", price: 2 },
-      { name: "Subdermal Mesh", heal: 2, price: 2 }
+      { name: "Halvar Sidearm", attr: "Combat", price: 2 },
+      { name: "Monofilament Edge", attr: "Combat", price: 2 },
+      { name: "Notte Milano", attr: "Stealth", price: 2 },
+      { name: "Voss Coupé", attr: "Driving", price: 2 },
+      { name: "Rime Breaker", attr: "Hacking", price: 2 },
+      { name: "Broker's Black Book", attr: "Social", price: 2 },
+      { name: "Dermal Weave", heal: 2, price: 2 },
+      { name: "Kevlar Weave Jacket", armor: 2, price: 2 }
     ],
     Military: [
-      { name: "Smart SMG", attr: "Combat", price: 3 },
-      { name: "Mantis Blades", attr: "Combat", price: 3 },
-      { name: "Ghost Cloak", attr: "Stealth", price: 3 },
-      { name: "Armored AV", attr: "Driving", price: 3 },
-      { name: "Blackwall Shard", attr: "Hacking", price: 3 },
-      { name: "Corp Blackmail File", attr: "Social", price: 3 },
-      { name: "Trauma Team Platinum Card", heal: 3, price: 3 }
+      { name: "Sturmgewehr SMG", attr: "Combat", price: 3 },
+      { name: "Raptor Talons", attr: "Combat", price: 3 },
+      { name: "Ombra Couture", attr: "Stealth", price: 3 },
+      { name: "Panzer AV", attr: "Driving", price: 3 },
+      { name: "Blackline Shard", attr: "Hacking", price: 3 },
+      { name: "Ledger of Favors", attr: "Social", price: 3 },
+      { name: "MedCorp Platinum Chit", heal: 3, price: 3 },
+      { name: "Composite Plate", armor: 3, price: 3 }
     ]
   },
 
@@ -108,7 +124,7 @@ const DATA = {
   // not the mission type. Delay rolls one too, but it's just flavor ("could be
   // anything, you're covering for someone else's job") — see engine.js genMission.
   assetTypes: {
-    wealth: ["a case of untraceable eddies", "a shipment of black-market luxury goods", "a stash of counterfeit credchips"],
+    wealth: ["a case of untraceable BONDS", "a shipment of black-market luxury goods", "a stash of counterfeit chits"],
     rnd: ["a prototype cyberware core", "an encrypted R&D data shard", "a stolen weapons blueprint"],
     power: ["a crate of military-grade hardware", "a cache of restricted munitions", "a captured enforcer"]
   },

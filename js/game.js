@@ -64,7 +64,7 @@ function renderFactions() {
   els.factions.innerHTML = "";
   if (!G.character) return;
   const standings = G.character.factionStandings;
-  const types = ["Corpo", "Gang", "Nomad", "Authority"];
+  const types = ["Corpo", "Crime", "Nomad", "Authority"];
   const html = types.map(type => {
     const rows = DATA.factions.filter(f => f.type === type).map(f => {
       const s = standings[f.name] || { wealth: 0, rnd: 0, power: 0 };
@@ -82,7 +82,7 @@ function renderSheet() {
   if (!c) { els.sheet.innerHTML = ""; return; }
   const attrRows = Object.entries(c.attrs).map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
-  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name} <em>(${g.tier || "Street"}${g.attr ? ` ${g.attr}` : g.heal ? " heal" : ""})</em></li>`).join("") : "<li><em>none</em></li>";
+  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name} <em>(${g.tier || "Street"}${g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : ""})</em></li>`).join("") : "<li><em>none</em></li>";
   // "People" is the full recurring-cast pool, not just friendly contacts —
   // Adversaries and Targets you've crossed paths with end up here too, with
   // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
@@ -486,7 +486,7 @@ function finishNightOnStreet() {
     healBox(c);
     addLog(c, `You get through ${flavor} — and actually catch some real rest.`);
   } else if (res.tier === "fail") {
-    const wentDown = markHarm(c);
+    const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     addLog(c, `It's ${flavor}, and it costs you — you catch a hit out there.`);
   } else {
@@ -540,7 +540,7 @@ function finishBrotherFight() {
     if (bb) nudgeRelationship(c, bb.id, -1);
     addLog(c, `Messy, but you walk away. ${bb ? bb.faction : "Their crew"} won't forget it though.`);
   } else {
-    const wentDown = markHarm(c);
+    const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     addLog(c, "You catch a bad one in the scuffle.");
   }
@@ -654,14 +654,14 @@ function renderGearUp() {
     const price = item.price;
     const row = document.createElement("div");
     row.className = "offer";
-    const kind = item.attr ? item.attr : "heal";
+    const kind = item.attr ? item.attr : item.heal ? "heal" : `armor x${item.armor}`;
     row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${kind})</em></span><span>${price} BOND${price === 1 ? "" : "S"}</span>`;
     const btn = document.createElement("button");
     btn.textContent = item.bought ? "Bought" : "Buy";
     btn.disabled = c.bonds < price || item.bought;
     btn.addEventListener("click", () => {
       c.bonds -= price;
-      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, tier: item.tier });
+      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier });
       item.bought = true;
       addLog(c, `You pick up a ${item.name} for the job — yours to keep.`);
       persist(); render();
@@ -875,7 +875,7 @@ function applyOutcome(c, job, attr, tier) {
   if (effect === "gearDamage" && tier === "fail" && c.gear.length === 0) effect = "credLoss";
 
   if (effect === "harm") {
-    const wentDown = markHarm(c);
+    const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     if (attr === "Combat" && tier === "fail" && loc) loc.heat = Math.min(5, loc.heat + 1);
   } else if (effect === "gearDamage") {
@@ -1356,7 +1356,7 @@ function renderHuntTrack(container) {
       hunt.stage = "choice";
     } else {
       addLog(c, `They clock you before you clock them.`);
-      const wentDown = markHarm(c);
+      const wentDown = applyHarm(c);
       if (wentDown && !c.permanentInjury) resolveDownEvent(c);
       hunt.stage = "choice";
     }
@@ -1401,7 +1401,7 @@ function renderHuntAvoid(container) {
 function applyHuntCombatFailFallout(c) {
   const effect = pickWeighted(DATA.failOutcomes.Combat);
   if (effect === "harm" || (effect === "gearDamage" && c.gear.length === 0)) {
-    const wentDown = markHarm(c);
+    const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
   } else if (effect === "gearDamage") {
     const idx = randInt(0, c.gear.length - 1);
@@ -1443,12 +1443,12 @@ function renderHuntCombat(container) {
         addLog(c, "Clean break. You lose them in the traffic.");
         hunt.stage = "resolved-run-clean";
       } else if (res.tier === "partial") {
-        const wentDown = markHarm(c);
+        const wentDown = applyHarm(c);
         if (wentDown && !c.permanentInjury) resolveDownEvent(c);
         addLog(c, "You get away, but they clip you on the way out.");
         hunt.stage = "resolved-run-hit";
       } else {
-        const wentDown = markHarm(c);
+        const wentDown = applyHarm(c);
         if (wentDown && !c.permanentInjury) resolveDownEvent(c);
         if (c.gear.length && Math.random() < 0.5) {
           const idx = randInt(0, c.gear.length - 1);
