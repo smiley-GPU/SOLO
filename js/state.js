@@ -144,6 +144,29 @@ function nudgeRelationship(character, personId, delta) {
   const person = character.contacts.find(p => p.id === personId);
   if (!person) return;
   person.relationship = Math.max(-5, Math.min(5, person.relationship + delta));
+  // A BLOODBROTHER whose relationship turns negative flips to Archenemy
+  // (todo3.md Persons) — checked here so it applies no matter what caused
+  // the drop (Debrief, a Hunt, an Ally-favor failure, ...).
+  if (person.bloodbrother && person.relationship < 0) {
+    tagArchenemy(character, person);
+    addLog(character, `${person.name} turns on you. What you had is gone.`);
+  }
+}
+
+// -- Archenemy / BLOODBROTHER tags (todo3.md Persons) ----------------------
+// A person can never hold both tags — each setter clears the other first.
+// Archenemy also locks in a fixed "tough" tier, read by Hunt's modifiers
+// (renderHuntRoll in game.js).
+function tagArchenemy(character, person) {
+  if (!person) return;
+  person.bloodbrother = false;
+  person.archenemy = true;
+  person.tier = "tough";
+}
+function tagBloodbrother(character, person) {
+  if (!person) return;
+  person.archenemy = false;
+  person.bloodbrother = true;
 }
 
 function killPerson(character, personId) {

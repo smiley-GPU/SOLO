@@ -33,4 +33,11 @@ You can go and click archenemy and start hunting them:
     Social check: 10+ you find and can ambush (+2 first combat round); 7-9: find, normal HUNT sequnce; 6 or below, they find you and you take one wound and HUNT combat /avoid starts.
 If persons relationship is +3 you can ask them to come to your job (GEAR phase) for a payment at end. They can add +2 to any single test. If mission is succesful they will take one BOND from payment and relationship improves +1, if unsuccesfull relationship goes -2.
 If persons relationship is +5 you can ask them to come to your job (GEAR phase) for free. They can add +2 to any single test. If mission is succesful relationship improves +1 And they get TAG BLOODBROTHER (and can be called to help in HUNT), if unsuccesfull relationship goes -2. 
-With BLOODBROTHER you can go and spend the night with them instead of spending night on the street. Roll a Social check: 10+ relationship improves and BLOODBROTHER gives you a gift, a street level item in a categorry you don't have or heal one box or get 1 boost. 7-9: you are hangover -1 boost or -1 to next check, but you heal 1; 6 or below you and your end up to street fight with a faction: combat check: won: +1 boost, partial: all ok, faction relationship goes -1; fail: 1 damage
+With BLOODBROTHER you can go and spend the night with them instead of spending night on the street. Roll a Social check: 10+ relationship improves and BLOODBROTHER gives you a gift, a street level item in a categorry you don't have or heal one box or get 1 boost. 7-9: you are hangover -1 boost or -1 to next check, but you heal 1; 6 or below you and your end up to street fight with a faction: combat check: won: +1 boost, partial: all ok, faction relationship goes -1; fail: 1 damage.
+
+## Items
+add a possibility to sell items in DOWNTIME.
+you need to sell 2 street level items to get 1 BOND, or 1 Professional or Military items to get 1 BOND. If you have a fixer contact with relationship +3 you get a 1 extra BOND from each sale.
+
+
+  
