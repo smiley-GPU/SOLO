@@ -366,6 +366,31 @@ function pairedFactionsFor(character, employerFactionName) {
   return allowed;
 }
 
+// -- Heat checkpoints (§20.7) -----------------------------------------------
+
+// A Location's "category" for checkpoint/raid purposes: its owning
+// faction's *current* category (§19.6), or — for a neutral (faction: null)
+// Location — Corpo if its fixed `area` is "Corpo", else no category at all
+// (no location's `area` is ever "Crime"/"Nomad", only Urban/Corpo/Rural).
+function locationCategory(location, factionStandings) {
+  if (location.faction) {
+    const standing = factionStandings[location.faction];
+    return standing ? standing.category : null;
+  }
+  return location.area === "Corpo" ? "Corpo" : null;
+}
+
+// §20.7 — which agency (if any) mans a checkpoint at this Location right
+// now: none below Heat 3, EurCop from Heat 3 up, SwissGuard if the
+// Location is Corpo-category at Heat 4-5 or Crime-category at Heat 5.
+function checkpointAgency(location, factionStandings) {
+  if (location.heat < 3) return null;
+  const category = locationCategory(location, factionStandings);
+  if (category === "Corpo" && location.heat >= 4) return "SwissGuard";
+  if (category === "Crime" && location.heat >= 5) return "SwissGuard";
+  return "EurCop";
+}
+
 // §19.7 — casts a hostile Target belonging to exactly the queued war's
 // target faction (a plain Employer/Target pairing draw could still land on
 // Freelance, which wouldn't be "against" that faction at all).

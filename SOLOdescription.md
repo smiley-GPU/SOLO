@@ -433,6 +433,10 @@ combined, Heat persists forever once rolled.
   continuing; its outcome runs through the same `applyOutcome`/`applyHarm`
   pipeline as a normal step, but doesn't cancel the job.
 
+**Addition (§20.7)**: Heat ≥3 also gates entry and exit with a mandatory
+(not probabilistic) EurCop/SwissGuard Checkpoint, layered *outside* Random
+Encounters (checkpoint → encounter → Steps → encounter → checkpoint).
+
 ---
 
 ## 10. Mission Generation
@@ -1286,6 +1290,56 @@ both are; no-op if neither exists).
   - **7-9**: Security scares them off, no effect.
   - **6-**: they get burned — the Archenemy's own `factionTier` drops by 1
     (floored at 1), not the faction's.
+
+### 20.7 Heat checkpoints & apartment raids
+**Assumption**: "CORPO location"/"CRIME location" in todo3.md means the
+Location's owning faction's *current* category (`locationCategory()`,
+state.js — reads the same dynamic `category` field as §19.6), not the
+fixed `area` field (no Location's `area` is ever `"Crime"`/`"Nomad"`, only
+`Urban`/`Corpo`/`Rural`). A neutral (`faction: null`) Location falls back
+to its `area` — `"Corpo"` area counts as Corpo-category, anything else has
+no category and never escalates to SwissGuard.
+
+**Checkpoint gate** (`maybeTriggerCheckpoint()`, mirrors §9's
+`maybeTriggerEncounter()` but is deterministic, not a %): Heat ≥3 at the
+job's Location always puts up a checkpoint at both entry and exit —
+`checkpointAgency()` picks EurCop by default, **SwissGuard** if the
+Location is Corpo-category at Heat 4-5 or Crime-category at Heat 5.
+Sequencing (superseding §11's simpler flow): GearUp → checkpoint(pre) →
+encounter(pre) → Steps → encounter(post) → checkpoint(post) → Debrief —
+the checkpoint is the outer gate, Encounters an incidental layer inside it.
+On the **exit** checkpoint only, if any main-sequence step this job already
+came back a Stealth Fail, the roll is skipped entirely and it escalates
+straight to the Fight/Run resolution below — "they already made you."
+
+This is not a normal Challenge — it bypasses `applyOutcome`/
+`DATA.challengeFallout` (§19.9) entirely for its own bespoke table:
+- **Roll** (Social or Stealth): **10+** passes clean. **7-9** flags you
+  down — a real choice, not a random pick: **pay a bribe** (1 BOND, 2 if
+  Heat ≥5 or the Location is Corpo-category) or **ditch a piece of gear**
+  outright (a random owned item removed, not merely downgraded — "get rid
+  of contraband"). **6-**: they make you: → the Fight/Run stage.
+- **Fight/Run** (Combat or Driving, the player's choice — reuses the
+  standard two-button Challenge UI rather than bespoke buttons): **10+**
+  clear, no cost. **7-9**: through, but at a cost — one of {1 Harm box,
+  vehicle damage, a Helper wounded} (§20.4's `woundJobHelper`), picked at
+  random. **6-**: guaranteed 1 Harm box *and* one of {vehicle damage,
+  Helper wounded, a piece of gear damaged} — each falls back to Harm if its
+  preferred target doesn't exist (no vehicle/no active Helper/no gear),
+  same recursive-fallback shape as §19.9's fallout table.
+
+**Apartment raid** (`resolveApartmentRaid()`, Debrief's tail, right after
+§20.6's Archenemy-clock check — the todo's explicit ordering): if the job
+ended at Corpo Heat 4-5 or Crime Heat 5 and the player owns an Apartment, a
+**20% chance** the same agency that would've manned a checkpoint shows up
+at their door instead ("this will be as checkpoint, but the description
+has to be changed"). **Implementation note**: rather than re-entering the
+interactive Checkpoint UI for a job that's already over, this auto-resolves
+as a single roll — `2d6 + Social rank + best Social gear` (the player is
+home, answering the door) — using the same tier thresholds and Fight/Run
+cost table above (Helper-wound excluded, since no Helper is at the
+player's home), reflavored as haggling with detectives rather than a
+street-level shakedown.
 
 ---
 

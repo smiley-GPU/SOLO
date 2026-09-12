@@ -413,6 +413,7 @@ function renderMain() {
     briefing: renderBriefing,
     gearup: renderGearUp,
     encounter: renderEncounter,
+    checkpoint: renderCheckpoint,
     steps: renderSteps,
     debrief: renderDebrief,
     hunt: renderHunt,
@@ -598,6 +599,12 @@ function buildJobFromCandidate(candidate) {
     pendingResult: null,
     lastResult: null,
     encounter: { pre: { done: false }, post: { done: false }, stage: null },
+    // §20.7 — the mandatory Heat checkpoint gate, entry and exit. `stage`
+    // is "roll" (Social/Stealth), "choice" (bribe-or-ditch, a Partial), or
+    // "combat" (Fight/Run, a Fail or a forced Stealth-fail escalation).
+    // `activeStage` records which of pre/post is in progress so the
+    // resolution handler knows where to route once it's done.
+    checkpoint: { pre: { done: false }, post: { done: false }, stage: null, agency: null, activeStage: null },
     outcome: null,
     sideObjective: null // "more BONDS" side job (todo3.md ADD) — see takeSideJob
   };
@@ -968,6 +975,44 @@ function resolveApartmentInvasion(c, archenemy) {
   }
 }
 
+// §20.7 — reuses the checkpoint's own dice-and-consequence shape (todo3.md:
+// "This will be as checkpoint, but the description has to be changed") as
+// a single auto-resolved roll (the player's own Social, since they're the
+// one answering the door) rather than routing back through the interactive
+// Checkpoint UI — the job that triggered it is already over by Debrief.
+function resolveApartmentRaid(c, job) {
+  if (!c.apartment) return;
+  const category = locationCategory(job.location, c.factionStandings);
+  const heat = job.location.heat;
+  if (!((category === "Corpo" && heat >= 4) || (category === "Crime" && heat >= 5))) return;
+  if (Math.random() >= 0.2) return;
+
+  const agency = checkpointAgency(job.location, c.factionStandings) || "EurCop";
+  const gearBonus = bestGearBonus(c, "Social");
+  const { sum } = roll2d6();
+  const total = sum + c.attrs.Social + (gearBonus ? gearBonus.bonus : 0);
+
+  if (total >= 10) {
+    addLog(c, `${agency} comes knocking, but you talk them off your doorstep clean.`);
+  } else if (total >= 7) {
+    const cost = (heat >= 5 || category === "Corpo") ? 2 : 1;
+    if (c.bonds >= cost) {
+      c.bonds -= cost;
+      addLog(c, `${agency} at your door — you grease them and they move on (-${cost} BOND${cost === 1 ? "" : "S"}).`);
+    } else if (c.gear.length) {
+      const item = pick(c.gear);
+      c.gear = c.gear.filter(g => g !== item);
+      addLog(c, `${agency} at your door — you hand over the ${item.name} to make them go away.`);
+    } else {
+      addLog(c, `${agency} at your door — you talk fast and they move on, this time.`);
+    }
+  } else {
+    addLog(c, `${agency} pushes their way in.`);
+    applyCheckpointDamage(c, job, "harm");
+    applyCheckpointDamage(c, job, pick(["vehicle", "gear"]));
+  }
+}
+
 function missionFieldRows(mission) {
   // Heist/Transport/Hold/Delay carry an asset flavor line — what's actually
   // being stolen/moved/held decides which faction parameter the job affects
@@ -1100,7 +1145,11 @@ function renderGearUp() {
   els.main.appendChild(wrap);
 }
 
+// §20.7 — the mandatory Heat checkpoint is the outer gate, Random Encounters
+// an incidental layer just inside it: GearUp → checkpoint(pre) →
+// encounter(pre) → Steps → encounter(post) → checkpoint(post) → Debrief.
 function advanceFromGearUp() {
+  if (maybeTriggerCheckpoint("pre")) return "checkpoint";
   return maybeTriggerEncounter("pre") ? "encounter" : "steps";
 }
 
@@ -1133,12 +1182,164 @@ function renderEncounter() {
     if (job.encounter.stage === "pre") {
       G.phase = "steps";
     } else {
-      G.phase = "debrief";
-      runDebrief();
+      G.phase = maybeTriggerCheckpoint("post") ? "checkpoint" : "debrief";
+      if (G.phase === "debrief") runDebrief();
     }
     persist();
     render();
   });
+}
+
+// ---------- CHECKPOINT (§20.7) ----------
+// Heat ≥3 always (not a %) puts a checkpoint at both the entry and exit of
+// a job's Location — EurCop by default, SwissGuard at Corpo Heat 4-5 or
+// Crime Heat 5 (checkpointAgency(), state.js). Not a normal Challenge: it
+// has its own bespoke outcome table (bribe-or-ditch on a Partial, a
+// Fight-or-Run sub-resolution on a Fail), so it bypasses applyOutcome
+// entirely rather than reusing the generic per-attribute fallout.
+function maybeTriggerCheckpoint(stage) {
+  const c = G.character, job = G.job;
+  job.checkpoint[stage].done = true;
+  const agency = checkpointAgency(job.location, c.factionStandings);
+  if (!agency) return false;
+  job.checkpoint.activeStage = stage;
+  job.checkpoint.agency = agency;
+  // Exit only: already having been made on a failed Stealth step this job
+  // skips straight to the Fight/Run resolution — they're already onto you.
+  const forcedCombat = stage === "post" && job.stepResults.some(r => r.attr === "Stealth" && r.tier === "fail");
+  job.checkpoint.stage = forcedCombat ? "combat" : "roll";
+  addLog(c, `${agency} has the ${stage === "pre" ? "way in" : "way out"} locked down${forcedCombat ? " — and they already made you." : "."}`);
+  return true;
+}
+
+function renderCheckpoint() {
+  const job = G.job;
+  const cp = job.checkpoint;
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `<h2>${cp.agency} Checkpoint</h2>`;
+  els.main.appendChild(wrap);
+
+  if (cp.stage === "choice") { renderCheckpointChoice(wrap); return; }
+  if (cp.stage === "combat") { renderCheckpointCombat(wrap); return; }
+  wrap.innerHTML += `<p class="step-desc">Get past the ${cp.agency} line.</p>`;
+  renderChallenge(wrap, { attr: "Social", alt: "Stealth", desc: `Get past the ${cp.agency} line.` }, () => finishCheckpointRoll());
+}
+
+function finishCheckpointRoll() {
+  const c = G.character, job = G.job, cp = job.checkpoint;
+  const res = job.lastResult;
+  job.pendingResult = null;
+  if (res.tier === "full") {
+    addLog(c, `You pass the ${cp.agency} line clean.`);
+    finishCheckpoint();
+  } else if (res.tier === "partial") {
+    addLog(c, `They flag you down — there's still a way through.`);
+    cp.stage = "choice";
+    persist(); render();
+  } else {
+    addLog(c, `${cp.agency} makes you on the spot.`);
+    cp.stage = "combat";
+    persist(); render();
+  }
+}
+
+// A Partial: bribe your way through (1-2 BOND, higher at Heat 5 or a Corpo
+// Location) or ditch a piece of gear outright ("get rid of contraband") —
+// a real choice, not a random pick.
+function renderCheckpointChoice(wrap) {
+  const c = G.character, job = G.job, cp = job.checkpoint;
+  const category = locationCategory(job.location, c.factionStandings);
+  const cost = (job.location.heat >= 5 || category === "Corpo") ? 2 : 1;
+  const block = document.createElement("div");
+  block.className = "challenge";
+  block.innerHTML = `<p class="step-desc">Pay them off, or lose the contraband.</p>`;
+  wrap.appendChild(block);
+
+  const payBtn = document.createElement("button");
+  payBtn.textContent = `Pay the bribe (${cost} BOND${cost === 1 ? "" : "S"})`;
+  payBtn.disabled = c.bonds < cost;
+  payBtn.addEventListener("click", () => {
+    c.bonds -= cost;
+    addLog(c, `You grease the ${cp.agency} line and roll on through.`);
+    finishCheckpoint();
+  });
+  block.appendChild(payBtn);
+
+  const ditchBtn = document.createElement("button");
+  ditchBtn.textContent = "Ditch the contraband";
+  ditchBtn.addEventListener("click", () => {
+    if (c.gear.length) {
+      const item = pick(c.gear);
+      c.gear = c.gear.filter(g => g !== item);
+      addLog(c, `You toss the ${item.name} before they can find it — clean otherwise.`);
+    } else {
+      addLog(c, `You've got nothing left to ditch — you talk your way through anyway.`);
+    }
+    finishCheckpoint();
+  });
+  block.appendChild(ditchBtn);
+}
+
+// A Fail (or the forced exit escalation): Fight (Combat) or Run (Driving) —
+// renderChallenge already offers both as independent roll buttons, so no
+// bespoke choice UI is needed here, just its own three-tier outcome table.
+function renderCheckpointCombat(wrap) {
+  const job = G.job, cp = job.checkpoint;
+  wrap.innerHTML += `<p class="step-desc">Fight through the line, or run for it.</p>`;
+  renderChallenge(wrap, { attr: "Combat", alt: "Driving", desc: `Fight through the ${cp.agency} line, or run for it.` }, () => finishCheckpointCombat());
+}
+
+function finishCheckpointCombat() {
+  const c = G.character, job = G.job, cp = job.checkpoint;
+  const res = job.lastResult;
+  job.pendingResult = null;
+  if (res.tier === "full") {
+    addLog(c, `You get clear of the ${cp.agency} line without a scratch.`);
+  } else if (res.tier === "partial") {
+    addLog(c, `You get through, but it costs you.`);
+    applyCheckpointDamage(c, job, pick(["harm", "vehicle", "helper"]));
+  } else {
+    addLog(c, `It goes bad at the line.`);
+    applyCheckpointDamage(c, job, "harm");
+    applyCheckpointDamage(c, job, pick(["vehicle", "helper", "gear"]));
+  }
+  finishCheckpoint();
+}
+
+// A single damage "kind", falling back to Harm if the preferred target
+// doesn't exist (no vehicle/no active helper/no gear) — same recursive-
+// fallback shape as applyFalloutConsequence (§19.9).
+function applyCheckpointDamage(c, job, kind) {
+  if (kind === "harm") {
+    const wentDown = applyHarm(c);
+    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+  } else if (kind === "vehicle") {
+    const vehicles = c.gear.filter(g => g.attr === "Driving");
+    if (vehicles.length) degradeGearItem(c, pick(vehicles));
+    else applyCheckpointDamage(c, job, "harm");
+  } else if (kind === "helper") {
+    if (job.helpers.some(h => !h.benched)) woundJobHelper(c, job);
+    else applyCheckpointDamage(c, job, "harm");
+  } else if (kind === "gear") {
+    if (c.gear.length) degradeGearItem(c, pick(c.gear));
+    else applyCheckpointDamage(c, job, "harm");
+  }
+}
+
+// Shared "checkpoint resolved, move on" handler for every branch above.
+function finishCheckpoint() {
+  const job = G.job;
+  const stage = job.checkpoint.activeStage;
+  job.checkpoint.stage = null;
+  if (stage === "pre") {
+    G.phase = maybeTriggerEncounter("pre") ? "encounter" : "steps";
+  } else {
+    G.phase = "debrief";
+    runDebrief();
+  }
+  persist();
+  render();
 }
 
 // ---------- STEPS ----------
@@ -1216,7 +1417,7 @@ function finalizeStep(step) {
 
   job.stepIndex++;
   if (job.stepIndex >= job.steps.length) {
-    G.phase = maybeTriggerEncounter("post") ? "encounter" : "debrief";
+    G.phase = maybeTriggerEncounter("post") ? "encounter" : (maybeTriggerCheckpoint("post") ? "checkpoint" : "debrief");
     if (G.phase === "debrief") runDebrief();
   }
   persist();
@@ -1684,9 +1885,14 @@ function runDebrief() {
 
   // §20.6 — while the Rest clock sits one tick short of a forced Hunt, the
   // Archenemy might move on a friend or the player's home instead of
-  // waiting. Checked after payment (per todo3.md) and before any future
-  // Heat/EurCop raid check (§20 Phase 3).
+  // waiting. Checked after payment (per todo3.md) and before the Heat/
+  // EurCop raid check below.
   resolveArchenemyClockEvent(c);
+
+  // §20.7 — a job that ended hot enough (Corpo Heat 4-5, or Crime Heat 5)
+  // has a 20% chance of the same agency that would've manned a checkpoint
+  // showing up at the player's door instead, if they own one.
+  resolveApartmentRaid(c, job);
 
   job.outcome = outcome;
   job.payout = totalPayout;
