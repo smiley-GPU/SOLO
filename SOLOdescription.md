@@ -39,10 +39,11 @@ below.
   `renderFactions()` (right panel). `G` is a single global object:
   `{ character, job, phase }` (plus transient `G.hunt` while a Hunt is
   active).
-- **Layout** (`index.html` + CSS grid): a 3-column layout — `#sheet` (260px,
+- **Layout** (`index.html` + CSS grid): a 4-column layout — `#sheet` (260px,
   character sheet), `#main` (flexible, the current phase screen + a
-  journal log below it), `#factions` (320px, every faction's standing).
-  Below 980px width it collapses to a single column.
+  journal log below it), `#downtime` (260px, §20.5's always-visible Shop/
+  Training/EuroStoxx panels), `#factions` (320px, every faction's
+  standing). Below 980px width it collapses to a single column.
 - **Journal**: every significant event calls `addLog(character, text)`
   (state.js), which pushes a line onto `character.log` (capped at 300
   lines, oldest dropped). `renderJournal()` (game.js) renders the array
@@ -267,6 +268,12 @@ Street / 40% Professional / 20% Military), then one random item from that
 tier's full catalog array (all kinds mixed — attr/heal/armor). Buying
 removes BONDS and appends `{name, attr, heal, armor, tier}` to
 `character.gear`; each offer can be bought at most once.
+
+**Revision (§20.5)**: buying/selling no longer happens during a job at
+all — it moved to the Shop, an always-open Downtime panel using
+`genShopOffers()` (Reputation-Tier-scaled, a 4th Legendary tier) instead
+of this flat weighted pool. Gear Up itself now only handles Helper
+recruitment (§20.4).
 
 ### 6.2 Gear damage (a Fail consequence)
 On certain Fail results (see §10.2 weighted fallout), gear takes damage
@@ -550,6 +557,11 @@ Screen shown right after accepting a Briefing:
 - **Ally recruitment** ("Call in a Favor" section) — see §14.
 - **"Head Out"** button: calls `advanceFromGearUp()` →
   `maybeTriggerEncounter("pre")` → Encounter or straight to Steps.
+
+**Revision (§20.4, §20.5)**: the buy-offer list is gone (buying moved to
+the Downtime Shop, §20.5) and the single Hireling-or-Ally slot is now up to
+3 concurrent Helpers, any mix of both (§20.4). Gear Up's only remaining
+job is Helper recruitment, then "Head Out" as before.
 
 ---
 
@@ -1097,7 +1109,7 @@ Mission variant, which can kill a Bloodbrother outright instead.
 
 ---
 
-## 20. Mission/Tier Faction Economy & Multi-Helper Missions
+## 20. Faction Economy, Helpers & the Downtime Overhaul
 
 Design additions layered on top of §19 (`todo3.md`, rows 139+ onward — the
 "SHOP AND TRAINING", "MISSIONS and TIER", "Persons / NPCs", "HEAT EFFECT",
@@ -1173,6 +1185,63 @@ keep §14's fee/free-and-relationship-delta rules, and a first-time tier-5
 success still tags Bloodbrother and grants +1 Reputation (only once, not on
 every subsequent job with an already-tagged Bloodbrother Helper).
 
+### 20.5 The Downtime overhaul: Shop / Training / EuroStoxx / Apartments
+Buying and selling gear move out of the per-job flow entirely (superseding
+§6.1's Gear Up purchase screen and §10.4's Gear Up phase description) and
+into three panels that sit **always visible** next to the Factions
+panel (a 4th layout column, `#downtime` — 260px, between `#main` and
+`#factions`), rendered every tick alongside the sheet/main/factions panels.
+Each panel shows its full content at the Hub and a greyed, inert "closed
+for the duration of the job" placeholder at every other phase — `G.phase
+=== "hub"` is the only gate, not a separate route. Gear Up (§11's GearUp
+phase) keeps only Helper recruitment (§20.4) and "Head Out".
+
+**GEAR, GUNS & GENERAL GOODNESS** (the Shop):
+- A **4th gear Tier, Legendary** (4 BONDS, +4 to a matching roll, 4
+  armor/heal charges) joins Street/Professional/Military so gear quality
+  reaches the same 1-4 Tier scale as Reputation (§19.1) and Factions
+  (§19.6) — a Tier-4 "Legend" character needs Tier-4 gear to exist at all.
+  `DATA.gearTierOrder` (`["Street","Professional","Military","Legendary"]`)
+  is the one shared list gear-degrade and the offer generator both read.
+- Gear items may carry `tags` — `AP`/`EX` on select Weapons, `AR`/`LX`/`CG`
+  on select Vehicles — shown as chips in the offer list. Purely descriptive
+  for now (no mechanical effect yet) except **CG** (Cargo), reserved for a
+  future Inventory/Loadout pass's spare-slot math.
+- **Offers**: always 2 items at the player's own Reputation Tier, a 50%
+  chance of one more a Tier higher, a 20% chance of one more two Tiers
+  higher (capped at Tier 4) — `genShopOffers()` in engine.js. The list is
+  fixed once generated and only refreshes on a Rest tick (`processRestTick`)
+  — "resting finds new stock on the shelves" alongside its existing job
+  reroll.
+- **Selling** is unchanged from §6.3, extended to recognize Legendary as a
+  single-item-sells-for-1-BOND tier alongside Professional/Military.
+- **Apartments**: Tier-gated by Reputation Tier — nothing at Tier 1
+  ("You are street rat..."), then Rented Cubicle (Tier 2, 0 Security
+  slots), Garage/Office/Attic (Tier 3, 2 slots), Penthouse/Office/Nightclub
+  Backroom (Tier 4, 4 slots). Price is `2×Tier` BONDS, +1 if the chosen
+  (already-visited) Location's faction is Corpo-category. Buying again at a
+  higher Tier than the one already owned replaces it (an upgrade, at the
+  new Tier's price). Security options (`DATA.securityOptions`, per Tier)
+  install free, capped at the apartment's slot count — their defensive
+  payoff belongs to the still-unimplemented Archenemy home-invasion/EurCop
+  raid mechanics. Owning an apartment also unlocks a free Hub action,
+  **"Rest at your Apartment"** — a 50% chance to heal one Harm box,
+  independent of the Rest clock/Mission Board reroll (§12) entirely; it
+  doesn't tick `restCount`.
+
+**LESSONS FROM THE STREET**: the Training mechanic (§4.3) unchanged,
+relocated out of the Hub's inline section into its own panel.
+
+**EUROSTOXX**: a new `character.stocks` map (`{factionName: amount}`,
+Corpo-category factions only). "Invest 1 BOND" moves a BOND into a
+faction's stock 1:1; "Sell All" converts the whole held amount back to
+BONDS 1:1, any time. Whenever `adjustFactionParam` (§8) changes a faction's
+Wealth, `settleStockGains()` (state.js) settles any held stock in that
+faction immediately: **+1** on any rise (**+2** if Wealth just crossed into
+≥10), or a loss equal to however far Wealth fell (floored at 0 held). A
+destroyed faction (§19.7) wipes any stock held in it outright — it isn't
+sellable first.
+
 ---
 
 ## Appendix A — Names
@@ -1192,8 +1261,15 @@ A generated name is always `"<first> \"<handle>\""`.
 | Street (1 BOND) | Kessler Snub, Rusted Stiletto | Grigio Overcoat | Ostrava Runner | Bootleg Deck | Kiosk Chits | Field Trauma Wrap (1) | Padded Vest (1) |
 | Professional (2 BONDS) | Halvar Sidearm, Monofilament Edge | Notte Milano | Voss Coupé | Rime Breaker | Broker's Black Book | Dermal Weave (2) | Kevlar Weave Jacket (2) |
 | Military (3 BONDS) | Sturmgewehr SMG, Raptor Talons | Ombra Couture | Panzer AV | Blackline Shard | Ledger of Favors | MedCorp Platinum Chit (3) | Composite Plate (3) |
+| Legendary (4 BONDS, §20.5) | Ares Railgun, Vorpal Monowire | Chameleon Weave | Ghost Chassis AV | Deus Ex Cortex | Voice of the Council | Nanite Reconstructor (4) | Reactive Plate Mk.IV (4) |
 
 (The Stealth line is deliberately named like fashion labels — "Clothing".)
+Selected items also carry a descriptive `tags` chip (§20.5): `AP`/`EX` on a
+few Weapons, `AR`/`LX`/`CG` on a few Vehicles — Halvar Sidearm/Sturmgewehr
+SMG/Ares Railgun/Vorpal Monowire (AP), Raptor Talons/Ares Railgun (EX),
+Voss Coupé (LX), Panzer AV/Ghost Chassis AV (AR, CG; Ghost Chassis AV also
+LX), and the Nomad turf's starting Kombi Wagon (CG). No mechanical effect
+yet except CG, reserved for a future Inventory/Loadout pass.
 
 ## Appendix C — Gear damage flavor
 - Partial (repair, no tier change): "A close call bends something —
@@ -1254,11 +1330,12 @@ doing a routine sweep tonight."
 Dark theme, monospace-adjacent UI: `--bg:#0b0d12, --panel:#12151c,
 --panel-2:#171b24, --border:#262c38, --text:#d8dee9, --muted:#7c8496,
 --accent:#00e5c7 (teal), --accent-2:#ff2e63 (pink/red headers),
---warn:#ffb703 (amber, BONDS/BOOST numbers), --danger:#ff4d4d`. 3-column
-CSS grid (260px / 1fr / 320px), collapsing to 1 column under 980px. Cards
-have rounded corners (8px), a max-width of 640px. A 5-segment Heat bar and
-a reused 4-segment Rest-clock bar are small colored squares (filled =
-`--danger`). Font: `"Segoe UI", system-ui, sans-serif`.
+--warn:#ffb703 (amber, BONDS/BOOST numbers), --danger:#ff4d4d`. 4-column
+CSS grid (260px / 1fr / 260px / 320px, §20.5 added the 3rd), collapsing to
+1 column under 980px. Cards have rounded corners (8px), a max-width of
+640px. A 5-segment Heat bar and a reused 4-segment Rest-clock bar are
+small colored squares (filled = `--danger`). Font: `"Segoe UI", system-ui,
+sans-serif`.
 
 ## Appendix J — Special Mission Name Generator (§19.5)
 **Greek letters (12)**: Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Theta,

@@ -97,14 +97,21 @@ function genSpecialMissionName() {
   return `Mission: ${pick(p.greek).toUpperCase()} ${pick(p.shape).toUpperCase()} ${pick(p.color).toUpperCase()} ${randInt(10, 99)}`;
 }
 
-function genGearOffers(count = 3) {
-  const tiers = ["Street", "Street", "Professional", "Professional", "Military"];
-  const offers = [];
-  for (let i = 0; i < count; i++) {
-    const tier = pick(tiers);
-    const item = pick(DATA.gear[tier]);
-    offers.push({ ...item, tier, id: `${item.name}-${Date.now()}-${i}` });
-  }
+// §20.5 — the always-open Shop's offer pool: always some gear at the
+// player's own Reputation Tier, a 50% chance of one offer a Tier higher,
+// and a 20% chance of one offer two Tiers higher (each capped at Tier 4).
+// Replaces the old flat Street/Professional/Military-weighted Gear Up
+// offers (todo3.md ADD: "Remove Gear buy and sales from the mission
+// start") — nothing generates a job-scoped offer list anymore.
+function genShopOffer(tier, idx) {
+  const tierName = DATA.gearTierOrder[Math.min(tier, 4) - 1];
+  const item = pick(DATA.gear[tierName]);
+  return { ...item, tier: tierName, id: `${item.name}-${Date.now()}-${idx}` };
+}
+function genShopOffers(reputationTier) {
+  const offers = [genShopOffer(reputationTier, 0), genShopOffer(reputationTier, 1)];
+  if (randInt(1, 100) <= 50) offers.push(genShopOffer(Math.min(4, reputationTier + 1), 2));
+  if (randInt(1, 100) <= 20) offers.push(genShopOffer(Math.min(4, reputationTier + 2), 3));
   return offers;
 }
 

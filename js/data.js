@@ -76,6 +76,13 @@ const DATA = {
   // Stealth-attr line) is named like fashion labels on purpose; Armor
   // entries carry `armor` instead of `attr` — absorb charges for the
   // damage-absorption mechanic (see applyHarm() in state.js).
+  // §20.5 — a 4th tier, Legendary, joins Street/Professional/Military so
+  // gear quality matches the same 1-4 Tier scale as Reputation and Factions
+  // (the Shop's offer pool is keyed off Reputation Tier, and a Tier-4
+  // "Legend" character needs "their own Tier" equipment to actually exist).
+  // `tags` (optional, §20.5) are descriptive only for now — AP/EX on select
+  // Weapons, AR/LX/CG on select Vehicles — except CG (Cargo), which the
+  // eventual Inventory/Loadout system (§20 Phase 5) will read for spare slots.
   gear: {
     Street: [
       { name: "Kessler Snub", attr: "Combat", price: 1 },
@@ -88,26 +95,41 @@ const DATA = {
       { name: "Padded Vest", armor: 1, price: 1 }
     ],
     Professional: [
-      { name: "Halvar Sidearm", attr: "Combat", price: 2 },
+      { name: "Halvar Sidearm", attr: "Combat", price: 2, tags: ["AP"] },
       { name: "Monofilament Edge", attr: "Combat", price: 2 },
       { name: "Notte Milano", attr: "Stealth", price: 2 },
-      { name: "Voss Coupé", attr: "Driving", price: 2 },
+      { name: "Voss Coupé", attr: "Driving", price: 2, tags: ["LX"] },
       { name: "Rime Breaker", attr: "Hacking", price: 2 },
       { name: "Broker's Black Book", attr: "Social", price: 2 },
       { name: "Dermal Weave", heal: 2, price: 2 },
       { name: "Kevlar Weave Jacket", armor: 2, price: 2 }
     ],
     Military: [
-      { name: "Sturmgewehr SMG", attr: "Combat", price: 3 },
-      { name: "Raptor Talons", attr: "Combat", price: 3 },
+      { name: "Sturmgewehr SMG", attr: "Combat", price: 3, tags: ["AP"] },
+      { name: "Raptor Talons", attr: "Combat", price: 3, tags: ["EX"] },
       { name: "Ombra Couture", attr: "Stealth", price: 3 },
-      { name: "Panzer AV", attr: "Driving", price: 3 },
+      { name: "Panzer AV", attr: "Driving", price: 3, tags: ["AR", "CG"] },
       { name: "Blackline Shard", attr: "Hacking", price: 3 },
       { name: "Ledger of Favors", attr: "Social", price: 3 },
       { name: "MedCorp Platinum Chit", heal: 3, price: 3 },
       { name: "Composite Plate", armor: 3, price: 3 }
+    ],
+    Legendary: [
+      { name: "Ares Railgun", attr: "Combat", price: 4, tags: ["AP", "EX"] },
+      { name: "Vorpal Monowire", attr: "Combat", price: 4, tags: ["AP"] },
+      { name: "Chameleon Weave", attr: "Stealth", price: 4 },
+      { name: "Ghost Chassis AV", attr: "Driving", price: 4, tags: ["AR", "LX", "CG"] },
+      { name: "Deus Ex Cortex", attr: "Hacking", price: 4 },
+      { name: "Voice of the Council", attr: "Social", price: 4 },
+      { name: "Nanite Reconstructor", heal: 4, price: 4 },
+      { name: "Reactive Plate Mk.IV", armor: 4, price: 4 }
     ]
   },
+
+  // Tier order for degrade/upgrade math (degradeGearItem in game.js, the
+  // Shop's offer generator in engine.js) — single source of truth so both
+  // never drift out of sync with each other.
+  gearTierOrder: ["Street", "Professional", "Military", "Legendary"],
 
   missionTypes: ["Assassination", "Heist", "Transport", "Delay", "Hold"],
 
@@ -133,7 +155,7 @@ const DATA = {
   // Gear bonus scales with quality, per todo2.md/todo3.md — applied by
   // bestGearBonus() in state.js against any owned item whose attr matches
   // the roll. BOND-scale: Street +1, Professional +2, Military +3.
-  gearTierBonus: { Street: 1, Professional: 2, Military: 3 },
+  gearTierBonus: { Street: 1, Professional: 2, Military: 3, Legendary: 4 },
 
   // Weighted table of what a Partial/Fail actually costs you, per Challenge
   // type, per todo2.md ("failed check should not always result to damage").
@@ -247,6 +269,24 @@ const DATA = {
     greek: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Theta", "Kappa", "Sigma", "Omega", "Rho", "Omicron"],
     shape: ["Hex", "Cube", "Prism", "Spiral", "Vertex", "Wedge", "Torus", "Rhombus", "Helix", "Shard", "Obelisk", "Lattice"],
     color: ["Cyan", "Magenta", "Crimson", "Amber", "Jade", "Cobalt", "Onyx", "Violet", "Ember", "Slate", "Indigo", "Bone"]
+  },
+
+  // §20.5 — Apartments (Downtime "GEAR, GUNS AND GENERAL GOODNESS" panel).
+  // Tier 1 has nothing to buy. Price is computed at purchase time
+  // (2×tier, +1 if the chosen Location's faction is Corpo-category) since
+  // it depends on where you're buying, not just the tier.
+  apartments: {
+    2: { name: "Rented Cubicle", securitySlots: 0, flavor: "Old digi-lock — you get what you pay for." },
+    3: { name: "Garage, Office, or Attic", securitySlots: 2, flavor: "Room to breathe, and a door that actually locks." },
+    4: { name: "Penthouse, Office, or Nightclub Backroom", securitySlots: 4, flavor: "The kind of address that does half your talking for you." }
+  },
+  apartmentTier1Flavor: "You are street rat. What are you thinking? Gutter, sewers, under the bridge — that's your home.",
+  // Security options available at each Apartment Tier (installed free,
+  // capped at that Tier's securitySlots) — their defensive effect belongs
+  // to the Archenemy home-invasion/EurCop raid mechanics (§20 Phase 2/3).
+  securityOptions: {
+    3: ["Reinforced doors and windows", "Hitek Locks"],
+    4: ["Security Drone", "Security-AI", "E-shok-Loks", "ABLocks", "RoboDOG"]
   },
 
   // Deterministic per-attribute Challenge fallout (§19.9, supersedes the

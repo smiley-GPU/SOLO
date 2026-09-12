@@ -13,7 +13,8 @@ const G = {
 const els = {
   sheet: document.getElementById("sheet"),
   main: document.getElementById("main"),
-  factions: document.getElementById("factions")
+  factions: document.getElementById("factions"),
+  downtime: document.getElementById("downtime")
 };
 
 function init() {
@@ -53,6 +54,7 @@ function render() {
   renderSheet();
   renderMain();
   renderFactions();
+  renderDowntime();
 }
 
 // Journal, appended into #main below the phase card — newest line on top,
@@ -96,6 +98,246 @@ function renderFactions() {
     return `<div class="section"><h3>${type}</h3><ul>${rows}</ul></div>`;
   }).join("");
   els.factions.innerHTML = `<h2>Factions</h2>${html}`;
+}
+
+// ---------- DOWNTIME (§20.5) ----------
+// Three always-visible panels — Shop, Training, EuroStoxx — that replace
+// the old per-job Gear Up buy screen and the Hub's inline Training/Sell
+// sections. Always rendered (todo3.md: "except during missions... closed,
+// all grey font"), just greyed out and inert once G.phase leaves "hub".
+function renderDowntime() {
+  const el = els.downtime;
+  if (!el) return;
+  el.innerHTML = "";
+  if (!G.character) return;
+  const active = G.phase === "hub";
+  const header = document.createElement("h2");
+  header.textContent = "Downtime";
+  el.appendChild(header);
+  el.appendChild(renderShopBox(active));
+  el.appendChild(renderTrainingBox(active));
+  el.appendChild(renderStocksBox(active));
+}
+
+// "GEAR, GUNS AND GENERAL GOODNESS" — buy from the Reputation-Tier-scaled
+// offer pool (genShopOffers, engine.js), sell owned gear, and buy/upgrade
+// an Apartment (renderApartmentSection below).
+function renderShopBox(active) {
+  const c = G.character;
+  const box = document.createElement("div");
+  box.className = `downtime-box${active ? "" : " disabled"}`;
+  box.innerHTML = `<h3>Gear, Guns &amp; General Goodness</h3>`;
+  if (!active) {
+    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
+    return box;
+  }
+  if (!c.shopOffers) c.shopOffers = genShopOffers(reputationTier(c));
+
+  c.shopOffers.forEach(item => {
+    const price = item.price;
+    const row = document.createElement("div");
+    row.className = "offer";
+    const kind = item.attr ? item.attr : item.heal ? "heal" : `armor x${item.armor}`;
+    const tagsHtml = item.tags ? ` <em>[${item.tags.join(", ")}]</em>` : "";
+    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${kind})</em>${tagsHtml}</span><span>${price} BOND${price === 1 ? "" : "S"}</span>`;
+    const btn = document.createElement("button");
+    btn.textContent = item.bought ? "Bought" : "Buy";
+    btn.disabled = c.bonds < price || item.bought;
+    btn.addEventListener("click", () => {
+      c.bonds -= price;
+      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier, tags: item.tags });
+      item.bought = true;
+      addLog(c, `You pick up a ${item.name} — yours to keep.`);
+      persist(); render();
+    });
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+
+  // Sell Gear (todo3.md Items) — 2 Street items = 1 BOND, 1 higher-tier item
+  // = 1 BOND; a Fixer contact at relationship ≥3 adds +1 BOND per sale.
+  if (c.gear.length) {
+    const sellSection = document.createElement("div");
+    sellSection.className = "section";
+    const hasFixerDeal = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3);
+    const bankNote = c.pendingSaleItem ? `<p class="muted">Banked: ${c.pendingSaleItem} — sell one more Street item to cash in.</p>` : "";
+    sellSection.innerHTML = `<h4>Sell Gear</h4><p class="muted">2 Street items = 1 BOND. 1 higher-tier item = 1 BOND.${hasFixerDeal ? " Your fixer kicks in +1 BOND per sale." : ""}</p>${bankNote}`;
+    c.gear.forEach((item, idx) => {
+      const row = document.createElement("div");
+      row.className = "offer";
+      row.innerHTML = `<span>${item.name} <em>(${item.tier || "Street"})</em></span>`;
+      const btn = document.createElement("button");
+      btn.textContent = "Sell";
+      btn.addEventListener("click", () => sellGearItem(idx));
+      row.appendChild(btn);
+      sellSection.appendChild(row);
+    });
+    box.appendChild(sellSection);
+  }
+
+  box.appendChild(renderApartmentSection(c));
+  return box;
+}
+
+// Apartments (§20.5) — Tier-gated (Reputation Tier, §19.1): nothing at
+// Tier 1, then a bigger place with more Security slots at each Tier up.
+// Price is 2×Tier BONDS, +1 if the chosen Location's faction is
+// Corpo-category. Buying again at a higher Tier than the one you own
+// replaces it (an upgrade); Security options install free, capped at the
+// apartment's slot count — their defensive payoff belongs to the
+// Archenemy home-invasion/EurCop raid mechanics (§20, later phases).
+function renderApartmentSection(c) {
+  const wrap = document.createElement("div");
+  wrap.className = "section";
+  wrap.innerHTML = "<h4>Apartments</h4>";
+  const repTier = reputationTier(c);
+
+  if (c.apartment) {
+    const def = DATA.apartments[c.apartment.tier];
+    const secList = c.apartment.security.length ? c.apartment.security.join(", ") : "none installed";
+    wrap.innerHTML += `<p class="muted">${def.name} at ${c.apartment.location} (Tier ${c.apartment.tier}). Security: ${secList}.</p>`;
+    const options = (DATA.securityOptions[c.apartment.tier] || []).filter(o => !c.apartment.security.includes(o));
+    if (c.apartment.security.length < def.securitySlots) {
+      options.forEach(opt => {
+        const btn = document.createElement("button");
+        btn.textContent = `Install ${opt}`;
+        btn.addEventListener("click", () => {
+          c.apartment.security.push(opt);
+          addLog(c, `${opt} goes in at your place.`);
+          persist(); render();
+        });
+        wrap.appendChild(btn);
+      });
+    }
+    if (repTier <= c.apartment.tier) return wrap; // nothing better available yet
+  }
+
+  if (repTier < 2) {
+    wrap.innerHTML += `<p class="muted">${DATA.apartmentTier1Flavor}</p>`;
+    return wrap;
+  }
+
+  const def = DATA.apartments[repTier];
+  const known = Object.keys(c.locations);
+  if (!known.length) {
+    wrap.innerHTML += `<p class="muted">You need to know a location before you can put down roots there.</p>`;
+    return wrap;
+  }
+
+  const priceFor = locName => {
+    const loc = c.locations[locName];
+    const category = loc.faction ? (c.factionStandings[loc.faction] || {}).category : (loc.area === "Corpo" ? "Corpo" : null);
+    return repTier * 2 + (category === "Corpo" ? 1 : 0);
+  };
+  const label = document.createElement("p");
+  label.className = "muted";
+  label.textContent = `${c.apartment ? "Upgrade to" : "Buy"} a ${def.name} (Tier ${repTier}): ${def.flavor}`;
+  wrap.appendChild(label);
+
+  const select = document.createElement("select");
+  known.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    const price = priceFor(name);
+    opt.textContent = `${name} — ${price} BOND${price === 1 ? "" : "S"}`;
+    select.appendChild(opt);
+  });
+  wrap.appendChild(select);
+
+  const btn = document.createElement("button");
+  const refresh = () => {
+    const price = priceFor(select.value);
+    btn.textContent = `${c.apartment ? "Upgrade" : "Buy"} — ${price} BOND${price === 1 ? "" : "S"}`;
+    btn.disabled = c.bonds < price;
+  };
+  select.addEventListener("change", refresh);
+  refresh();
+  btn.addEventListener("click", () => {
+    const price = priceFor(select.value);
+    const hadApartment = !!c.apartment;
+    c.bonds -= price;
+    c.apartment = { location: select.value, tier: repTier, security: [] };
+    addLog(c, `You ${hadApartment ? "move up to" : "put down roots at"} ${select.value} — ${def.name}.`);
+    persist(); render();
+  });
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+// "LESSONS FROM THE STREET" — unchanged Training mechanic, relocated out
+// of the Hub's inline section.
+function renderTrainingBox(active) {
+  const c = G.character;
+  const box = document.createElement("div");
+  box.className = `downtime-box${active ? "" : " disabled"}`;
+  box.innerHTML = `<h3>Lessons From the Street</h3>`;
+  if (!active) {
+    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
+    return box;
+  }
+  Object.entries(c.attrs).forEach(([attr, rank]) => {
+    const cost = rank; // rank 1→2 costs 1 BOND, 2→3 costs 2, … (todo3.md BOND scale)
+    const btn = document.createElement("button");
+    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ${cost} BOND${cost === 1 ? "" : "S"} + 1 BOOST`;
+    btn.disabled = rank >= 5 || c.bonds < cost || c.boost < 1;
+    btn.addEventListener("click", () => {
+      c.bonds -= cost;
+      c.boost -= 1;
+      c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
+      addLog(c, `You spend BOOST training ${attr} to ${c.attrs[attr]}.`);
+      persist(); render();
+    });
+    box.appendChild(btn);
+  });
+  return box;
+}
+
+// "EUROSTOXX" (§20.5) — park BONDS in any current Corpo faction's stock;
+// it moves with their Wealth via settleStockGains() (state.js, hooked into
+// adjustFactionParam). Sell converts the whole held amount back 1:1, any time.
+function renderStocksBox(active) {
+  const c = G.character;
+  const box = document.createElement("div");
+  box.className = `downtime-box${active ? "" : " disabled"}`;
+  box.innerHTML = `<h3>EuroStoxx</h3>`;
+  if (!active) {
+    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
+    return box;
+  }
+  box.innerHTML += `<p class="muted">Park BONDS in a Corpo faction's stock — it moves with their Wealth.</p>`;
+
+  DATA.factions.filter(f => {
+    const s = c.factionStandings[f.name];
+    return s && !s.destroyed && s.category === "Corpo";
+  }).forEach(f => {
+    const held = c.stocks[f.name] || 0;
+    const row = document.createElement("div");
+    row.className = "offer";
+    row.innerHTML = `<span>${f.name} <em>(held: ${held})</em></span>`;
+    const investBtn = document.createElement("button");
+    investBtn.textContent = "Invest 1 BOND";
+    investBtn.disabled = c.bonds < 1;
+    investBtn.addEventListener("click", () => {
+      c.bonds -= 1;
+      c.stocks[f.name] = (c.stocks[f.name] || 0) + 1;
+      addLog(c, `You park a BOND in ${f.name} stock.`);
+      persist(); render();
+    });
+    row.appendChild(investBtn);
+    if (held > 0) {
+      const sellBtn = document.createElement("button");
+      sellBtn.textContent = `Sell All (${held})`;
+      sellBtn.addEventListener("click", () => {
+        c.bonds += held;
+        delete c.stocks[f.name];
+        addLog(c, `You cash out your ${f.name} stock for ${held} BOND${held === 1 ? "" : "S"}.`);
+        persist(); render();
+      });
+      row.appendChild(sellBtn);
+    }
+    box.appendChild(row);
+  });
+  return box;
 }
 
 function renderSheet() {
@@ -260,46 +502,22 @@ function renderHub() {
     wrap.appendChild(repairSection);
   }
 
-  const train = document.createElement("div");
-  train.className = "section";
-  train.innerHTML = "<h3>Training</h3>";
-  Object.entries(c.attrs).forEach(([attr, rank]) => {
-    const cost = rank; // rank 1→2 costs 1 BOND, 2→3 costs 2, … (todo3.md BOND scale)
-    const btn = document.createElement("button");
-    btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ${cost} BOND${cost === 1 ? "" : "S"} + 1 BOOST`;
-    btn.disabled = rank >= 5 || c.bonds < cost || c.boost < 1;
-    btn.addEventListener("click", () => {
-      c.bonds -= cost;
-      c.boost -= 1;
-      c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
-      addLog(c, `You spend BOOST training ${attr} to ${c.attrs[attr]}.`);
+  // §20.5 — a free heal-a-box roll if you own an Apartment, independent of
+  // the Rest clock/Mission Board reroll (this doesn't tick restCount or
+  // reroll the job search — it's just "how you spend a bit of downtime").
+  if (c.apartment) {
+    const homeBtn = document.createElement("button");
+    homeBtn.textContent = "Rest at your Apartment (Free)";
+    homeBtn.addEventListener("click", () => {
+      if (Math.random() < 0.5 && c.health.some(h => h)) {
+        healBox(c);
+        addLog(c, "You crash at home for a while — it helps.");
+      } else {
+        addLog(c, "You crash at home for a while. Quiet, at least.");
+      }
       persist(); render();
     });
-    train.appendChild(btn);
-  });
-  wrap.appendChild(train);
-
-  // Sell Gear (todo3.md Items) — 2 Street items = 1 BOND, 1 Professional/
-  // Military item = 1 BOND; a Fixer contact at relationship ≥3 adds +1
-  // BOND per completed sale. Street items bank one at a time
-  // (character.pendingSaleItem) until a second one pairs with it.
-  if (c.gear.length) {
-    const sellSection = document.createElement("div");
-    sellSection.className = "section";
-    const hasFixerDeal = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3);
-    const bankNote = c.pendingSaleItem ? `<p class="muted">Banked: ${c.pendingSaleItem} — sell one more Street item to cash in.</p>` : "";
-    sellSection.innerHTML = `<h3>Sell Gear</h3><p class="muted">2 Street items = 1 BOND. 1 Professional/Military item = 1 BOND.${hasFixerDeal ? " Your fixer kicks in +1 BOND per sale." : ""}</p>${bankNote}`;
-    c.gear.forEach((item, idx) => {
-      const row = document.createElement("div");
-      row.className = "offer";
-      row.innerHTML = `<span>${item.name} <em>(${item.tier || "Street"})</em></span>`;
-      const btn = document.createElement("button");
-      btn.textContent = "Sell";
-      btn.addEventListener("click", () => sellGearItem(idx));
-      row.appendChild(btn);
-      sellSection.appendChild(row);
-    });
-    wrap.appendChild(sellSection);
+    wrap.appendChild(homeBtn);
   }
 
   els.main.appendChild(wrap);
@@ -311,7 +529,7 @@ function sellGearItem(idx) {
   if (!item) return;
   const bonusPerSale = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3) ? 1 : 0;
   c.gear.splice(idx, 1);
-  if (item.tier === "Professional" || item.tier === "Military") {
+  if (item.tier === "Professional" || item.tier === "Military" || item.tier === "Legendary") {
     const gain = 1 + bonusPerSale;
     c.bonds += gain;
     addLog(c, `You sell the ${item.name} for ${gain} BOND${gain === 1 ? "" : "S"}.`);
@@ -647,6 +865,7 @@ function processRestTick() {
   const c = G.character;
   c.restCount++;
   if (c.restCount === 1) lockInArchenemy(c);
+  c.shopOffers = genShopOffers(reputationTier(c)); // §20.5 — new stock on the shelves each tick
   runFactionPowerStruggles(c);
   if (checkMultiCorpLoss(c)) {
     G.job = null;
@@ -725,34 +944,16 @@ function heatBarHtml(heat) {
 }
 
 // ---------- GEAR UP ----------
+// §20.5 — buying/selling moved out to the always-open Shop panel
+// (renderShopBox), so this is now just final prep for this one job: bring
+// Helpers, then head out. (Loadout/carry selection is a later addition.)
 function renderGearUp() {
   const c = G.character;
   const job = G.job;
-  if (!job.offers) job.offers = genGearOffers(3);
 
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">A fixer's got a few things on hand. Price is tied to quality — Street 1 BOND (+1), Professional 2 BONDS (+2), Military 3 BONDS (+3) — for as long as you own it.</p>`;
-
-  job.offers.forEach(item => {
-    const price = item.price;
-    const row = document.createElement("div");
-    row.className = "offer";
-    const kind = item.attr ? item.attr : item.heal ? "heal" : `armor x${item.armor}`;
-    row.innerHTML = `<span>${item.name} <em>(${item.tier}, ${kind})</em></span><span>${price} BOND${price === 1 ? "" : "S"}</span>`;
-    const btn = document.createElement("button");
-    btn.textContent = item.bought ? "Bought" : "Buy";
-    btn.disabled = c.bonds < price || item.bought;
-    btn.addEventListener("click", () => {
-      c.bonds -= price;
-      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier });
-      item.bought = true;
-      addLog(c, `You pick up a ${item.name} for the job — yours to keep.`);
-      persist(); render();
-    });
-    row.appendChild(btn);
-    wrap.appendChild(row);
-  });
+  wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">Anyone coming with you? Gear's sorted from the Shop back in town.</p>`;
 
   // §20.1 — up to 3 Helpers total, mixing paid strangers (Hire) and
   // relationship-recruited contacts (Call in a Favor). Already-brought
@@ -958,16 +1159,15 @@ function finalizeStep(step) {
 // Shared by every "you lose/damage a piece of gear" consequence: the
 // Combat/Driving fail table below, Hunt's combat fallout, and a bad Hunt
 // Run.
-const GEAR_TIER_ORDER = ["Street", "Professional", "Military"];
 function degradeGearItem(c, item) {
   const idx = c.gear.indexOf(item);
   if (idx === -1) return;
-  const tierIdx = GEAR_TIER_ORDER.indexOf(item.tier || "Street");
+  const tierIdx = DATA.gearTierOrder.indexOf(item.tier || "Street");
   if (tierIdx <= 0) {
     c.gear.splice(idx, 1);
     addLog(c, `${pick(DATA.gearDamageFlavor.fail)} (lost: ${item.name})`);
   } else {
-    item.tier = GEAR_TIER_ORDER[tierIdx - 1];
+    item.tier = DATA.gearTierOrder[tierIdx - 1];
     addLog(c, `${pick(DATA.gearDamageFlavor.degrade)} (${item.name} degrades to ${item.tier})`);
   }
 }

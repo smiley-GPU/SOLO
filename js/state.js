@@ -12,7 +12,7 @@ const PROFESSIONS = {
 };
 
 const TURFS = {
-  Nomad: { boost: "Driving", bonds: 2, contactFaction: "Vlads", gear: [{ name: "Kombi Wagon", attr: "Driving" }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
+  Nomad: { boost: "Driving", bonds: 2, contactFaction: "Vlads", gear: [{ name: "Kombi Wagon", attr: "Driving", tags: ["CG"] }], desc: "+Driving. Starts with a vehicle and a Nomad Family contact." },
   Corpo: { boost: "Hacking", bonds: 3, contactFaction: "Hammerstein GmbH", gear: [], desc: "+Hacking. Extra starting BONDS and a Corp contact (a favor owed either way)." },
   Street: { boost: "Stealth", bonds: 2, contactFaction: "EuroMafia", gear: [], boostBonus: 1, desc: "+Stealth. Starts with a Crime contact and a point of BOOST." }
 };
@@ -45,6 +45,9 @@ function defaultCharacter(name, profession, turf) {
     pendingSaleItem: null, // a banked Street-tier item awaiting its pair — see sellGearItem() in game.js
     reputation: 1, // §19.1 — 1-20, never spent, gates the Mission Board (reputationTier() below)
     pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
+    stocks: {}, // §20.5 EuroStoxx — {factionName: amount}, Corpo factions only
+    apartment: null, // §20.5 — {locationName, tier, security: [names]} once bought
+    shopOffers: null, // §20.5 — the Shop's current offer list, refreshed each Rest tick
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
 }
@@ -168,6 +171,11 @@ function destroyFaction(character, factionName) {
   if (!standing || standing.destroyed) return;
   standing.destroyed = true;
   character.contacts.forEach(p => { if (p.faction === factionName) p.faction = "Freelance"; });
+  // §20.5 — any EuroStoxx position in a destroyed faction is wiped, not sellable.
+  if (character.stocks[factionName]) {
+    delete character.stocks[factionName];
+    addLog(character, `Your ${factionName} stock is worthless overnight.`);
+  }
   addLog(character, `${factionName} is torn apart. What's left of it scatters.`);
 }
 
@@ -271,6 +279,11 @@ function migrateCharacter(character) {
     if (typeof standing.tier !== "number") standing.tier = startingFactionTier(name, standing.category);
     if (typeof standing.destroyed !== "boolean") standing.destroyed = false;
   });
+
+  // §20.5 — EuroStoxx, Apartments, and the Shop's persisted offer list.
+  if (!character.stocks) character.stocks = {};
+  if (character.apartment === undefined) character.apartment = null;
+  if (character.shopOffers === undefined) character.shopOffers = null;
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -501,8 +514,27 @@ function nudgeFactionRelation(character, factionA, factionB, delta) {
 function adjustFactionParam(character, factionName, param, delta) {
   const standing = character.factionStandings[factionName];
   if (!standing || standing.destroyed) return;
+  const before = standing[param];
   standing[param] = Math.max(0, Math.min(20, standing[param] + delta));
   if (param === "rnd" || param === "wealth") updateFactionTier(character, factionName);
+  if (param === "wealth") settleStockGains(character, factionName, before, standing.wealth);
+}
+
+// §20.5 EuroStoxx — every Wealth change on a faction the player holds stock
+// in settles immediately: +1 stock on any rise (+2 if Wealth just crossed
+// into ≥10), or a loss equal to however far Wealth fell (floored at 0 held).
+function settleStockGains(character, factionName, before, after) {
+  const held = character.stocks[factionName];
+  if (!held || after === before) return;
+  if (after > before) {
+    const gain = before < 10 && after >= 10 ? 2 : 1;
+    character.stocks[factionName] += gain;
+    addLog(character, `Your ${factionName} stock ticks up (+${gain} BOND).`);
+  } else {
+    const loss = Math.min(held, before - after);
+    character.stocks[factionName] -= loss;
+    addLog(character, `Your ${factionName} stock takes a hit (-${loss} BOND).`);
+  }
 }
 
 // §19.6 — the Challenge modifier a faction's Tier applies: Tier 1 → 0,
