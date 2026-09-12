@@ -300,6 +300,12 @@ function migrateCharacter(character) {
   if (!character.stocks) character.stocks = {};
   if (character.apartment === undefined) character.apartment = null;
   if (character.shopOffers === undefined) character.shopOffers = null;
+
+  // §20.9 — backfill `name` onto any persisted Location record saved
+  // before resolveLocation() started returning the live object directly.
+  Object.entries(character.locations).forEach(([name, loc]) => {
+    if (!loc.name) loc.name = name;
+  });
 }
 
 // Reuse rate for the recurring cast: 8 times out of 10 an existing pooled
@@ -354,21 +360,31 @@ function nonAuthorityFactionNames(character) {
   });
 }
 
+function nonDestroyedFactionNames(character) {
+  return Object.keys(character.factionStandings).filter(name => !character.factionStandings[name].destroyed);
+}
+
 // Authority factions may only ever be a mission Target, never an Employer.
-function getEmployer(character, excludeIds) {
-  return getPerson(character, "ally", excludeIds, nonAuthorityFactionNames(character));
+// excludeFactionName (BATCH 2.0, optional): also excludes one specific
+// faction — used when building a guaranteed-war Special Mission (§19.7) so
+// the Employer never coincidentally matches the war's own target faction.
+function getEmployer(character, excludeIds, excludeFactionName) {
+  const allowed = nonAuthorityFactionNames(character).filter(name => name !== excludeFactionName);
+  return getPerson(character, "ally", excludeIds, allowed);
 }
 
 // The factions a Target may belong to given the Employer's faction: same or
-// an adjacent category (Corpo↔Crime, Crime↔Nomad), or any Authority faction.
-// Returns null (no constraint) for a Freelance/untracked Employer.
+// an adjacent category (Corpo↔Crime, Crime↔Nomad), or any Authority faction
+// — but never the Employer's own faction (BATCH 2.0: a faction never
+// attacks/targets itself). Returns null (no constraint) for a Freelance/
+// untracked Employer.
 function pairedFactionsFor(character, employerFactionName) {
   const employerStanding = character.factionStandings[employerFactionName];
   if (!employerStanding) return null;
   const allowedCategories = DATA.factionCategoryAdjacency[employerStanding.category] || [employerStanding.category];
   const allowed = [];
   Object.entries(character.factionStandings).forEach(([name, standing]) => {
-    if (standing.destroyed) return;
+    if (standing.destroyed || name === employerFactionName) return;
     if (standing.category === "Authority" || allowedCategories.includes(standing.category)) allowed.push(name);
   });
   return allowed;
@@ -510,14 +526,22 @@ function applyHarm(character) {
     }
     return false; // absorbed clean — no Health box marked, so never "wentDown" here
   }
-  return markHarm(character);
+  const down = markHarm(character);
+  // §20.9 (BATCH 2.0) — every non-absorbed hit states its effect plainly,
+  // one chokepoint covering every one of the ~9 call sites that use this
+  // instead of a bare markHarm(): the flavor line callers log separately
+  // never said which mechanical thing actually happened.
+  addLog(character, down ? "You go down — every Harm box marked." : "-1 Harm box.");
+  return down;
 }
 
-// Fires exactly once, the moment a character goes Down (all 3 Health boxes
-// marked). No permadeath: a slim chance instead knocks 2 points off their
-// BOOST pool ("you should be dead — you're not, but it cost you"), and
-// either way they're left with a Permanent Injury that needs a paid repair
-// (see DATA.repairs) and an ongoing roll penalty until it's fixed.
+// Fires on a character's *first* Down (all 3 Health boxes marked): a slim
+// chance knocks 2 points off their BOOST pool ("you should be dead —
+// you're not, but it cost you"), and either way they're left with a
+// Permanent Injury that needs a paid repair (see DATA.repairs) and an
+// ongoing roll penalty until it's fixed. Going Down *again* while already
+// carrying one is fatal (BATCH 2.0) — see handleGoingDown() in game.js,
+// the one path anything should call instead of this directly.
 function resolveDownEvent(character) {
   if (Math.random() < 0.1) {
     character.boost = Math.max(0, character.boost - 2);
@@ -690,7 +714,10 @@ function autoCarryNewItem(character, item) {
 
 function rememberLocation(character, location) {
   if (!character.locations[location.name]) {
-    character.locations[location.name] = { area: location.area, faction: location.faction, heat: location.heat };
+    // `name` is stored too (§20.9) so the live record returned by
+    // resolveLocation() below is a drop-in replacement for the old
+    // {name, area, faction, heat} copy it used to build.
+    character.locations[location.name] = { name: location.name, area: location.area, faction: location.faction, heat: location.heat };
   }
   return character.locations[location.name];
 }
@@ -700,10 +727,23 @@ function rememberLocation(character, location) {
 // rolling a first-visit Heat if this is the first time it's been seen, or
 // returning its already-persisted Heat otherwise. The 12 locations are a
 // permanent map, so this is the one path anything should use to "visit" one.
+// §20.9 (BATCH 2.0, bug fix): returns the *live* persisted object, not a
+// copy — a job's `location`/`fromLocation` must see Heat rises that happen
+// during its own Steps (Combat's always-on +1, a Stealth Fail's +2, ...),
+// or the exit Checkpoint/apartment-raid checks (§20.7) only ever see
+// whatever Heat existed before the job even started.
 function resolveLocation(character, def) {
-  const persisted = rememberLocation(character, { name: def.name, area: def.area, faction: def.faction, heat: rollHeatForArea(def.area) });
-  return { name: def.name, area: persisted.area, faction: persisted.faction, heat: persisted.heat };
+  return rememberLocation(character, { name: def.name, area: def.area, faction: def.faction, heat: rollHeatForArea(def.area) });
 }
+// §20.9 (BATCH 2.0) — the one path anything raising Heat from a Challenge
+// fallout should use: mutates *and* logs the change explicitly, since Heat
+// rises previously happened silently (no log line at all).
+function raiseHeat(character, location, amount) {
+  if (!location) return;
+  location.heat = Math.min(5, location.heat + amount);
+  addLog(character, `Heat +${amount} at ${location.name} (now ${location.heat}).`);
+}
+
 function decayOtherLocations(character, exceptName) {
   Object.keys(character.locations).forEach(name => {
     if (name !== exceptName) {

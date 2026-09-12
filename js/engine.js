@@ -197,8 +197,15 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar) {
   const fullLoc = resolveLocation(character, genLocationDef());
   const excludeIds = new Set();
-  const employer = getEmployer(character, excludeIds);
-  const allowedTargetFactions = forceSpecial ? null : pairedFactionsFor(character, employer.faction);
+  // BATCH 2.0 — never draw an Employer from the faction a queued war is
+  // already targeting, or a forced-war Special could end up hiring itself.
+  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null);
+  // BATCH 2.0 — Special Missions ignore pairing ("any roles") but still
+  // never target the Employer's own faction; nonDestroyedFactionNames()
+  // stands in for pairedFactionsFor()'s usual category-based list.
+  const allowedTargetFactions = forceSpecial
+    ? nonDestroyedFactionNames(character).filter(name => name !== employer.faction)
+    : pairedFactionsFor(character, employer.faction);
 
   let forcedType = null, forcedTarget = null;
   if (forcedWar) {

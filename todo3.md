@@ -242,3 +242,22 @@ Character sheet should have Gear as it is right now. Before you go to mission, y
  In Missions you get bonuses to challenges only from items you carry, not from the other items in your inventory/gear. If you have more than one same category gear, then you can choose. If challenge failure results to gear damage or loss, it will be this gear that is damaged.
 
 
+## BATCH 2.0
+add reputational names under rep
+reputaion can go downwards
+you can choose Comfy Coffin hotel multiple times
+You can have more than one archenemy
+    -if relationship would go below -5 then they become archenemy
+you can have more than one bloodbrother
+repair items
+description don't match the game effect
+dying?
+Faction attributes max cap at 10
+Rest at apartment in wrong place, home rest is a cycle too, if hunted while home add security
+kauppojen pitää päivittyä
+count cybernetic replacements - getting to borg 
+help should always have meaning full skill
+Factions downward trend should be reversed
+check EurCop/SwissGuard heat mechanic
+show if helpers are wounded
+Make a obituary of helper/compi/Amigue death

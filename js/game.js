@@ -420,7 +420,8 @@ function renderMain() {
     debrief: renderDebrief,
     hunt: renderHunt,
     win: renderWin,
-    loss: renderLoss
+    loss: renderLoss,
+    death: renderDeath
   }[G.phase];
   if (fn) fn();
   els.main.appendChild(renderJournal());
@@ -507,32 +508,6 @@ function renderHub() {
       repairSection.appendChild(btn);
     });
     wrap.appendChild(repairSection);
-  }
-
-  // §20.5 — a free heal-a-box roll if you own an Apartment, independent of
-  // the Rest clock/Mission Board reroll (this doesn't tick restCount or
-  // reroll the job search — it's just "how you spend a bit of downtime").
-  // §20.6 — unless the Archenemy left a trap under the bed: 2 Harm boxes
-  // instead, one time, then it's cleared.
-  if (c.apartment) {
-    const homeBtn = document.createElement("button");
-    homeBtn.textContent = "Rest at your Apartment (Free)";
-    homeBtn.addEventListener("click", () => {
-      if (c.apartment.trapped) {
-        c.apartment.trapped = false;
-        applyHarm(c);
-        const wentDown = applyHarm(c);
-        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-        addLog(c, "The place goes up the second you're inside — you'd left something behind, alright, and it wasn't yours.");
-      } else if (Math.random() < 0.5 && c.health.some(h => h)) {
-        healBox(c);
-        addLog(c, "You crash at home for a while — it helps.");
-      } else {
-        addLog(c, "You crash at home for a while. Quiet, at least.");
-      }
-      persist(); render();
-    });
-    wrap.appendChild(homeBtn);
   }
 
   els.main.appendChild(wrap);
@@ -685,11 +660,12 @@ function renderBriefingCard(job, idx) {
 // available (todo3.md ADD). Shared by both jobs on the Board — resting
 // rerolls the whole Board, not just one candidate.
 function renderRestOptions(wrap) {
+  const c = G.character;
   wrap.innerHTML = `<h3>Lay Low Instead</h3>`;
 
   const restBtn = document.createElement("button");
   restBtn.textContent = "Rest in Comfy Coffin Hotel (1 BOND)";
-  restBtn.disabled = G.boardRerolled || G.character.bonds < 1;
+  restBtn.disabled = c.bonds < 1; // BATCH 2.0 — repeatable now, BONDS are the only limiter
   restBtn.addEventListener("click", () => restCoffinHotel());
   wrap.appendChild(restBtn);
 
@@ -698,18 +674,50 @@ function renderRestOptions(wrap) {
   nightBtn.addEventListener("click", () => { G.restFlow = { stage: "night", pendingResult: null, lastResult: null }; persist(); render(); });
   wrap.appendChild(nightBtn);
 
-  const bb = findBloodbrother(G.character);
-  if (bb) {
+  // BATCH 2.0 — more than one Amigue can exist now; offer a row per Amigue
+  // instead of always grabbing the first one found.
+  c.contacts.filter(p => p.bloodbrother).forEach(bb => {
     const brotherBtn = document.createElement("button");
     brotherBtn.textContent = `Spend the Night with ${bb.name} (Free)`;
-    brotherBtn.addEventListener("click", () => { G.restFlow = { stage: "brothernight", pendingResult: null, lastResult: null }; persist(); render(); });
+    brotherBtn.addEventListener("click", () => { G.restFlow = { stage: "brothernight", withId: bb.id, pendingResult: null, lastResult: null }; persist(); render(); });
     wrap.appendChild(brotherBtn);
+  });
+
+  // BATCH 2.0 — relocated from the Hub, and now ticks the Rest clock like
+  // every other option here (it deliberately didn't before).
+  if (c.apartment) {
+    const homeBtn = document.createElement("button");
+    homeBtn.textContent = "Rest at your Apartment (Free)";
+    homeBtn.addEventListener("click", () => restAtApartment());
+    wrap.appendChild(homeBtn);
   }
 
   const restNote = document.createElement("p");
   restNote.className = "muted";
   restNote.textContent = "Resting finds you two different jobs — the Coffin Hotel might also patch you up.";
   wrap.appendChild(restNote);
+}
+
+// BATCH 2.0 — Rest at your Apartment, now part of the Rest cycle (ticks
+// restCount like Coffin Hotel/Night on the Street). If the Archenemy left
+// a trap here (§20.6), that fires instead of the usual heal roll. If this
+// tick is the one that fills the Rest clock, the resulting Hunt happens
+// at home (see startHunt's atHome param) rather than out on the street.
+function restAtApartment() {
+  const c = G.character;
+  if (c.apartment.trapped) {
+    c.apartment.trapped = false;
+    addLog(c, "The place goes up the second you're inside — you'd left something behind, alright, and it wasn't yours.");
+    for (let i = 0; i < 2 && !isDown(c); i++) {
+      if (handleGoingDown(c, applyHarm(c))) { persist(); render(); return; }
+    }
+  } else if (Math.random() < 0.5 && c.health.some(h => h)) {
+    healBox(c);
+    addLog(c, "You crash at home for a while — it helps.");
+  } else {
+    addLog(c, "You crash at home for a while. Quiet, at least.");
+  }
+  processRestTick(true);
 }
 
 // Dispatches the three Rest sub-flows against G.restFlow (a standalone
@@ -725,7 +733,7 @@ function renderRestSubflow(container) {
     container.appendChild(w);
     renderChallenge(w, { attr: "Combat", alt: "Social", desc: "Where do you lay low tonight?" }, finishNightOnStreet, ctx);
   } else if (stage === "brothernight") {
-    const bb = findBloodbrother(G.character);
+    const bb = G.character.contacts.find(p => p.id === G.restFlow.withId) || findBloodbrother(G.character);
     const w = document.createElement("div");
     w.innerHTML = `<h4>A night with ${bb ? bb.name : "your Amigue"}.</h4>`;
     container.appendChild(w);
@@ -794,9 +802,8 @@ function finishNightOnStreet() {
     healBox(c);
     addLog(c, `You get through ${flavor} — and actually catch some real rest.`);
   } else if (res.tier === "fail") {
-    const wentDown = applyHarm(c);
-    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     addLog(c, `It's ${flavor}, and it costs you — you catch a hit out there.`);
+    if (handleGoingDown(c, applyHarm(c))) { G.restFlow = null; persist(); render(); return; }
   } else {
     addLog(c, `It's ${flavor}. You get by, nothing more.`);
   }
@@ -805,11 +812,13 @@ function finishNightOnStreet() {
 }
 
 // BLOODBROTHER "Spend the Night" (todo3.md Persons) — its own three-tier
-// Social table, distinct from Night on the Street's.
+// Social table, distinct from Night on the Street's. BATCH 2.0: `bb` comes
+// from G.restFlow.withId (which specific Amigue) now that more than one
+// can exist, falling back to the old first-match behavior defensively.
 function finishBrotherNight() {
   const c = G.character;
   const res = G.restFlow.lastResult;
-  const bb = findBloodbrother(c);
+  const bb = c.contacts.find(p => p.id === G.restFlow.withId) || findBloodbrother(c);
   if (res.tier === "full") {
     if (bb) nudgeRelationship(c, bb.id, 1);
     grantBloodbrotherGift(c);
@@ -823,7 +832,7 @@ function finishBrotherNight() {
     processRestTick();
   } else {
     addLog(c, `It goes sideways fast — you and ${bb ? bb.name : "your Amigue"} end up in a street fight.`);
-    G.restFlow = { stage: "brotherfight", pendingResult: null, lastResult: null };
+    G.restFlow = { stage: "brotherfight", withId: bb ? bb.id : null, pendingResult: null, lastResult: null };
     persist();
     render();
   }
@@ -833,7 +842,7 @@ function finishBrotherNight() {
 function finishBrotherFight() {
   const c = G.character;
   const res = G.restFlow.lastResult;
-  const bb = findBloodbrother(c);
+  const bb = c.contacts.find(p => p.id === G.restFlow.withId) || findBloodbrother(c);
   if (res.tier === "full") {
     c.boost = Math.min(10, c.boost + 1);
     addLog(c, "You put them down hard. Adrenaline still running (+1 BOOST).");
@@ -844,9 +853,8 @@ function finishBrotherFight() {
     if (bb) nudgeRelationship(c, bb.id, -1);
     addLog(c, `Messy, but you walk away. ${bb ? bb.faction : "Their crew"} won't forget it though.`);
   } else {
-    const wentDown = applyHarm(c);
-    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
     addLog(c, "You catch a bad one in the scuffle.");
+    if (handleGoingDown(c, applyHarm(c))) { G.restFlow = null; persist(); render(); return; }
   }
   G.restFlow = null;
   processRestTick();
@@ -884,12 +892,16 @@ function grantBloodbrotherGift(c) {
 // Also runs the §19.7 faction Power struggles once per tick, and checks the
 // §19.8 MULTI-CORP loss condition immediately after — a faction destroyed
 // mid-Rest can end the game before the next Board or Hunt ever shows.
-function processRestTick() {
+// viaApartment (BATCH 2.0): true when this tick came from Rest at your
+// Apartment — if it's the tick that fills the clock, the resulting Hunt
+// happens at home (startHunt's atHome param) instead of out on the street.
+function processRestTick(viaApartment) {
   const c = G.character;
   c.restCount++;
   if (c.restCount === 1) lockInArchenemy(c);
   c.shopOffers = genShopOffers(reputationTier(c)); // §20.5 — new stock on the shelves each tick
   runFactionPowerStruggles(c);
+  applyFactionPassiveRecovery(c); // BATCH 2.0 — counters the downward trend
   if (checkMultiCorpLoss(c)) {
     G.job = null;
     G.board = null;
@@ -903,7 +915,7 @@ function processRestTick() {
     G.job = null;
     G.board = null;
     persist();
-    startHunt();
+    startHunt(viaApartment);
     return;
   }
   startJobSearch(true);
@@ -1017,8 +1029,7 @@ function resolveApartmentRaid(c, job) {
     }
   } else {
     addLog(c, `${agency} pushes their way in.`);
-    applyCheckpointDamage(c, job, "harm");
-    applyCheckpointDamage(c, job, pick(["vehicle", "gear"]));
+    if (!applyCheckpointDamage(c, job, "harm")) applyCheckpointDamage(c, job, pick(["vehicle", "gear"]));
   }
 }
 
@@ -1033,10 +1044,10 @@ function missionFieldRows(mission) {
     case "Heist":
       return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p>${assetRow}`;
     case "Transport":
-      return `<p><strong>Cargo:</strong> ${mission.target.name}</p><p><strong>Route:</strong> ${mission.fromLocation.name} → ${mission.location.name}</p>${assetRow}`;
+      return `<p><strong>Cargo:</strong> ${mission.target.name} (${mission.target.faction})</p><p><strong>Route:</strong> ${mission.fromLocation.name} → ${mission.location.name}</p>${assetRow}`;
     case "Delay":
     case "Hold":
-      return `<p><strong>Time:</strong> ${["Short", "Medium", "Long"][mission.timePeriod - 1]} (${mission.timePeriod} rounds)</p>${assetRow}`;
+      return `<p><strong>Target:</strong> ${mission.target.name} (${mission.target.profession}, ${mission.target.faction})</p><p><strong>Time:</strong> ${["Short", "Medium", "Long"][mission.timePeriod - 1]} (${mission.timePeriod} rounds)</p>${assetRow}`;
     default:
       return "";
   }
@@ -1255,6 +1266,7 @@ function renderEncounter() {
   els.main.appendChild(wrap);
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
+    if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
     if (job.encounter.stage === "pre") {
       G.phase = "steps";
     } else {
@@ -1337,7 +1349,7 @@ function renderCheckpointChoice(wrap) {
   payBtn.disabled = c.bonds < cost;
   payBtn.addEventListener("click", () => {
     c.bonds -= cost;
-    addLog(c, `You grease the ${cp.agency} line and roll on through.`);
+    addLog(c, `You grease the ${cp.agency} line and roll on through (-${cost} BOND${cost === 1 ? "" : "S"}).`);
     finishCheckpoint();
   });
   block.appendChild(payBtn);
@@ -1372,39 +1384,44 @@ function finishCheckpointCombat() {
   const c = G.character, job = G.job, cp = job.checkpoint;
   const res = job.lastResult;
   job.pendingResult = null;
+  let died = false;
   if (res.tier === "full") {
     addLog(c, `You get clear of the ${cp.agency} line without a scratch.`);
   } else if (res.tier === "partial") {
     addLog(c, `You get through, but it costs you.`);
-    applyCheckpointDamage(c, job, pick(["harm", "vehicle", "helper"]));
+    died = applyCheckpointDamage(c, job, pick(["harm", "vehicle", "helper"]));
   } else {
     addLog(c, `It goes bad at the line.`);
-    applyCheckpointDamage(c, job, "harm");
-    applyCheckpointDamage(c, job, pick(["vehicle", "helper", "gear"]));
+    died = applyCheckpointDamage(c, job, "harm");
+    if (!died) died = applyCheckpointDamage(c, job, pick(["vehicle", "helper", "gear"]));
   }
+  if (died) { persist(); render(); return; }
   finishCheckpoint();
 }
 
 // A single damage "kind", falling back to Harm if the preferred target
 // doesn't exist (no vehicle/no active helper/no gear) — same recursive-
 // fallback shape as applyFalloutConsequence (§19.9).
+// Returns true if this call ended the run in death (handleGoingDown,
+// BATCH 2.0) — callers must check and bail rather than continue their own
+// next-step logic.
 function applyCheckpointDamage(c, job, kind) {
   if (kind === "harm") {
-    const wentDown = applyHarm(c);
-    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+    return handleGoingDown(c, applyHarm(c));
   } else if (kind === "vehicle") {
     // §20.8 — only a carried vehicle can take this hit.
     const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
-    if (vehicles.length) degradeGearItem(c, pick(vehicles));
-    else applyCheckpointDamage(c, job, "harm");
+    if (vehicles.length) { degradeGearItem(c, pick(vehicles)); return false; }
+    return applyCheckpointDamage(c, job, "harm");
   } else if (kind === "helper") {
-    if (job.helpers.some(h => !h.benched)) woundJobHelper(c, job);
-    else applyCheckpointDamage(c, job, "harm");
+    if (job.helpers.some(h => !h.benched)) { woundJobHelper(c, job); return false; }
+    return applyCheckpointDamage(c, job, "harm");
   } else if (kind === "gear") {
     const carried = c.gear.filter(g => g.carried);
-    if (carried.length) degradeGearItem(c, pick(carried));
-    else applyCheckpointDamage(c, job, "harm");
+    if (carried.length) { degradeGearItem(c, pick(carried)); return false; }
+    return applyCheckpointDamage(c, job, "harm");
   }
+  return false;
 }
 
 // Shared "checkpoint resolved, move on" handler for every branch above.
@@ -1459,6 +1476,7 @@ function finalizeStep(step) {
   const job = G.job;
   const c = G.character;
   const res = finalizeChallengeCommon();
+  if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
   // Side-objective steps (todo3.md ADD: "more BONDS") are tracked
   // separately so a botched side job can't tank the main contract's
   // success ratio — only the main sequence feeds job.stepResults.
@@ -1537,7 +1555,7 @@ function applyOutcome(c, job, attr, tier) {
 
   // Combat always adds Heat, win or lose (§19.9) — checked before the
   // full-success early return below, since it applies there too.
-  if (fallout.heatAlways && loc) loc.heat = Math.min(5, loc.heat + 1);
+  if (fallout.heatAlways) raiseHeat(c, loc, 1);
 
   if (tier === "full") {
     addLog(c, `Full success on ${attr}.`);
@@ -1547,44 +1565,45 @@ function applyOutcome(c, job, attr, tier) {
   const table = DATA.complications[attr];
   addLog(c, tier === "partial" ? pick(table.partial) : pick(table.fail));
 
-  if (fallout.heatOnResolve && loc) loc.heat = Math.min(5, loc.heat + fallout.heatOnResolve);
+  if (fallout.heatOnResolve) raiseHeat(c, loc, fallout.heatOnResolve);
 
   const consequences = pick(tier === "partial" ? fallout.partial : fallout.fail);
-  consequences.forEach(key => applyFalloutConsequence(c, job, attr, tier, key, loc));
+  for (const key of consequences) {
+    if (applyFalloutConsequence(c, job, attr, tier, key, loc)) return; // died — skip any remaining keys in this bundle
+  }
 }
 
+// Returns true if this call ended the run in death (handleGoingDown,
+// BATCH 2.0) — applyOutcome's caller must stop applying any further
+// consequence keys in the same bundle and bail.
 function applyFalloutConsequence(c, job, attr, tier, key, loc) {
   switch (key) {
     case "harm1":
     case "harm2": {
       const hits = key === "harm2" ? 2 : 1;
       for (let i = 0; i < hits; i++) {
-        const wentDown = applyHarm(c);
-        if (wentDown) {
-          if (!c.permanentInjury) resolveDownEvent(c);
-          break;
-        }
+        if (handleGoingDown(c, applyHarm(c))) return true;
+        if (isDown(c)) break; // fully Down but an Amigue saved you — no more hits to land
       }
-      break;
+      return false;
     }
     case "gearDamage": {
       // §20.8 — only carried gear can be damaged or lost on a mission.
       const carried = c.gear.filter(g => g.carried);
-      if (carried.length === 0) { applyFalloutConsequence(c, job, attr, tier, "credLoss", loc); break; }
+      if (carried.length === 0) return applyFalloutConsequence(c, job, attr, tier, "credLoss", loc);
       if (tier === "partial") {
         c.bonds = Math.max(0, c.bonds - 1);
-        addLog(c, pick(DATA.gearDamageFlavor.partial));
+        addLog(c, `${pick(DATA.gearDamageFlavor.partial)} (-1 BOND)`);
       } else {
         const matching = carried.filter(g => g.attr === attr);
         degradeGearItem(c, pick(matching.length ? matching : carried));
       }
-      break;
+      return false;
     }
     case "vehicleDamage": {
       const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
-      if (vehicles.length) degradeGearItem(c, pick(vehicles));
-      else applyFalloutConsequence(c, job, attr, tier, "harm1", loc);
-      break;
+      if (vehicles.length) { degradeGearItem(c, pick(vehicles)); return false; }
+      return applyFalloutConsequence(c, job, attr, tier, "harm1", loc);
     }
     case "loseVehicle": {
       const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
@@ -1592,27 +1611,27 @@ function applyFalloutConsequence(c, job, attr, tier, key, loc) {
         const v = pick(vehicles);
         c.gear = c.gear.filter(item => item !== v);
         addLog(c, `${v.name} is totaled — you lose it for good.`);
-      } else {
-        applyFalloutConsequence(c, job, attr, tier, "gearDamage", loc);
+        return false;
       }
-      break;
+      return applyFalloutConsequence(c, job, attr, tier, "gearDamage", loc);
     }
     case "woundHelper":
       woundJobHelper(c, job);
-      break;
+      return false;
     case "heat":
-      if (loc) loc.heat = Math.min(5, loc.heat + 1);
-      break;
+      raiseHeat(c, loc, 1);
+      return false;
     case "heat2":
-      if (loc) loc.heat = Math.min(5, loc.heat + 2);
-      break;
+      raiseHeat(c, loc, 2);
+      return false;
     case "credLoss": {
       const loss = Math.min(c.bonds, tier === "fail" ? 2 : 1);
       c.bonds -= loss;
       addLog(c, `${pick(tier === "fail" ? DATA.credLossFlavor.fail : DATA.credLossFlavor.partial)} (-${loss} BOND${loss === 1 ? "" : "S"})`);
-      break;
+      return false;
     }
   }
+  return false;
 }
 
 // §19.5/§20.1 — any Bloodbrother riding along as a Helper on a Special
@@ -2072,12 +2091,70 @@ function renderLoss() {
   els.main.appendChild(wrap);
 }
 
+// ---------- DEATH (BATCH 2.0) ----------
+// Going Down while already carrying a Permanent Injury is fatal — unless
+// an Amigue is present to take the hit instead (handleGoingDown, below).
+// This is the only way the run itself can end besides Win/MULTI-CORP-Loss.
+function renderDeath() {
+  const c = G.character;
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `
+    <h2>Flatlined</h2>
+    <p>The second time your body gives out, it doesn't get back up. No
+    ripperdoc, no coffin pod, no lucky break this time — just the street,
+    and then nothing.</p>
+    <p class="muted">${c.name} — didn't make it off Europunk's streets.</p>
+  `;
+  const btn = document.createElement("button");
+  btn.textContent = "Start a New Runner";
+  btn.addEventListener("click", () => {
+    clearSave();
+    G.character = null;
+    G.job = null;
+    G.board = null;
+    G.hunt = null;
+    G.phase = "create";
+    render();
+  });
+  wrap.appendChild(btn);
+  els.main.appendChild(wrap);
+}
+
+// Central Down/death handler (BATCH 2.0): going Down while already
+// carrying a Permanent Injury is fatal, unless an Amigue (Bloodbrother) is
+// present to sacrifice their own life instead. A first-ever Down is
+// unchanged (resolveDownEvent's BOOST-loss chance + sets permanentInjury).
+// Sets G.phase = "death" and returns true if this call ended the run —
+// every call site that would otherwise continue on to its own next-step
+// logic (advance a step, tick Rest, run Debrief, ...) must check the
+// return value and bail instead. See SOLOdescription.md §20.9 for the
+// full list of call sites and which ones needed a guard.
+function handleGoingDown(c, wentDown) {
+  if (!wentDown) return false;
+  if (!c.permanentInjury) { resolveDownEvent(c); return false; }
+  const amigues = c.contacts.filter(p => p.bloodbrother);
+  if (amigues.length) {
+    const savior = pick(amigues);
+    addLog(c, `${savior.name} throws themselves between you and the end. It's not you going in the ground tonight.`);
+    killPerson(c, savior.id);
+    return false;
+  }
+  addLog(c, `${c.name} doesn't get back up this time.`);
+  G.phase = "death";
+  return true;
+}
+
 // ---------- ARCHENEMY HUNT (todo3.md) ----------
 // Triggered by processRestTick() once the Rest clock (character.restCount)
 // hits 4. A bespoke mini state machine — not the generic mission-step
 // sequence — since the branching (avoid/fight, wound tracking, chase/run)
 // doesn't fit that shape. Reuses resolve()/renderResultBlock() as-is.
-function startHunt() {
+// atHome (BATCH 2.0): true when the Rest clock filled via Rest at your
+// Apartment — the Archenemy comes for the player at home instead of on the
+// street; installed Security counts toward Combat rolls for this Hunt
+// (renderHuntRoll), and any Tier-4 items also grant a one-Hunt armor pool.
+function startHunt(atHome) {
   const c = G.character;
   const archenemy = c.contacts.find(p => p.id === c.archenemyId);
   if (!archenemy) {
@@ -2088,8 +2165,13 @@ function startHunt() {
     render();
     return;
   }
-  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false };
-  addLog(c, `${archenemy.name} finally catches up with you.`);
+  // BATCH 2.0 — Tier-4 Security items grant a one-Hunt armor-like absorb
+  // pool (2 charges each, the Professional-tier scale) when hunted at home.
+  const homeArmorCharges = atHome && c.apartment
+    ? c.apartment.security.filter(name => DATA.securityOptions[4].includes(name)).length * 2
+    : 0;
+  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false, atHome: !!atHome, homeArmorCharges };
+  addLog(c, atHome ? `${archenemy.name} comes for you at your own front door.` : `${archenemy.name} finally catches up with you.`);
   G.phase = "hunt";
   persist();
   render();
@@ -2192,6 +2274,11 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     const tp = tierPenalty(hunt.archenemy.tier);
     if (tp) mods.push({ label: hunt.archenemy.name, value: tp });
     if (extraBonus) mods.push({ label: "Caught them off guard", value: extraBonus });
+    // BATCH 2.0 — hunted at home: installed Security counts toward Combat
+    // only ("other rolls as normal").
+    if (hunt.atHome && attr === "Combat" && c.apartment && c.apartment.security.length) {
+      mods.push({ label: "Security", value: c.apartment.security.length });
+    }
     if (spendBoost) mods.push({ label: "Boost", value: 1 });
     if (callBrother && bb) mods.push({ label: bb.name, value: 2 });
     const harmCount = c.health.filter(h => h).length;
@@ -2229,6 +2316,20 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   container.appendChild(block);
 }
 
+// BATCH 2.0 — the one path a Hunt should use to apply Harm to the player:
+// when hunted at home, a Tier-4 Security item's leftover charge pool gets
+// first crack at absorbing the hit (same 50% chance as carried Armor),
+// before falling through to the normal applyHarm().
+function applyHuntHarm(c) {
+  const hunt = G.hunt;
+  if (hunt.atHome && hunt.homeArmorCharges > 0 && Math.random() < ARMOR_ABSORB_CHANCE) {
+    hunt.homeArmorCharges--;
+    addLog(c, `Your security tech takes the hit for you (${hunt.homeArmorCharges} charge${hunt.homeArmorCharges === 1 ? "" : "s"} left).`);
+    return false;
+  }
+  return applyHarm(c);
+}
+
 function renderHuntNotice(container) {
   renderHuntRoll(container, "Social", `Something's off tonight. Do you notice ${G.hunt.archenemy.name} closing in?`, 0, (res) => {
     const c = G.character, hunt = G.hunt;
@@ -2264,9 +2365,7 @@ function renderHuntTrack(container) {
       hunt.stage = "choice";
     } else {
       addLog(c, `You're looking for ${hunt.archenemy.name} when a car swerves round the corner — ${hunt.archenemy.name} comes out guns blazing!`);
-      const wentDown = applyHarm(c);
-      if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-      hunt.stage = "choice";
+      if (!handleGoingDown(c, applyHuntHarm(c))) hunt.stage = "choice";
     }
     persist(); render();
   });
@@ -2319,8 +2418,7 @@ function applyHuntCombatFailFallout(c) {
   const effect = pickWeighted(DATA.failOutcomes.Combat);
   const carried = c.gear.filter(g => g.carried); // §20.8 — only what's on you can be hit
   if (effect === "harm" || (effect === "gearDamage" && carried.length === 0)) {
-    const wentDown = applyHarm(c);
-    if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+    handleGoingDown(c, applyHuntHarm(c));
   } else if (effect === "gearDamage") {
     degradeGearItem(c, pick(carried));
   } else if (effect === "credLoss" && c.bonds > 0) {
