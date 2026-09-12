@@ -2009,13 +2009,23 @@ function renderChallenge(container, step, onContinue, ctx) {
     const assistOptions = assistHelpers.map(h =>
       `<label class="boost-toggle"><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /> ${h.person.name}: +2 to this roll</label>`
     ).join("");
-    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}<div class="mods"></div>`;
+    // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
+    // roll now, not auto-applied/burned whenever it happened to be the best
+    // gear for this attribute. One independent checkbox per carried
+    // one-shot item matching this attr.
+    const oneShotItems = oneShotOptionsForAttr(c, attr);
+    const oneShotOptions = oneShotItems.map((item, i) =>
+      `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
+    ).join("");
+    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
     const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
     const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
+    const oneShotChecks = Array.from(block.querySelectorAll(".oneshot-check"));
+    const checkedOneShots = () => oneShotChecks.filter(el => el.checked).map(el => oneShotItems[Number(el.dataset.idx)]);
 
     const refreshMods = () => {
-      const mods = computeModifiers(attr, getBoostSpend(), checkedAssistIds(), job);
+      const mods = computeModifiers(attr, getBoostSpend(), checkedAssistIds(), job, checkedOneShots());
       modsEl.innerHTML = mods.length
         ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
         : `<span class="chip">no modifiers</span>`;
@@ -2023,18 +2033,20 @@ function renderChallenge(container, step, onContinue, ctx) {
     const getBoostSpend = wireBoostSpend(block, refreshMods); // BATCH 2.1 (item 13)
     refreshMods();
     assistChecks.forEach(el => el.addEventListener("change", refreshMods));
+    oneShotChecks.forEach(el => el.addEventListener("change", refreshMods));
 
     const rollBtn = document.createElement("button");
     rollBtn.textContent = `Roll ${attr}`;
     rollBtn.addEventListener("click", () => {
       const spendAmount = getBoostSpend();
       const assistIds = checkedAssistIds();
-      const mods = computeModifiers(attr, spendAmount, assistIds, job);
+      const chosenOneShots = checkedOneShots();
+      const mods = computeModifiers(attr, spendAmount, assistIds, job, chosenOneShots);
       if (spendAmount) c.boost -= spendAmount;
       if (job && assistIds.length) {
         job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
       }
-      consumeOneShotGear(c, attr); // BATCH 2.1 (item 9)
+      consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
       const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
       result.usedAttr = attr;
       step.usedAttr = attr;
@@ -2064,11 +2076,17 @@ function attrAvailable(c, job, attr) {
 // ever one recruited Ally; now there can be up to 3. spendBoost (BATCH 2.1,
 // item 13): was a boolean ("spend 1 BOOST"), now an integer 0-2 — however
 // much BOOST is being spent on this one roll.
-function computeModifiers(attr, spendBoost, assistIds, job) {
+function computeModifiers(attr, spendBoost, assistIds, job, chosenOneShots) {
   const c = G.character;
   const mods = [];
-  const gearBonus = bestGearBonus(c, attr);
+  // PATCH 2.4 — one-shot ("1S") gear is excluded from the automatic "best
+  // owned item" bonus now; it's an explicit per-roll checkbox instead (see
+  // renderChallenge) whose chosen items are passed in here.
+  const gearBonus = bestPermanentGearBonus(c, attr);
   if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
+  (chosenOneShots || []).forEach(item => {
+    mods.push({ label: `${item.name} (1S)`, value: DATA.gearTierBonus[item.tier] || 0 });
+  });
   // BATCH 2.0 — cybernetic replacements (§ "getting to borg"): +1 Combat for
   // an arm+leg pair, -1 Social per Faceplate.
   const cyberMod = cyberAttrModifier(c, attr);
@@ -2583,14 +2601,25 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   const brotherOption = amigues.length && !hunt.bloodbrotherUsed
     ? amigues.map(a => `<label class="boost-toggle"><input type="checkbox" class="brother-check" data-id="${a.id}" /> Call ${a.name}: +2 to this roll</label>`).join("")
     : "";
-  block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${brotherOption}<div class="mods"></div>`;
+  // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
+  // roll now, same as in renderChallenge().
+  const oneShotItems = oneShotOptionsForAttr(c, attr);
+  const oneShotOption = oneShotItems.map((item, i) =>
+    `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
+  ).join("");
+  block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${brotherOption}${oneShotOption}<div class="mods"></div>`;
   const modsEl = block.querySelector(".mods");
   const brotherChecks = Array.from(block.querySelectorAll(".brother-check"));
+  const oneShotChecks = Array.from(block.querySelectorAll(".oneshot-check"));
+  const checkedOneShots = () => oneShotChecks.filter(el => el.checked).map(el => oneShotItems[Number(el.dataset.idx)]);
 
-  const buildMods = (spendBoost, callBrotherId) => {
+  const buildMods = (spendBoost, callBrotherId, chosenOneShots) => {
     const mods = [];
-    const gearBonus = bestGearBonus(c, attr);
+    const gearBonus = bestPermanentGearBonus(c, attr);
     if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
+    (chosenOneShots || []).forEach(item => {
+      mods.push({ label: `${item.name} (1S)`, value: DATA.gearTierBonus[item.tier] || 0 });
+    });
     const cyberMod = cyberAttrModifier(c, attr); // BATCH 2.0
     if (cyberMod) mods.push({ label: "Cyberware", value: cyberMod });
     const tp = tierPenalty(hunt.archenemy.tier);
@@ -2617,7 +2646,7 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   };
 
   const refreshMods = () => {
-    const mods = buildMods(getBoostSpend(), checkedBrotherId());
+    const mods = buildMods(getBoostSpend(), checkedBrotherId(), checkedOneShots());
     modsEl.innerHTML = mods.length
       ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
       : `<span class="chip">no modifiers</span>`;
@@ -2628,16 +2657,18 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     if (cb.checked) brotherChecks.forEach(other => { if (other !== cb) other.checked = false; });
     refreshMods();
   }));
+  oneShotChecks.forEach(el => el.addEventListener("change", refreshMods));
 
   const rollBtn = document.createElement("button");
   rollBtn.textContent = `Roll ${attr}`;
   rollBtn.addEventListener("click", () => {
     const spendAmount = getBoostSpend();
     const callBrotherId = checkedBrotherId();
-    const mods = buildMods(spendAmount, callBrotherId);
+    const chosenOneShots = checkedOneShots();
+    const mods = buildMods(spendAmount, callBrotherId, chosenOneShots);
     if (spendAmount) c.boost -= spendAmount;
     if (callBrotherId) hunt.bloodbrotherUsed = true;
-    consumeOneShotGear(c, attr); // BATCH 2.1 (item 9)
+    consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
     const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
     result.usedAttr = attr;
     hunt.pendingResult = result;

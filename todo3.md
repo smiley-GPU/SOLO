@@ -299,3 +299,6 @@ You can add extra difficulty based on Tier + heat. This difficulty should be bet
 The EurCop/SwissGuard  checkpoints seem to loop indefinitely until character dies or succeeds fully.
 Create a cycle where after failed Social or Stealth check character makes only of check: either fight or escape (drive). This check describes how the escape went, and is the last check for this encounter.
 If there is a Authority checkpoint, then it replaces any possible random encounters.
+
+## PATCH 2.4
+Make it a choice whether or not to use single-shot (1S) item in a challenge.

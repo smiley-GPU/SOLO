@@ -749,11 +749,11 @@ function settleStockGains(character, factionName, before, after) {
 // Highest-tier *carried* item matching attr, or null (§20.8 — only carried
 // gear grants its bonus; owning something you didn't bring does nothing).
 // Gear grants its bonus permanently just by being carried — see
-// computeModifiers() in game.js.
-// BATCH 2.1 — also exposes the underlying `item` (not just its name/bonus)
-// so a roll's one-shot gear (tags includes "1S") can be identified and
-// consumed after it contributes to a roll — see consumeOneShotGear() below.
-// Purely additive: every existing {name, bonus} consumer is unaffected.
+// computeModifiers() in game.js. Includes one-shot ("1S") gear, unlike
+// bestPermanentGearBonus() below — only used where there's no interactive
+// roll to offer a one-shot choice on (resolveApartmentRaid's auto-resolve,
+// game.js), so a carried one-shot still passively contributes there without
+// being spent (PATCH 2.4 didn't touch that non-interactive path).
 function bestGearBonus(character, attr) {
   let best = null;
   character.gear.forEach(item => {
@@ -764,15 +764,39 @@ function bestGearBonus(character, attr) {
   return best;
 }
 
-// BATCH 2.1 (item 9) — one-shot gear vanishes the instant it's actually used
-// in a roll: whichever carried item bestGearBonus() would pick for this
-// attr, if it's tagged "1S". Called once per roll-button click in
-// renderChallenge()/renderHuntRoll() (game.js), right before resolving.
-function consumeOneShotGear(character, attr) {
-  const best = bestGearBonus(character, attr);
-  if (!best || !best.item.tags || !best.item.tags.includes("1S")) return;
-  character.gear = character.gear.filter(item => item !== best.item);
-  addLog(character, `${best.item.name} is spent — one shot, and it's gone.`);
+// PATCH 2.4 (todo3.md) — one-shot ("1S") gear is now an explicit per-roll
+// choice, offered as its own checkbox alongside BOOST/Ally Assist
+// (renderChallenge/renderHuntRoll, game.js), instead of being auto-applied
+// (and auto-burned) whenever it happened to be the single best item
+// bestGearBonus() would have picked. bestPermanentGearBonus() is that same
+// "best owned item" search with one-shots excluded — the passive bonus that
+// always applies, regardless of any one-shot choice.
+function bestPermanentGearBonus(character, attr) {
+  let best = null;
+  character.gear.forEach(item => {
+    if (!item.carried || item.attr !== attr) return;
+    if (item.tags && item.tags.includes("1S")) return;
+    const bonus = DATA.gearTierBonus[item.tier] || 0;
+    if (!best || bonus > best.bonus) best = { name: item.name, bonus, item };
+  });
+  return best;
+}
+
+// Every carried one-shot item matching attr — each offered as its own
+// independent checkbox (PATCH 2.4); a character could plausibly carry more
+// than one different one-shot for the same attribute.
+function oneShotOptionsForAttr(character, attr) {
+  return character.gear.filter(item => item.carried && item.attr === attr && item.tags && item.tags.includes("1S"));
+}
+
+// PATCH 2.4 — removes exactly the one-shot items the player opted into
+// using for this roll (the checked boxes), logging each as spent. Called
+// once per roll-button click in renderChallenge()/renderHuntRoll(), right
+// before resolving — never more than what was actually checked.
+function consumeOneShotItems(character, items) {
+  if (!items || !items.length) return;
+  character.gear = character.gear.filter(item => !items.includes(item));
+  items.forEach(item => addLog(character, `${item.name} is spent — one shot, and it's gone.`));
 }
 
 // Equipment gating (todo3.md): *carrying* gear with a matching attr counts

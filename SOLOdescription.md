@@ -1819,6 +1819,35 @@ neither one chains into rolling the other afterward.
 
 ---
 
+### 20.14 PATCH 2.4: One-shot gear is a per-roll choice, not automatic
+
+todo3.md: "Make it a choice whether or not to use single-shot (1S) item in a
+challenge." Previously (§20.10/BATCH 2.1), `bestGearBonus()` picked the
+single best-tier *carried* item for a roll's attribute with no regard for
+whether it was tagged `"1S"`, and `consumeOneShotGear()` then auto-burned
+it the instant it turned out to be that best item — since a one-shot's
+tier (and so its bonus) is usually higher than a character's ordinary
+gear, owning one meant it fired on the very next roll of that attribute
+whether the player wanted to save it or not.
+
+Now every carried one-shot item matching a roll's attribute is its own
+independent checkbox (`oneShotOptionsForAttr()`, state.js) next to the
+BOOST-spend and Ally-Assist checkboxes, in both the shared Challenge UI
+(`renderChallenge()`) and the Hunt's own roll UI (`renderHuntRoll()`) —
+unchecked by default. The passive "best owned item" gear bonus
+(`bestPermanentGearBonus()`, state.js) now explicitly excludes `"1S"` gear,
+so it always reflects the best *ordinary* item instead; each checked
+one-shot then adds its own `+N (1S)` modifier chip on top (multiple
+different one-shots for the same attribute can stack if all are checked).
+Only the one-shots actually checked at roll time are removed from
+inventory (`consumeOneShotItems()`, state.js) — one-shots left unchecked
+are untouched and carry over to the next roll. The one non-interactive
+exception is `resolveApartmentRaid()` (§20.7), which still uses the
+original `bestGearBonus()` (including one-shots, never consumed) since
+there's no roll UI there to offer a choice on.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,

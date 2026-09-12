@@ -183,9 +183,10 @@ const DATA = {
 
   // BATCH 2.1 — one-shot items: single-use gear tagged "1S", available to a
   // character one Reputation Tier below what the item's own Tier would
-  // normally require, priced 1 BOND under that Tier's normal price. Removed
-  // from inventory the instant they're used in a roll (consumeOneShotGear,
-  // game.js). Keyed the same way as DATA.gear (tier name -> items), one per
+  // normally require, priced 1 BOND under that Tier's normal price. Using
+  // one is an explicit per-roll choice (PATCH 2.4) — checked, it's removed
+  // from inventory the instant that roll resolves (consumeOneShotItems,
+  // state.js). Keyed the same way as DATA.gear (tier name -> items), one per
   // the five Loadout categories per tier.
   oneShotGear: {
     Professional: [
