@@ -565,10 +565,11 @@ Screen shown right after accepting a Briefing:
 - **"Head Out"** button: calls `advanceFromGearUp()` →
   `maybeTriggerEncounter("pre")` → Encounter or straight to Steps.
 
-**Revision (§20.4, §20.5)**: the buy-offer list is gone (buying moved to
-the Downtime Shop, §20.5) and the single Hireling-or-Ally slot is now up to
-3 concurrent Helpers, any mix of both (§20.4). Gear Up's only remaining
-job is Helper recruitment, then "Head Out" as before.
+**Revision (§20.4, §20.5, §20.8)**: the buy-offer list is gone (buying
+moved to the Downtime Shop, §20.5) and the single Hireling-or-Ally slot is
+now up to 3 concurrent Helpers, any mix of both (§20.4). Gear Up is now a
+genuine Loadout screen — Helper recruitment, then choosing which owned
+gear to carry this job (§20.8), then "Head Out".
 
 ---
 
@@ -1340,6 +1341,51 @@ home, answering the door) — using the same tier thresholds and Fight/Run
 cost table above (Helper-wound excluded, since no Helper is at the
 player's home), reflavored as haggling with detectives rather than a
 street-level shakedown.
+
+### 20.8 Inventory & Loadout: only carried gear does anything
+Every `character.gear` item gets a `carried: boolean`. Only carried gear
+grants its bonus, satisfies equipment gating, or can be damaged/lost —
+owning something you left at home is inert for the whole job. This
+supersedes §6.1's already-superseded Gear Up purchase screen with the last
+piece it was missing: gear is bought in Downtime (§20.5) and now *carried*
+per-job from the GearUp phase, which is genuinely a Loadout screen from
+here on (`renderLoadoutSection()`, appended below Helper recruitment,
+§20.4).
+
+**Categories** (`gearCategory()`, state.js): Weapons (Combat), Clothing
+(Stealth *and* armor items — "Armor and Stealth suits"), Decks (Hacking),
+Vehicles (Driving), Social. Heal-gear fits none of these and is exempt
+from the whole system — always available regardless of `carried`
+(`bestHealBonus()` is unchanged).
+
+**Slots**: each of the five categories gets one free carry slot, plus a
+shared spare pool (`computeCarrySlots()`) — 3 base, +1 if a Vehicle is
+carried, +2 more (3 total) if that Vehicle also carries the `CG` tag
+(§20.5). A second (or third...) item in the same category draws from the
+spares; the Loadout checkbox for it is rejected client-side once the pool
+is empty.
+
+**Defaults**: `computeDefaultCarry()` runs once — on a new character, and
+on migrating any save from before this system — and carries only the
+single best (highest `DATA.gearTierBonus`) item per category, leaving
+every spare slot empty ("default is that you take the best tier you have
+in each category"). After that it's never re-run, so it can't clobber the
+player's own choices; instead `autoCarryNewItem()` runs once whenever a
+*new* item is added (Shop buy, a Hunt kill reward, a Bloodbrother gift,
+starting gear) — it fills an empty category's free slot automatically but
+never dethrones whatever's already carried there.
+
+**Everywhere carried is checked**: `bestGearBonus()`, `ownsGearForAttr()`,
+`applyHarm()`'s armor lookup (all state.js), and every gear-picking pool in
+`applyFalloutConsequence` (§19.9), the Checkpoint's bribe/Fight-Run tables
+(§20.7), and the Hunt's Combat-fail/Run-fail fallout — each filters to
+`item.carried` before picking what takes the hit, so "if challenge failure
+results in gear damage or loss, it will be this gear that is damaged"
+always lands on something the player actually brought. Two contexts stay
+deliberately unfiltered: **selling** (Downtime, any owned item) and the
+**apartment raid/invasion** (§20.6/§20.7, happens at home — the Archenemy's
+"leftover gear" steal even *prefers* uncarried items, "not on the last
+mission").
 
 ---
 

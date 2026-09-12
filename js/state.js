@@ -24,15 +24,16 @@ function defaultCharacter(name, profession, turf) {
   prof.boosts.forEach(a => attrs[a] = Math.min(3, attrs[a] + 1));
   attrs[trf.boost] = Math.min(3, attrs[trf.boost] + 1);
   const factionStandings = defaultFactionStandings();
+  const gear = [...prof.gear, ...trf.gear].map(g => ({ ...g, tier: g.tier || "Street" }));
 
-  return {
+  const character = {
     name, profession, turf,
     attrs,
     boost: trf.boostBonus || 0, // spendable pool — see bestGearBonus/renderChallenge (game.js)
     health: [false, false, false], // true = Harm marked
     permanentInjury: false, // going Down leaves this until a repair is paid for
     bonds: trf.bonds, // BOND — the abstracted currency (todo3.md), replaces Cred. Win at 20.
-    gear: [...prof.gear, ...trf.gear].map(g => ({ ...g, tier: g.tier || "Street" })),
+    gear, // §20.8 — carried defaults computed below, once the full character object exists
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
     // or generated lives here (not just friendly contacts). See getPerson().
     contacts: [{ id: 1, name: genName(), faction: trf.contactFaction, profession: "Fixer", relationship: 1, favor: turf === "Corpo" ? -1 : 0, factionTier: factionStandings[trf.contactFaction].tier }],
@@ -51,6 +52,8 @@ function defaultCharacter(name, profession, turf) {
     shopOffers: null, // §20.5 — the Shop's current offer list, refreshed each Rest tick
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
+  computeDefaultCarry(character); // §20.8 — best item per category carried by default
+  return character;
 }
 
 // Eager-inits Wealth/R&D/Power for all 11 fixed factions (unlike Locations,
@@ -265,6 +268,11 @@ function migrateCharacter(character) {
   (character.gear || []).forEach(item => {
     if (!item.tier) item.tier = "Street";
   });
+  // §20.8 — backfill `carried` on any save from before the Loadout system
+  // existed, using the same "best per category" default a new character gets.
+  if (character.gear.some(item => typeof item.carried !== "boolean")) {
+    computeDefaultCarry(character);
+  }
 
   // Cred→BOND (todo3.md): old saves had hundreds of Cred, BONDS are a much
   // smaller abstract scale — carry the rough value forward rather than
@@ -492,7 +500,7 @@ function healBox(character) {
 // path anything should use in place of a bare markHarm() call.
 const ARMOR_ABSORB_CHANCE = 0.5;
 function applyHarm(character) {
-  const armor = character.gear.find(item => item.armor > 0);
+  const armor = character.gear.find(item => item.carried && item.armor > 0);
   if (armor && Math.random() < ARMOR_ABSORB_CHANCE) {
     armor.armor -= 1;
     addLog(character, `${armor.name} takes the hit for you.`);
@@ -591,35 +599,93 @@ function factionChallengeModifier(character, factionName) {
 
 // -- Gear bonuses (todo2.md) -----------------------------------------------
 
-// Highest-tier owned item matching attr, or null. Gear grants its bonus
-// permanently just by being owned — see computeModifiers() in game.js.
+// Highest-tier *carried* item matching attr, or null (§20.8 — only carried
+// gear grants its bonus; owning something you didn't bring does nothing).
+// Gear grants its bonus permanently just by being carried — see
+// computeModifiers() in game.js.
 function bestGearBonus(character, attr) {
   let best = null;
   character.gear.forEach(item => {
-    if (item.attr !== attr) return;
+    if (!item.carried || item.attr !== attr) return;
     const bonus = DATA.gearTierBonus[item.tier] || 0;
     if (!best || bonus > best.bonus) best = { name: item.name, bonus };
   });
   return best;
 }
 
-// Equipment gating (todo3.md): owning ANY gear with a matching attr counts
+// Equipment gating (todo3.md): *carrying* gear with a matching attr counts
 // as "having a vehicle" (Driving) or "having a deck" (Hacking) — see
 // renderChallenge() in game.js, which hides the gated attribute option
-// when this comes back false.
+// when this comes back false. Owning one you left at home doesn't count
+// (§20.8).
 function ownsGearForAttr(character, attr) {
-  return character.gear.some(item => item.attr === attr);
+  return character.gear.some(item => item.carried && item.attr === attr);
 }
 
 // Highest-tier owned "health gear or body modification" — items tagged
 // `heal` instead of `attr` (DATA.gear) — added to the Rest healing roll.
 // Mirrors bestGearBonus() but matches item.heal instead of item.attr.
+// §20.8 — exempt from the carried system entirely: it doesn't fit any of
+// the five named gear categories, so it's always available regardless.
 function bestHealBonus(character) {
   let best = 0;
   character.gear.forEach(item => {
     if (item.heal && item.heal > best) best = item.heal;
   });
   return best;
+}
+
+// -- Inventory / Loadout (§20.8) --------------------------------------------
+
+// Which of the five named categories a gear item belongs to, or null for
+// heal-gear (exempt from slot accounting entirely, see bestHealBonus above).
+// Armor is filed under Clothing alongside the Stealth-attr line (todo3.md:
+// "Clothing: Armor and Stealth suits").
+function gearCategory(item) {
+  if (item.heal) return null;
+  if (item.armor) return "Clothing";
+  return { Stealth: "Clothing", Combat: "Weapons", Hacking: "Decks", Driving: "Vehicles", Social: "Social" }[item.attr] || null;
+}
+
+// Spare slots beyond the one free slot each of the five categories gets:
+// 3 base, +1 if a Vehicle is carried, +2 more (so +3 total) if that
+// Vehicle also carries the CG (Cargo) tag.
+function computeCarrySlots(character) {
+  let spares = 3;
+  const vehicle = character.gear.find(item => item.carried && item.attr === "Driving");
+  if (vehicle) {
+    spares += 1;
+    if (vehicle.tags && vehicle.tags.includes("CG")) spares += 2;
+  }
+  return spares;
+}
+
+// One-time default: the single best item in each category is carried, the
+// rest aren't — matches todo3.md's "default is that you take the best tier
+// you have in each category." Run once, whenever an item is missing the
+// `carried` field entirely (new character, or an old save migrating in) —
+// never re-run after that, so it doesn't clobber the player's own choices.
+function computeDefaultCarry(character) {
+  ["Weapons", "Clothing", "Decks", "Vehicles", "Social"].forEach(category => {
+    const items = character.gear.filter(item => gearCategory(item) === category);
+    if (!items.length) return;
+    const best = items.reduce((a, b) => (DATA.gearTierBonus[b.tier] || 0) > (DATA.gearTierBonus[a.tier] || 0) ? b : a);
+    items.forEach(item => { item.carried = item === best; });
+  });
+  character.gear.forEach(item => {
+    if (gearCategory(item) === null) item.carried = true; // heal-gear — the flag is just unused
+  });
+}
+
+// Called whenever a new item enters character.gear (Shop buy, a Hunt kill
+// reward, a Bloodbrother gift, starting gear): fills an empty category's
+// free slot automatically, but never dethrones something the player is
+// already carrying in that category — that's a manual Loadout choice.
+function autoCarryNewItem(character, item) {
+  const category = gearCategory(item);
+  if (category === null) { item.carried = true; return; }
+  const alreadyCarried = character.gear.some(g => g !== item && g.carried && gearCategory(g) === category);
+  item.carried = !alreadyCarried;
 }
 
 function rememberLocation(character, location) {

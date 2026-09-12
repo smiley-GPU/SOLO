@@ -145,7 +145,9 @@ function renderShopBox(active) {
     btn.disabled = c.bonds < price || item.bought;
     btn.addEventListener("click", () => {
       c.bonds -= price;
-      c.gear.push({ name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier, tags: item.tags });
+      const bought = { name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier, tags: item.tags };
+      c.gear.push(bought);
+      autoCarryNewItem(c, bought); // §20.8
       item.bought = true;
       addLog(c, `You pick up a ${item.name} — yours to keep.`);
       persist(); render();
@@ -860,7 +862,9 @@ function grantBloodbrotherGift(c) {
     const attr = pick(missingAttrs);
     const item = DATA.gear.Street.find(g => g.attr === attr);
     if (item) {
-      c.gear.push({ name: item.name, attr: item.attr, tier: "Street" });
+      const gift = { name: item.name, attr: item.attr, tier: "Street" };
+      c.gear.push(gift);
+      autoCarryNewItem(c, gift); // §20.8 — always the category's only item, so always carried anyway
       addLog(c, `They slip you a ${item.name} on your way out.`);
       return;
     }
@@ -953,8 +957,13 @@ function resolveApartmentInvasion(c, archenemy) {
   if (roll >= 10) {
     const evil = randInt(1, 6);
     if (evil <= 3) {
-      if (c.gear.length) {
-        const item = pick(c.gear);
+      // §20.8 — "a leftover inventory gear that was not on the last
+      // mission" (todo3.md): prefer stealing from what's sitting at home
+      // uncarried, only reaching for carried gear if that's all there is.
+      const leftovers = c.gear.filter(g => !g.carried);
+      const pool = leftovers.length ? leftovers : c.gear;
+      if (pool.length) {
+        const item = pick(pool);
         c.gear = c.gear.filter(g => g !== item);
         addLog(c, `${pick(DATA.archenemyInvasion.steal)} (lost: ${item.name})`);
       } else {
@@ -1134,6 +1143,8 @@ function renderGearUp() {
     }
   }
 
+  wrap.appendChild(renderLoadoutSection());
+
   const goBtn = document.createElement("button");
   goBtn.textContent = "Head Out";
   goBtn.addEventListener("click", () => {
@@ -1143,6 +1154,71 @@ function renderGearUp() {
   wrap.appendChild(goBtn);
 
   els.main.appendChild(wrap);
+}
+
+// §20.8 — the Loadout: pick which owned gear actually comes on this job.
+// Only carried gear grants its bonus or takes the hit (bestGearBonus,
+// applyHarm, degradeGearItem call sites, state.js/game.js) — anything left
+// at home is inert for the whole job. Each of the five named categories
+// gets one free carry slot; anything beyond that (a 2nd item in the same
+// category) draws from the shared spare pool (computeCarrySlots, state.js).
+function renderLoadoutSection() {
+  const c = G.character;
+  const categories = ["Weapons", "Clothing", "Decks", "Vehicles", "Social"];
+  const spareCap = computeCarrySlots(c);
+  const usedSpares = () => categories.reduce((sum, cat) => {
+    const carriedInCat = c.gear.filter(g => gearCategory(g) === cat && g.carried).length;
+    return sum + Math.max(0, carriedInCat - 1);
+  }, 0);
+
+  const section = document.createElement("div");
+  section.className = "section";
+  section.innerHTML = `<h3>Loadout</h3><p class="muted">Only what you carry grants its bonus (or takes the hit) this job. One free slot per category, plus spares: <span id="spare-count">${usedSpares()}</span>/${spareCap}.</p>`;
+
+  categories.forEach(cat => {
+    const items = c.gear.filter(g => gearCategory(g) === cat);
+    if (!items.length) return;
+    const catBlock = document.createElement("div");
+    catBlock.innerHTML = `<h4>${cat}</h4>`;
+    items.forEach(item => {
+      const row = document.createElement("label");
+      row.className = "offer";
+      row.style.cursor = "pointer";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = !!item.carried;
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          // The category's own item is already accounted for above (it's
+          // this checkbox going from off to on) — anything beyond the
+          // first carried item in the category costs a spare slot.
+          const carriedInCat = c.gear.filter(g => gearCategory(g) === cat && g.carried).length;
+          if (carriedInCat >= 1 && usedSpares() >= spareCap) {
+            checkbox.checked = false;
+            return;
+          }
+        }
+        item.carried = checkbox.checked;
+        persist(); render();
+      });
+      const kind = item.attr || (item.armor ? `armor x${item.armor}` : "");
+      const tagsHtml = item.tags ? ` [${item.tags.join(", ")}]` : "";
+      row.appendChild(checkbox);
+      row.append(` ${item.name} (${item.tier}${kind ? `, ${kind}` : ""}${tagsHtml})`);
+      catBlock.appendChild(row);
+    });
+    section.appendChild(catBlock);
+  });
+
+  const healItems = c.gear.filter(g => g.heal);
+  if (healItems.length) {
+    const healBlock = document.createElement("div");
+    healBlock.innerHTML = `<h4>Heal (always available)</h4>`;
+    healBlock.innerHTML += healItems.map(g => `<div class="offer"><span>${g.name} (${g.tier})</span></div>`).join("");
+    section.appendChild(healBlock);
+  }
+
+  return section;
 }
 
 // §20.7 — the mandatory Heat checkpoint is the outer gate, Random Encounters
@@ -1269,12 +1345,14 @@ function renderCheckpointChoice(wrap) {
   const ditchBtn = document.createElement("button");
   ditchBtn.textContent = "Ditch the contraband";
   ditchBtn.addEventListener("click", () => {
-    if (c.gear.length) {
-      const item = pick(c.gear);
+    // §20.8 — only what you actually brought is on you to toss.
+    const carried = c.gear.filter(g => g.carried);
+    if (carried.length) {
+      const item = pick(carried);
       c.gear = c.gear.filter(g => g !== item);
       addLog(c, `You toss the ${item.name} before they can find it — clean otherwise.`);
     } else {
-      addLog(c, `You've got nothing left to ditch — you talk your way through anyway.`);
+      addLog(c, `You've got nothing on you to ditch — you talk your way through anyway.`);
     }
     finishCheckpoint();
   });
@@ -1315,14 +1393,16 @@ function applyCheckpointDamage(c, job, kind) {
     const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
   } else if (kind === "vehicle") {
-    const vehicles = c.gear.filter(g => g.attr === "Driving");
+    // §20.8 — only a carried vehicle can take this hit.
+    const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
     if (vehicles.length) degradeGearItem(c, pick(vehicles));
     else applyCheckpointDamage(c, job, "harm");
   } else if (kind === "helper") {
     if (job.helpers.some(h => !h.benched)) woundJobHelper(c, job);
     else applyCheckpointDamage(c, job, "harm");
   } else if (kind === "gear") {
-    if (c.gear.length) degradeGearItem(c, pick(c.gear));
+    const carried = c.gear.filter(g => g.carried);
+    if (carried.length) degradeGearItem(c, pick(carried));
     else applyCheckpointDamage(c, job, "harm");
   }
 }
@@ -1487,24 +1567,27 @@ function applyFalloutConsequence(c, job, attr, tier, key, loc) {
       }
       break;
     }
-    case "gearDamage":
-      if (c.gear.length === 0) { applyFalloutConsequence(c, job, attr, tier, "credLoss", loc); break; }
+    case "gearDamage": {
+      // §20.8 — only carried gear can be damaged or lost on a mission.
+      const carried = c.gear.filter(g => g.carried);
+      if (carried.length === 0) { applyFalloutConsequence(c, job, attr, tier, "credLoss", loc); break; }
       if (tier === "partial") {
         c.bonds = Math.max(0, c.bonds - 1);
         addLog(c, pick(DATA.gearDamageFlavor.partial));
       } else {
-        const matching = c.gear.filter(g => g.attr === attr);
-        degradeGearItem(c, pick(matching.length ? matching : c.gear));
+        const matching = carried.filter(g => g.attr === attr);
+        degradeGearItem(c, pick(matching.length ? matching : carried));
       }
       break;
+    }
     case "vehicleDamage": {
-      const vehicles = c.gear.filter(g => g.attr === "Driving");
+      const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
       if (vehicles.length) degradeGearItem(c, pick(vehicles));
       else applyFalloutConsequence(c, job, attr, tier, "harm1", loc);
       break;
     }
     case "loseVehicle": {
-      const vehicles = c.gear.filter(g => g.attr === "Driving");
+      const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
       if (vehicles.length) {
         const v = pick(vehicles);
         c.gear = c.gear.filter(item => item !== v);
@@ -2234,11 +2317,12 @@ function renderHuntAvoid(container) {
 // — see degradeGearItem() near applyOutcome()).
 function applyHuntCombatFailFallout(c) {
   const effect = pickWeighted(DATA.failOutcomes.Combat);
-  if (effect === "harm" || (effect === "gearDamage" && c.gear.length === 0)) {
+  const carried = c.gear.filter(g => g.carried); // §20.8 — only what's on you can be hit
+  if (effect === "harm" || (effect === "gearDamage" && carried.length === 0)) {
     const wentDown = applyHarm(c);
     if (wentDown && !c.permanentInjury) resolveDownEvent(c);
   } else if (effect === "gearDamage") {
-    degradeGearItem(c, c.gear[randInt(0, c.gear.length - 1)]);
+    degradeGearItem(c, pick(carried));
   } else if (effect === "credLoss" && c.bonds > 0) {
     c.bonds -= 1;
     addLog(c, `${pick(DATA.credLossFlavor.fail)} (-1 BOND)`);
@@ -2305,8 +2389,9 @@ function renderHuntRun(container) {
     } else {
       const wentDown = applyHarm(c);
       if (wentDown && !c.permanentInjury) resolveDownEvent(c);
-      if (c.gear.length && Math.random() < 0.5) {
-        degradeGearItem(c, c.gear[randInt(0, c.gear.length - 1)]);
+      const carried = c.gear.filter(g => g.carried); // §20.8
+      if (carried.length && Math.random() < 0.5) {
+        degradeGearItem(c, pick(carried));
         addLog(c, "Bad break — you're hit, and the crash bangs up your gear.");
       } else {
         const loss = Math.min(c.bonds, randInt(1, 2));
@@ -2359,7 +2444,9 @@ function renderHuntChase(container) {
 function applyHuntKillReward(c) {
   const hunt = G.hunt;
   const weapon = pick(DATA.gear.Professional.filter(g => g.attr === "Combat"));
-  c.gear.push({ name: weapon.name, attr: weapon.attr, tier: "Professional" });
+  const reward = { name: weapon.name, attr: weapon.attr, tier: "Professional" };
+  c.gear.push(reward);
+  autoCarryNewItem(c, reward); // §20.8
   c.boost = Math.min(10, c.boost + 3);
   c.bonds += 2;
   addLog(c, `${hunt.archenemy.name} goes down for good. You walk away with a ${weapon.name}, a surge of BOOST, and 2 more BONDS.`);
