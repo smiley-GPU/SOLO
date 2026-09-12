@@ -136,3 +136,109 @@ Stealth
 10+ : success
 7-9: partial. add heat or lose equipment
 <6: failure. add 2 heat and one box damage.
+
+## SHOP AND TRAINING AND BONDS
+Remove Gear buy and sales from the mission start.
+Make it ("GEAR, GUNS AND GENERAL GOODNESS") and training options ("LESSONS FROM THE STREET" ) and a new "EuroStoXX" as a three separate boxes / windows next Factions (closer to middle).  
+
+Each of these are open and available all the time, except during missions. Then they should be closed, all grey font, not available.
+
+GEAR, GUNS AND GENERAL GOODNESS
+Buying and selling as it is.
+There is always available your own REPUTATION Tier equipment, 50% change of having one Tier higher, and 20% change of having 2 Tiers higher gear. MAx Tier still 4.
+
+Gear Categories:
+    Weapons: new tags to weapons: Armor Piercing (AP) and Area Effect (EX)
+    Clothing: Armor and Stealth suits
+    Decks and software:
+    Vehicles: new tags to vehicles: Armor (AR) and Luxury (LX) and Cargo (CG). 
+    Social:
+
+New category: Apartments and Security
+    Apartments: only available based on your Tier. Lower Tiers also available. Apartments are always connected to a location. Price always twice the tier (except Tier 1, where there is nothing to buy) + 1 if CORPO Location.
+    Apartment is a free option in downtime how to spend time. You have 50% change that you heal one box.
+
+    Tier 1 / Street Rat: Nothing available. "You are street rat. What are you thinking? Gutter, sewers, under the bridge - that's your home."
+    Tier 2 / Warhound: Rented cubicle home. No security possible: "Old digi-lock, you get what you pay for,". 
+    Tier 3 / Operative: Garage (CRIME, NOMAD), office or attic. 2 Security slots.
+    Tier 4 / Legend: Penthouse, Office, Nighclub Backroom. 4 Security slots. Tag: Luxury (LX)
+
+    Security:
+    Tier 3: Reinforced doors and windows, Hitek Locks
+    Tier 4: Security Drone, Security-AI, E-shok-Loks, ABLocks, RoboDOG
+
+
+LESSONS FROM THE STREET
+Training as it is right now.
+
+EUROSTOXX
+You can place BOND to each CORPO factions stock. BOND will be lost from you character and be in the stock. They can be moved back.
+
+If in a round/night/mission cycle corporates Wealth goes up, you will gain one more BOND to this stock. If the Wealth goes to 10, you will get 2 bonds. If it goes down, you will lose as many BONDS as it went down.
+
+You can always "sell" the stock and get their current value back to your character. 
+
+## MISSIONS and TIER
+* every mission is backed by a faction.
+* Missions from higher Tier Factions pay better: CRIME +1 BOND, CORPO +2 BOND.
+* The two missions you can choose from always come from different factions and NPCs.
+* after each mission, in each faction category one faction will do one mission against one other faction in same category (CORPO/CRIME/NOMAD). Roll normally, and modify as you would in Faction DESTROY skill check. 
+10+: normal results in factions attributes to successful mission
+7-9: normal results in factions attributes to successful mission and cost of 1 Wealth and 1 power to active faction
+6 or less: cost of 1 Wealth and 1 power to active faction
+* you can choose more than one contact to help you on a mission, max 3 help:
+    * if you have 2 or more help, that gives you +1 to combat challenges
+    * if you have 2 or more help, that gives you -1 penalty to stealth chanllenges
+If Help is wounded on a mission, they can't help on that mission anymore. If they are wounded again they die. 
+If they are only wounded after mission, then they are not avaialble for two rounds/nights for new missions. 
+
+## Persons / NPCs
+Change BLOODBROTHER to AMIGUE. Also add term COMPI to +3 relationship NPCs.
+Every person (NPC) has to be connected to a Faction.
+Every person has to have a Tier. At start this can be based on their faction.
+NPC has a speciality where they give their help bonus based on their role:
+Solo: combat 
+Nomad: driving and social
+Hacker: Stealth and tech
+If Archemnemy's hunting clock is at 3 boxes, there is a 50% change that it will attack one of you friends or your apartment during your mission. This will happen after mission and after you have received payments, but before any EurCop/SwissGuard Raid to your apartment.
+
+If it hit's you friend (AMIGUE/COMPI) they will be wounded. If they were wounded, they will be dead.
+
+At apartment:
+If you have security features roll a skill check for you Archenemy Tier - number of features:
+10+: they will do Evil things
+7-9: security makes them run away
+6 or less: they get burned and lose on level of their Tier. 
+
+Evil things: roll 1d6: 
+1-3 they will steal a leftover inventory gear that was not on the last mission.
+4-5 they will torch the apartment. You lose the apartment.
+6: they will leave a block of C4 under your bed. You will get 2 boxes of damage when you rest in your home next time.
+
+
+
+## HEAT EFFECT 
+If location has heat 3 or more, both entry and exist will be EurCop or SwissGuard checkpoints. SwissGuard comes if location is CORPO and heat is 4 or 5, or if CRIME and heat is 5.
+You can get pass these with either Social or Stealth Check. If you have failed an exit stealth check in the mission, then it will go directly to combat.
+<6 : you will get to combat
+7-9 : you get pass, but have to bribe (1-2 BOND, higher if heat is 5 or CORPO location) or lose equipment ("get rid of contraband")
+10+: you pass.
+Combat: Either Fight (Combat) or Run (Driving).
+10+: you win, get away
+7-9: you get away/win, but with cost: 1 box damage or damage to vehicle or damage to help
+6 or lower: one box damage and damage to vehicle, help or gear.
+
+If mission ends with CORPO 4/5 heat or CRIME 5 heat: there is a 20% change that EurCOp or SwissGuard will raid your apartment if you have one. This happens after mission has ended and you have received payments.
+
+This will be as checkpoint, but description has to be changed how you get rid of the detectives at your door.
+
+
+
+## INVENTORY, ITEMS AND APARTMENTS
+Character sheet should have Gear as it is right now. Before you go to mission, you choose which items you carry. This is instead of current purchase /  gear up phase.
+
+ Default is that you take the best tier you have in each category. You have gear slots ( what you can carry) for each gear category (weapons, clothing, decks, vehicles, social) and then you can have three spare slots. A Vehicle adds one spare slot a vehicle with cargo tag adds two spare slot more (total 3 extra). You can change by clicking box next to gear what you have and what not.
+
+ In Missions you get bonuses to challenges only from items you carry, not from the other items in your inventory/gear. If you have more than one same category gear, then you can choose. If challenge failure results to gear damage or loss, it will be this gear that is damaged.
+
+
