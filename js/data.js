@@ -362,6 +362,17 @@ const DATA = {
   },
   factionFixedTier: { EurCop: 2, SwissGuard: 3 },
 
+  // BATCH 2.2 (todo3.md) — the Mission Board's first slot (job A) always
+  // pulls its Employer from a category set gated by the player's own
+  // Reputation Tier (§19.1): Street Rat -> Nomad only, Warhound -> Crime or
+  // Nomad, Operative -> Corpo or lower (unrestricted), Legend -> Corpo only.
+  firstJobCategoriesByTier: {
+    1: ["Nomad"],
+    2: ["Crime", "Nomad"],
+    3: ["Corpo", "Crime", "Nomad"],
+    4: ["Corpo"]
+  },
+
   // Per-mission-type faction standing effects on a non-Failure outcome
   // (§19.2, supersedes the old flat ±1 asset-type rule). "target" is the
   // opposing faction (the mission's Target, or the attacking/chasing side

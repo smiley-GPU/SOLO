@@ -280,3 +280,17 @@ In Downtime, make a 20% chance to "lucky break event" if character has 0 Bonds a
 Night on street gives you always extra boost. Create description where buzzing city and neon light energize you.
 You can use up 2 BOOST to boost any roll, as long as you have BOOST.
 Create a second description to each flavor text.
+
+## BATCH 2.2
+
+Downtime and laylow options to same screen
+Change mission parameters in this way:
+    the first mission follows these rules:
+        * Factions are from same Tier than player character or one lower:
+            Street Rat = Tier 1 = Nomad
+            Warhound = Tier 2 = Crime, so Factions are either from CRIME or NOMAD category
+            Operative = Tier 3 = CORPO, or lower factions
+            Legend = Tier 4 = CORPO
+        NPCs toughness should be same as their Tier and Faction Tier
+Make sure that NPC Tier and Faction tier is not counted twice in mission challenges.
+You can add extra difficulty based on Tier + heat. This difficulty should be between 1-3.

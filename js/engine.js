@@ -69,9 +69,11 @@ function genPerson(allowedFactionNames) {
   };
 }
 
-function genAdversaryTier(heat) {
-  // Higher location Heat skews tougher opposition.
-  const r = randInt(1, 6) + heat;
+// BATCH 2.2 (todo3.md) — "NPCs toughness should be same as their Tier and
+// Faction Tier": the adversary's own factionTier (1-4, from assignFactionTier)
+// nudges this roll on top of Heat, rather than being pure dice+heat.
+function genAdversaryTier(heat, factionTier) {
+  const r = randInt(1, 6) + heat + ((factionTier || 1) - 1);
   if (r >= 8) return "elite";
   if (r >= 5) return "tough";
   return "weak";
@@ -147,11 +149,12 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
   const type = forcedType || pick(DATA.missionTypes);
   const adversaryCount = randInt(1, 3);
   // tier is per-mission, not a trait of the pooled person, so it's spread
-  // onto a copy rather than mutating the shared contacts entry.
-  const adversaries = Array.from({ length: adversaryCount }, () => ({
-    ...getPerson(character, "hostile", excludeIds),
-    tier: genAdversaryTier(location.heat)
-  }));
+  // onto a copy rather than mutating the shared contacts entry. BATCH 2.2 —
+  // genAdversaryTier reads the person's own factionTier too now.
+  const adversaries = Array.from({ length: adversaryCount }, () => {
+    const person = getPerson(character, "hostile", excludeIds);
+    return { ...person, tier: genAdversaryTier(location.heat, person.factionTier) };
+  });
   const worstTier = adversaries.reduce((worst, a) => {
     const order = { weak: 0, tough: 1, elite: 2 };
     return order[a.tier] > order[worst] ? a.tier : worst;
@@ -218,12 +221,14 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 // it a Special Mission and ignores Employer/Target pairing (§19.4/§19.5).
 // forcedWar ({attacker, target}, §19.7) forces an Assassination against the
 // war's target faction, guaranteed Special — from a faction Power struggle.
-function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar) {
+// employerCategories (BATCH 2.2, optional): restricts the Employer's faction
+// category — only ever passed for the Board's first slot (see genMissionBoard).
+function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories) {
   const fullLoc = resolveLocation(character, genLocationDef());
   const excludeIds = new Set();
   // BATCH 2.0 — never draw an Employer from the faction a queued war is
   // already targeting, or a forced-war Special could end up hiring itself.
-  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null);
+  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories);
   // BATCH 2.0 — Special Missions ignore pairing ("any roles") but still
   // never target the Employer's own faction; nonDestroyedFactionNames()
   // stands in for pairedFactionsFor()'s usual category-based list.
@@ -261,7 +266,12 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar) {
 // (§19.7) has a guaranteed war queued up, which always fills the second slot.
 function genMissionBoard(character) {
   const capTier = Math.min(reputationTier(character), 3);
-  const jobA = genBoardJob(character, capTier, false, false);
+  // BATCH 2.2 — the first job's Employer is further restricted to the
+  // category set gated by the player's own Reputation Tier (not capTier,
+  // which is capped at 3 for difficulty purposes — this uses the real Tier
+  // up to 4, per DATA.firstJobCategoriesByTier's own Legend/Tier-4 entry).
+  const firstJobCategories = DATA.firstJobCategoriesByTier[Math.min(4, Math.max(1, reputationTier(character)))];
+  const jobA = genBoardJob(character, capTier, false, false, null, firstJobCategories);
 
   // The queued war's target could have been destroyed by another Power
   // struggle in the same tick (§19.7) before this Board consumed it —

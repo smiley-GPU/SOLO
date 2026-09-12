@@ -148,13 +148,44 @@ function renderDowntime() {
   if (!el) return;
   el.innerHTML = "";
   if (!G.character) return;
-  const active = G.phase === "hub";
+  // BATCH 2.2 — "Downtime and laylow options to same screen": Lay Low
+  // (Coffin Hotel/Night on the Street/Spend the Night/Rest at Apartment)
+  // used to live inside the Mission Board card; it's a fourth box here now,
+  // alongside Shop/Training/EuroStoxx. Browsing a Briefing isn't a mission
+  // yet, so the whole column stays open through "briefing" too — only
+  // actually being on a job closes it.
+  const active = G.phase === "hub" || G.phase === "briefing";
   const header = document.createElement("h2");
   header.textContent = "Downtime";
   el.appendChild(header);
   el.appendChild(renderShopBox(active));
   el.appendChild(renderTrainingBox(active));
   el.appendChild(renderStocksBox(active));
+  el.appendChild(renderLayLowBox(active));
+}
+
+// "Lay Low" — Rest options, moved into the same Downtime column as Shop/
+// Training/EuroStoxx (todo3.md BATCH 2.2) instead of living inside the
+// Mission Board card. Its actual content still needs a Board on the wire
+// (G.board) — resting rerolls that Board, so there has to be one to reroll.
+function renderLayLowBox(active) {
+  const box = document.createElement("div");
+  box.className = `downtime-box${active ? "" : " disabled"}`;
+  box.innerHTML = `<h3>Lay Low</h3>`;
+  if (!active) {
+    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
+    return box;
+  }
+  const content = document.createElement("div");
+  box.appendChild(content);
+  if (!G.board) {
+    content.innerHTML = `<p class="muted">Find a job first — lay-low options show up once the Wire's got offers on it.</p>`;
+  } else if (G.restFlow) {
+    renderRestSubflow(content);
+  } else {
+    renderRestOptions(content);
+  }
+  return box;
 }
 
 // "GEAR, GUNS AND GENERAL GOODNESS" — buy from the Reputation-Tier-scaled
@@ -683,20 +714,15 @@ function buildJobFromCandidate(candidate) {
 function renderBriefing() {
   const header = document.createElement("div");
   header.className = "card";
-  header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or lay low till morning.</p>`;
+  // BATCH 2.2 — Lay Low options moved to the Downtime column (renderLayLowBox)
+  // instead of a card here.
+  header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or lay low in Downtime till morning.</p>`;
   els.main.appendChild(header);
 
   G.board.forEach((job, idx) => renderBriefingCard(job, idx));
-
-  const restWrap = document.createElement("div");
-  restWrap.className = "card";
-  els.main.appendChild(restWrap);
-  // Mid-roll on a Rest sub-flow (Night on the Street / Spend the Night / the
-  // street fight that can follow it) — show the Challenge UI in place of the
-  // Rest picker until it resolves (Accept/side-job buttons on both cards
-  // above are also suppressed for the same reason — see renderBriefingCard).
-  if (G.restFlow) renderRestSubflow(restWrap);
-  else renderRestOptions(restWrap);
+  // Accept/side-job buttons on both cards above are suppressed mid-roll on a
+  // Rest sub-flow (see renderBriefingCard) — that roll itself now renders in
+  // the Downtime column's Lay Low box, not here.
 }
 
 function renderBriefingCard(job, idx) {
@@ -755,7 +781,7 @@ function renderBriefingCard(job, idx) {
 // rerolls the whole Board, not just one candidate.
 function renderRestOptions(wrap) {
   const c = G.character;
-  wrap.innerHTML = `<h3>Lay Low Instead</h3>`;
+  wrap.innerHTML = ""; // BATCH 2.2 — the box's own header ("Lay Low") lives one level up now
 
   const restBtn = document.createElement("button");
   restBtn.textContent = "Rest in Comfy Coffin Hotel (1 BOND)";
@@ -2028,15 +2054,14 @@ function computeModifiers(attr, spendBoost, assistIds, job) {
   const cyberMod = cyberAttrModifier(c, attr);
   if (cyberMod) mods.push({ label: "Cyberware", value: cyberMod });
   if (job && (attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
+  // BATCH 2.2 — this Adversary penalty is now itself faction-derived
+  // (genAdversaryTier folds in the adversary's own factionTier), so the old
+  // separate "Target's faction Tier" modifier that used to also apply here
+  // (§19.6's factionChallengeModifier) is gone — todo3.md: "make sure that
+  // NPC Tier and Faction tier is not counted twice."
   if (job && (attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
     const p = tierPenalty(job.mission.worstTier);
     if (p) mods.push({ label: `Adversary (${job.mission.worstTier})`, value: p });
-  }
-  // §19.6 — a Challenge against a specific hostile faction (the mission
-  // Target's) carries that faction's Tier modifier.
-  if (job && job.mission && job.mission.target && job.mission.target.faction) {
-    const factionMod = factionChallengeModifier(c, job.mission.target.faction);
-    if (factionMod) mods.push({ label: `${job.mission.target.faction} (Tier)`, value: factionMod });
   }
   // §19.5 — every Challenge on a Special Mission carries an extra -1.
   if (job && job.mission && job.mission.special) mods.push({ label: "Special Mission", value: -1 });

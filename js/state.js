@@ -432,8 +432,16 @@ function nonDestroyedFactionNames(character) {
 // excludeFactionName (BATCH 2.0, optional): also excludes one specific
 // faction — used when building a guaranteed-war Special Mission (§19.7) so
 // the Employer never coincidentally matches the war's own target faction.
-function getEmployer(character, excludeIds, excludeFactionName) {
-  const allowed = nonAuthorityFactionNames(character).filter(name => name !== excludeFactionName);
+// allowedCategories (BATCH 2.2, optional): further restricts the Employer to
+// factions in these categories — used for the Mission Board's first slot,
+// gated by the player's own Reputation Tier (DATA.firstJobCategoriesByTier).
+// Freelance Employers are unaffected either way (getPerson() always exempts
+// Freelance from an allowedFactionNames list).
+function getEmployer(character, excludeIds, excludeFactionName, allowedCategories) {
+  let allowed = nonAuthorityFactionNames(character).filter(name => name !== excludeFactionName);
+  if (allowedCategories) {
+    allowed = allowed.filter(name => allowedCategories.includes(character.factionStandings[name].category));
+  }
   return getPerson(character, "ally", excludeIds, allowed);
 }
 
@@ -729,13 +737,12 @@ function settleStockGains(character, factionName, before, after) {
   }
 }
 
-// §19.6 — the Challenge modifier a faction's Tier applies: Tier 1 → 0,
-// Tier 2 → -1, Tier 3 → -2, Tier 4 → -3.
-function factionChallengeModifier(character, factionName) {
-  const standing = character.factionStandings[factionName];
-  if (!standing || standing.destroyed) return 0;
-  return -(standing.tier - 1);
-}
+// BATCH 2.2 — factionChallengeModifier() (§19.6's "-(tier-1) on every
+// Challenge against the mission Target's faction") was removed: once
+// genAdversaryTier() folds an adversary's own factionTier into their
+// weak/tough/elite combat tier, keeping this too would double-count the
+// same faction's Tier on the same roll (todo3.md: "make sure that NPC Tier
+// and Faction tier is not counted twice").
 
 // -- Gear bonuses (todo2.md) -----------------------------------------------
 

@@ -1071,9 +1071,11 @@ Tiers, §19.1, though scaled the same way):
   number: a Nomad faction at Tier 2 becomes a Crime faction at Tier 2; a
   Crime faction at Tier 3 becomes a Corpo faction at Tier 3. (EurCop/
   SwissGuard never move.)
-- **Challenge modifier**: a Challenge against a specific hostile faction
-  applies `-(tier - 1)` — Tier 1: 0, Tier 2: -1, Tier 3: -2, Tier 4: -3 —
-  folded into `computeModifiers` (§10.2).
+- **Challenge modifier** (superseded by §20.12): a Challenge against a
+  specific hostile faction used to apply `-(tier - 1)` — Tier 1: 0, Tier 2:
+  -1, Tier 3: -2, Tier 4: -3 — folded into `computeModifiers` (§10.2). §20.12
+  removes this once Adversary toughness itself became faction-derived, to
+  avoid counting the same faction's Tier twice on one roll.
 
 ### 19.7 Power struggles & faction destruction
 Any faction whose **Power ≥10** attempts to destroy a rival in its own
@@ -1744,6 +1746,47 @@ random attribute -1:
   successful mission still pays; **10+** the Employer dies too and the run
   ends immediately (`G.phase = "death"`, "SwissGuard fries you with a
   microwave cannon"), bypassing Debrief the same way a second Down does.
+
+---
+
+### 20.12 BATCH 2.2: Downtime/Lay-Low merge and Tier-driven mission generation
+
+**Downtime and Lay Low share one screen.** The "Lay Low" Rest options
+(Coffin Hotel/Night on the Street/Spend the Night/Rest at the Apartment) —
+previously a card inside the Mission Board (`renderBriefing()`, §11.1) —
+are now a fourth box in the always-visible Downtime column
+(`renderLayLowBox()`, alongside Shop/Training/EuroStoxx, §20.5), open
+whenever `G.phase` is `"hub"` or `"briefing"` (browsing a Briefing isn't a
+mission yet) and greyed out only once an actual job is under way. Its
+content still needs a Board on the wire to mean anything (resting rerolls
+`G.board`), so it shows a placeholder hint until "Find a Job" has been
+clicked at least once. Mechanically unchanged — this is a rendering
+relocation only.
+
+**The Mission Board's first slot is Tier-gated by faction category.**
+`genMissionBoard()`'s job A (always at/below the player's own Reputation
+Tier per §19.3) now also restricts its Employer's faction category via
+`DATA.firstJobCategoriesByTier`: Tier 1 Street Rat → Nomad only; Tier 2
+Warhound → Crime or Nomad; Tier 3 Operative → Corpo/Crime/Nomad
+(unrestricted); Tier 4 Legend → Corpo only. `getEmployer()` gained an
+optional `allowedCategories` filter for this (Freelance Employers are
+exempt either way, per §3). Job B (the escalating/Special-Mission slot) is
+unaffected — it keeps §19.3's existing rules.
+
+**Adversary toughness is faction-derived, not pure dice.**
+`genAdversaryTier(heat, factionTier)` now folds an adversary's own
+`factionTier` (1-4, already assigned at creation — §20.6) into the
+roll: `randInt(1,6) + heat + (factionTier - 1)`, same weak/tough/elite
+thresholds as before (≥8 elite, ≥5 tough, else weak) — a Corpo enforcer
+skews tougher than a Nomad ganger before the dice even land.
+
+**No more double-counting a faction's Tier.** Now that the per-Adversary
+Combat/Stealth penalty (`tierPenalty(mission.worstTier)`) is itself
+faction-derived, the old separate `factionChallengeModifier()` — which
+used to apply a second, independent `-(tier-1)` to every roll based on the
+mission Target's faction Tier (§19.6) — has been removed from
+`computeModifiers()` entirely, since keeping both would penalize the same
+underlying faction strength twice on the same roll.
 
 ---
 
