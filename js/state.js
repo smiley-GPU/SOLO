@@ -335,6 +335,7 @@ const REUSE_CHANCE = 0.8;
 function getPerson(character, roleCategory, excludeIds, allowedFactionNames) {
   const pool = character.contacts.filter(p =>
     !excludeIds.has(p.id) &&
+    !p.benefactor && // BATCH 2.1 — the Mysterious Benefactor is never cast into an ordinary role
     (roleCategory === "hostile" ? p.relationship < 0 : p.relationship >= 0) &&
     (!allowedFactionNames || p.faction === "Freelance" || allowedFactionNames.includes(p.faction))
   );
@@ -361,6 +362,55 @@ function getPerson(character, roleCategory, excludeIds, allowedFactionNames) {
 function assignFactionTier(character, person) {
   const standing = character.factionStandings[person.faction];
   person.factionTier = standing ? standing.tier : 1;
+}
+
+// -- Mysterious Benefactor (BATCH 2.1, item 11) -----------------------------
+// A recurring, Freelance, no-relationship-cost NPC who occasionally leaves a
+// one-shot gift behind — first met via a "lucky break" Downtime event
+// (maybeLuckyBreak, game.js) when the character is flat broke and hurting,
+// and liable to reappear on a later Reputation Tier-up (gainReputation
+// above). Tagged `benefactor: true` so getPerson() never casts them into an
+// ordinary Employer/Target/Hireling role.
+function findOrCreateBenefactor(character) {
+  let benefactor = character.contacts.find(p => p.benefactor);
+  if (!benefactor) {
+    benefactor = { id: character.nextPersonId++, name: genName(), faction: "Freelance", profession: "Fixer", relationship: 0, favor: 0, benefactor: true };
+    assignFactionTier(character, benefactor);
+    character.contacts.push(benefactor);
+  }
+  return benefactor;
+}
+
+// 40% chance per Tier-up, only once the character has actually met the
+// Benefactor at least once (gainReputation checks this before calling in).
+function maybeBenefactorReturns(character) {
+  const benefactor = character.contacts.find(p => p.benefactor);
+  if (!benefactor || Math.random() >= 0.4) return;
+  addLog(character, `A familiar courier finds you again — word travels fast when you move up in the world.`);
+  grantBenefactorGift(character);
+}
+
+// Finds/creates the Benefactor, then gifts a one-shot item matching the
+// character's current lowest-ranked Attribute (ties broken at random) — "a
+// single shot item of your lowest skill" (todo3.md). Falls back to a point
+// of BOOST on the vanishingly rare chance no matching one-shot exists.
+function grantBenefactorGift(character) {
+  const benefactor = findOrCreateBenefactor(character);
+  const lowestRank = Math.min(...Object.values(character.attrs));
+  const lowAttrs = Object.keys(character.attrs).filter(a => character.attrs[a] === lowestRank);
+  const attr = pick(lowAttrs);
+  const pool = [].concat(...Object.values(DATA.oneShotGear)).filter(g => g.attr === attr);
+  if (!pool.length) {
+    character.boost = Math.min(10, character.boost + 1);
+    addLog(character, `${benefactor.name} sends word, but nothing arrives this time (+1 BOOST).`);
+    return;
+  }
+  const item = pick(pool);
+  const tier = Object.keys(DATA.oneShotGear).find(t => DATA.oneShotGear[t].includes(item));
+  const gift = { name: item.name, attr: item.attr, tier, tags: item.tags };
+  character.gear.push(gift);
+  autoCarryNewItem(character, gift);
+  addLog(character, `A courier drops off a package — no note, just a ${item.name}, from whoever's been watching out for you.`);
 }
 
 // -- Employer/Target faction pairing (§19.4) --------------------------------
@@ -579,7 +629,14 @@ function resolveDownEvent(character) {
 // -- Reputation (§19.1) ------------------------------------------------------
 
 function gainReputation(character, amount) {
+  const beforeTier = reputationTier(character);
   character.reputation = Math.max(1, Math.min(20, character.reputation + amount));
+  // BATCH 2.1 (item 11) — a Reputation Tier-up has a chance of the Mysterious
+  // Benefactor (if the character has ever met them) sending another gift.
+  // Purely a contacts/gear/log mutation, never touches G.phase or any UI
+  // state, so it's safe to fire mid-Debrief/mid-Hunt-resolution/mid-Rest —
+  // every one of gainReputation()'s ~10 call sites is unaffected.
+  if (reputationTier(character) > beforeTier) maybeBenefactorReturns(character);
 }
 function reputationTier(character) {
   const entry = DATA.reputationTiers.find(t => character.reputation <= t.max);
@@ -654,14 +711,29 @@ function factionChallengeModifier(character, factionName) {
 // gear grants its bonus; owning something you didn't bring does nothing).
 // Gear grants its bonus permanently just by being carried — see
 // computeModifiers() in game.js.
+// BATCH 2.1 — also exposes the underlying `item` (not just its name/bonus)
+// so a roll's one-shot gear (tags includes "1S") can be identified and
+// consumed after it contributes to a roll — see consumeOneShotGear() below.
+// Purely additive: every existing {name, bonus} consumer is unaffected.
 function bestGearBonus(character, attr) {
   let best = null;
   character.gear.forEach(item => {
     if (!item.carried || item.attr !== attr) return;
     const bonus = DATA.gearTierBonus[item.tier] || 0;
-    if (!best || bonus > best.bonus) best = { name: item.name, bonus };
+    if (!best || bonus > best.bonus) best = { name: item.name, bonus, item };
   });
   return best;
+}
+
+// BATCH 2.1 (item 9) — one-shot gear vanishes the instant it's actually used
+// in a roll: whichever carried item bestGearBonus() would pick for this
+// attr, if it's tagged "1S". Called once per roll-button click in
+// renderChallenge()/renderHuntRoll() (game.js), right before resolving.
+function consumeOneShotGear(character, attr) {
+  const best = bestGearBonus(character, attr);
+  if (!best || !best.item.tags || !best.item.tags.includes("1S")) return;
+  character.gear = character.gear.filter(item => item !== best.item);
+  addLog(character, `${best.item.name} is spent — one shot, and it's gone.`);
 }
 
 // Equipment gating (todo3.md): *carrying* gear with a matching attr counts

@@ -103,46 +103,111 @@ const DATA = {
   // `tags` (optional, §20.5) are descriptive only for now — AP/EX on select
   // Weapons, AR/LX/CG on select Vehicles — except CG (Cargo), which the
   // eventual Inventory/Loadout system (§20 Phase 5) will read for spare slots.
+  // BATCH 2.1 — each tier now carries 3 models per Loadout category (Weapons/
+  // Decks/Vehicles/Social; Clothing counts Stealth+armor together) instead of
+  // 1-2, so the Shop's higher-tier rolls have real variety to land on.
   gear: {
     Street: [
       { name: "Kessler Snub", attr: "Combat", price: 1 },
       { name: "Rusted Stiletto", attr: "Combat", price: 1 },
+      { name: "Junkyard Shiv", attr: "Combat", price: 1 },
       { name: "Grigio Overcoat", attr: "Stealth", price: 1 },
+      { name: "Faded Trenchcoat", attr: "Stealth", price: 1 },
       { name: "Ostrava Runner", attr: "Driving", price: 1 },
+      { name: "Rustbucket Moped", attr: "Driving", price: 1 },
+      { name: "Borrowed Bicycle", attr: "Driving", price: 1 },
       { name: "Bootleg Deck", attr: "Hacking", price: 1 },
+      { name: "Cracked Tablet Rig", attr: "Hacking", price: 1 },
+      { name: "Scavenged Antenna Array", attr: "Hacking", price: 1 },
       { name: "Kiosk Chits", attr: "Social", price: 1 },
+      { name: "Forged Ration Card", attr: "Social", price: 1 },
+      { name: "Back-Alley Barter Chip", attr: "Social", price: 1 },
       { name: "Field Trauma Wrap", heal: 1, price: 1 },
       { name: "Padded Vest", armor: 1, price: 1 }
     ],
     Professional: [
       { name: "Halvar Sidearm", attr: "Combat", price: 2, tags: ["AP"] },
       { name: "Monofilament Edge", attr: "Combat", price: 2 },
+      { name: "Tactical Push Dagger", attr: "Combat", price: 2 },
       { name: "Notte Milano", attr: "Stealth", price: 2 },
+      { name: "Urban Camo Cloak", attr: "Stealth", price: 2 },
       { name: "Voss Coupé", attr: "Driving", price: 2, tags: ["LX"] },
+      { name: "Interceptor Moto", attr: "Driving", price: 2 },
+      { name: "Armored Delivery Van", attr: "Driving", price: 2, tags: ["CG"] },
       { name: "Rime Breaker", attr: "Hacking", price: 2 },
+      { name: "Signal Jammer Rig", attr: "Hacking", price: 2 },
+      { name: "Proxy Ghost Suite", attr: "Hacking", price: 2 },
       { name: "Broker's Black Book", attr: "Social", price: 2 },
+      { name: "Corporate Access Badge", attr: "Social", price: 2 },
+      { name: "Silver Tongue Earpiece", attr: "Social", price: 2 },
       { name: "Dermal Weave", heal: 2, price: 2 },
       { name: "Kevlar Weave Jacket", armor: 2, price: 2 }
     ],
     Military: [
       { name: "Sturmgewehr SMG", attr: "Combat", price: 3, tags: ["AP"] },
       { name: "Raptor Talons", attr: "Combat", price: 3, tags: ["EX"] },
+      { name: "Gauss Battle Rifle", attr: "Combat", price: 3, tags: ["AP"] },
       { name: "Ombra Couture", attr: "Stealth", price: 3 },
+      { name: "Optic-Camo Weave", attr: "Stealth", price: 3 },
       { name: "Panzer AV", attr: "Driving", price: 3, tags: ["AR", "CG"] },
+      { name: "Wolfpack APC", attr: "Driving", price: 3, tags: ["AR", "CG"] },
+      { name: "Stormrunner Interceptor", attr: "Driving", price: 3, tags: ["LX"] },
       { name: "Blackline Shard", attr: "Hacking", price: 3 },
+      { name: "Blacksite Cortex Rig", attr: "Hacking", price: 3 },
+      { name: "Warhound ICE Suite", attr: "Hacking", price: 3 },
       { name: "Ledger of Favors", attr: "Social", price: 3 },
+      { name: "Diplomatic Immunity Chit", attr: "Social", price: 3 },
+      { name: "SuperState Press Pass", attr: "Social", price: 3 },
       { name: "MedCorp Platinum Chit", heal: 3, price: 3 },
       { name: "Composite Plate", armor: 3, price: 3 }
     ],
     Legendary: [
       { name: "Ares Railgun", attr: "Combat", price: 4, tags: ["AP", "EX"] },
       { name: "Vorpal Monowire", attr: "Combat", price: 4, tags: ["AP"] },
+      { name: "Singularity Blade", attr: "Combat", price: 4, tags: ["EX"] },
       { name: "Chameleon Weave", attr: "Stealth", price: 4 },
+      { name: "Phase-Shift Mantle", attr: "Stealth", price: 4 },
       { name: "Ghost Chassis AV", attr: "Driving", price: 4, tags: ["AR", "LX", "CG"] },
+      { name: "Meteor Strike AV", attr: "Driving", price: 4, tags: ["AR", "CG"] },
+      { name: "Nightfall Phantom Coupé", attr: "Driving", price: 4, tags: ["LX"] },
       { name: "Deus Ex Cortex", attr: "Hacking", price: 4 },
+      { name: "Oracle Cortex Array", attr: "Hacking", price: 4 },
+      { name: "Genesis Root Kit", attr: "Hacking", price: 4 },
       { name: "Voice of the Council", attr: "Social", price: 4 },
+      { name: "Shadow Cabinet Seat", attr: "Social", price: 4 },
+      { name: "Off-World Diplomatic Seal", attr: "Social", price: 4 },
       { name: "Nanite Reconstructor", heal: 4, price: 4 },
       { name: "Reactive Plate Mk.IV", armor: 4, price: 4 }
+    ]
+  },
+
+  // BATCH 2.1 — one-shot items: single-use gear tagged "1S", available to a
+  // character one Reputation Tier below what the item's own Tier would
+  // normally require, priced 1 BOND under that Tier's normal price. Removed
+  // from inventory the instant they're used in a roll (consumeOneShotGear,
+  // game.js). Keyed the same way as DATA.gear (tier name -> items), one per
+  // the five Loadout categories per tier.
+  oneShotGear: {
+    Professional: [
+      { name: "Lucky-Lucky Polymer One-Shot Pistol", attr: "Combat", price: 1, tags: ["1S"] },
+      { name: "Lucifer Smoke Grenade", attr: "Stealth", price: 1, tags: ["1S"] },
+      { name: "Nitro Boost Canister", attr: "Driving", price: 1, tags: ["1S"] },
+      { name: "Burner ICE Breaker", attr: "Hacking", price: 1, tags: ["1S"] },
+      { name: "Forged Credchip Burner", attr: "Social", price: 1, tags: ["1S"] }
+    ],
+    Military: [
+      { name: "Hades Thermite Grenade", attr: "Combat", price: 2, tags: ["AP", "1S"] },
+      { name: "Ghost Static Patch", attr: "Stealth", price: 2, tags: ["1S"] },
+      { name: "Smoke Screen Kit", attr: "Driving", price: 2, tags: ["1S"] },
+      { name: "Zero-Day Worm", attr: "Hacking", price: 2, tags: ["1S"] },
+      { name: "Blackmail Dossier", attr: "Social", price: 2, tags: ["1S"] }
+    ],
+    Legendary: [
+      { name: "Singularity Grenade", attr: "Combat", price: 3, tags: ["EX", "1S"] },
+      { name: "Chronoslip Field Emitter", attr: "Stealth", price: 3, tags: ["1S"] },
+      { name: "Wormhole Jump Charge", attr: "Driving", price: 3, tags: ["1S"] },
+      { name: "Godmode Exploit Chip", attr: "Hacking", price: 3, tags: ["1S"] },
+      { name: "Council Pardon Writ", attr: "Social", price: 3, tags: ["1S"] }
     ]
   },
 
@@ -153,12 +218,15 @@ const DATA = {
 
   missionTypes: ["Assassination", "Heist", "Transport", "Delay", "Hold"],
 
+  // BATCH 2.1 (item 14) — each mission-type flavor line is now a 2-entry
+  // pool instead of a fixed string; genMission() (engine.js) picks one at
+  // generation time, same as every other flavor pool in this file.
   missionFlavor: {
-    Assassination: "put down a target who's become a liability — gun, blade, or a burst of lethal ICE.",
-    Heist: "lift something valuable before anyone notices it's gone.",
-    Transport: "move a package across town without it getting flagged.",
-    Delay: "keep someone or something tied up while the real move happens.",
-    Hold: "hold a position until the extraction window opens."
+    Assassination: ["put down a target who's become a liability — gun, blade, or a burst of lethal ICE.", "erase someone before they can testify, sell out, or just get in the way."],
+    Heist: ["lift something valuable before anyone notices it's gone.", "crack a vault, a server, or a safehouse and walk out with the good stuff."],
+    Transport: ["move a package across town without it getting flagged.", "get precious cargo from one end of the SuperState to the other, quiet."],
+    Delay: ["keep someone or something tied up while the real move happens.", "run interference so the actual op has room to breathe."],
+    Hold: ["hold a position until the extraction window opens.", "keep the line from breaking until the cavalry — or the getaway — shows up."]
   },
 
   // What Heist/Transport/Hold/Delay is actually about, per todo2.md — which
@@ -170,7 +238,11 @@ const DATA = {
     rnd: ["a prototype cyberware core", "an encrypted R&D data shard", "a stolen weapons blueprint"],
     power: ["a crate of military-grade hardware", "a cache of restricted munitions", "a captured enforcer"]
   },
-  delayFlavor: "You don't know what the real op needs from this — could be anything. You're just buying time for someone else's job.",
+  // BATCH 2.1 (item 14) — 2-entry pool, picked in genMission() (engine.js).
+  delayFlavor: [
+    "You don't know what the real op needs from this — could be anything. You're just buying time for someone else's job.",
+    "Nobody's told you what's actually at stake here. Your job is the clock, not the prize."
+  ],
 
   // Gear bonus scales with quality, per todo2.md/todo3.md — applied by
   // bestGearBonus() in state.js against any owned item whose attr matches
@@ -230,9 +302,11 @@ const DATA = {
   // Repair options for a Permanent Injury (gamedesc.md §1 Health). Cybernetic
   // is the cheap, standard fix but leaves a lasting rough edge; Biovat costs
   // more but grows back clean.
+  // BATCH 2.1 (item 14) — each flavor is now a 2-entry pool; renderHub()
+  // (game.js) picks one for the button's title each render.
   repairs: [
-    { name: "Cybernetic Replacement", price: 2, sideEffect: true, flavor: "Quick and cheap. It works — but it's never quite the same." },
-    { name: "Biovat Regrowth", price: 3, sideEffect: false, flavor: "Slow and expensive. Grown clean, no compromises." }
+    { name: "Cybernetic Replacement", price: 2, sideEffect: true, flavor: ["Quick and cheap. It works — but it's never quite the same.", "Off-the-shelf chrome, bolted on fast. You'll feel the seam forever."] },
+    { name: "Biovat Regrowth", price: 3, sideEffect: false, flavor: ["Slow and expensive. Grown clean, no compromises.", "A long, quiet stretch in the tank — but you come out whole, not patched."] }
   ],
 
   encounterFlavor: [
@@ -241,6 +315,14 @@ const DATA = {
     "A drone sweep pings something out of place.",
     "A fixer's runner recognizes you from a past job.",
     "Corp security is doing a routine sweep tonight."
+  ],
+
+  // BATCH 2.1 (item 12) — Night on the Street now always grants a bonus
+  // point of BOOST on top of its usual tier-specific outcome; flavor for
+  // that guaranteed gain, picked in finishNightOnStreet() (game.js).
+  nightBoostFlavor: [
+    "The buzz of neon and traffic gets under your skin — you catch a jolt of energy off the city itself.",
+    "Something about the hum of the streets tonight keeps you sharp. You're wired, and ready for whatever's next."
   ],
 
   // -- §19: Reputation, Faction Power & Special Missions --------------------
@@ -322,7 +404,11 @@ const DATA = {
     3: { name: "Garage, Office, or Attic", securitySlots: 2, flavor: "Room to breathe, and a door that actually locks." },
     4: { name: "Penthouse, Office, or Nightclub Backroom", securitySlots: 4, flavor: "The kind of address that does half your talking for you." }
   },
-  apartmentTier1Flavor: "You are street rat. What are you thinking? Gutter, sewers, under the bridge — that's your home.",
+  // BATCH 2.1 (item 14) — 2-entry pool, picked in renderApartmentSection() (game.js).
+  apartmentTier1Flavor: [
+    "You are street rat. What are you thinking? Gutter, sewers, under the bridge — that's your home.",
+    "An apartment? With what money? A doorway out of the rain is the best you've got tonight."
+  ],
   // Security options available at each Apartment Tier (BATCH 2.0: costs
   // BONDS to install — 1 for a Tier 3 option, 2 for a Tier 4 one, see
   // renderApartmentSection — capped at that Tier's securitySlots). Their

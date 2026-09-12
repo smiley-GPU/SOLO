@@ -370,6 +370,17 @@ happen: a successful Assassination kills its target; a failed
 Transport/Hold kills the person being moved/protected; a killed Archenemy
 (Hunt reward) or a killed side-objective Assassination target.
 
+### 7.5 The Mysterious Benefactor (§20.10)
+A special-cased recurring contact, tagged `benefactor: true`, created the
+first time `grantBenefactorGift()` (state.js) runs — either from a Downtime
+"lucky break" (§20.10) or a Reputation Tier-up once the character has met
+them at least once. Freelance, `relationship: 0`, never moves off that
+value, and `getPerson()` excludes it from every ordinary Employer/Target/
+Hireling draw — this contact only ever does one thing: hand the player a
+one-shot item (Appendix B) matching their current lowest-ranked Attribute.
+Only one Benefactor ever exists per character; `findOrCreateBenefactor()`
+reuses the same contact every time rather than generating a new one.
+
 ---
 
 ## 8. Factions
@@ -1553,6 +1564,140 @@ ever fell), so:
 
 ---
 
+### 20.10 BATCH 2.1: legibility, balance, one-shot gear, and the Mysterious Benefactor
+
+A grab-bag pass over `todo3.md` rows 265-282 — UI legibility fixes, small
+balance tweaks, and new content.
+
+**Vehicles — one at a time (§20.8).** The Loadout's Vehicles category now
+enforces a hard 1-carried limit regardless of spare slots: checking a second
+Vehicle auto-uncarries whatever was carried before it (a radio-style swap,
+the same mutual-exclusivity idiom the Hunt already uses for its Amigue-call
+checkboxes), rather than requiring a manual uncheck first. This also
+retroactively makes `computeCarrySlots()`'s existing `.find()` (which only
+ever looked at *a* carried Vehicle, singular) a true invariant instead of a
+latent assumption.
+
+**Special Mission odds raised to 50% (§19.3, §19.5).** The Mission Board's
+higher-tier second slot, once it's already escalating past the player's own
+Reputation Tier, now has a 50% chance (was 10%) of that escalation landing
+on a full Special Mission instead of an ordinary higher-tier job.
+
+**Job A's cap, reconfirmed.** `genBoardJob()`'s first-slot call always
+passes `wantHigher: false`, which takes the branch
+`mission.difficulty = Math.min(mission.difficulty, capTier)`, and
+`capTier = Math.min(reputationTier(character), 3)` is itself never above the
+player's Reputation Tier — so the Board's first job has never been able to
+exceed the player's own Tier. No code changed; this batch just confirms and
+documents it (todo3.md explicitly asked for the double-check).
+
+**Faction context, always visible.** Every Briefing card now shows an
+explicit "Employer Faction: X • Target Faction: Y" line
+(`factionSummaryHtml()`) — the data was already present in the surrounding
+prose, this just makes it legible at a glance. The same line, plus job
+type/employer/location/Heat, now persists across every Challenge-hosting
+screen (`jobContextHtml()`, wired into Steps, Encounter, and Checkpoint) —
+previously only the Briefing carried that context, and it scrolled out of
+view several screens before Debrief.
+
+**The journal highlights what just happened.** `render()` fires exactly
+once per player action across the whole game, so `G.lastLogCount` (an
+ephemeral, unpersisted watermark, reset once on load so old history never
+reads as "new") lets `renderJournal()` tag however many lines were pushed by
+the most recent action with a `log-new` class, rendered in the amber
+`--warn` color — the newest news is now visually distinct from the scroll
+of history underneath it, not just first in position.
+
+**A Partial can't bill you a BOND you don't have.** The §19.9 fallout
+table's `"gearDamage"` option costs a flat -1 BOND on a Partial (or,
+lacking any carried gear, redirects to `"credLoss"`'s own -1 BOND) — at 0
+BONDS that used to be a silent no-op billed as a real cost. `applyOutcome()`
+now excludes any Partial option containing `"gearDamage"` from the pick
+whenever `c.bonds === 0`, falling back to the unfiltered list only if that
+would leave nothing to choose from (the same "never hard-lock" safety net
+`attrAvailable()` uses). Fail's own `"gearDamage"` degrades an item instead
+of costing BONDS, so it's unaffected.
+
+**A hot roll pays out.** Any Challenge roll (Steps, Encounters, Checkpoint,
+Rest sub-flows, Hunt rolls — everywhere the shared roll-button UI calls
+`resolve()`, not Coffin Hotel's or the Apartment raid's bespoke inline
+formulas) that comes to 12 or more nets an extra +1 BOOST (capped 10),
+regardless of tier — a new shared `resolveRoll(c, attrRank, mods)` wraps
+`resolve()` and is now the one path both `renderChallenge()` and
+`renderHuntRoll()` use.
+
+**Spend up to 2 BOOST on one roll.** The old single "Spend 1 BOOST"
+checkbox is now `boostSpendOptionHtml()`/`wireBoostSpend()` — up to
+`min(2, c.boost)` mutually-exclusive "Spend N BOOST for +N" checkboxes,
+shared by both roll UIs. `computeModifiers()`'s `spendBoost` parameter (and
+`renderHuntRoll`'s inline `buildMods`) changed from a boolean to the actual
+integer amount being spent.
+
+**One-shot gear.** A new `DATA.oneShotGear` table (Professional/Military/
+Legendary tiers, 5 items each — one per Loadout category) holds single-use
+items tagged `"1S"`: Lucky-Lucky Polymer One-Shot Pistol, Lucifer Smoke
+Grenade, Nitro Boost Canister, Burner ICE Breaker, Forged Credchip Burner
+(Professional); Hades Thermite Grenade, Ghost Static Patch, Smoke Screen
+Kit, Zero-Day Worm, Blackmail Dossier (Military); Singularity Grenade,
+Chronoslip Field Emitter, Wormhole Jump Charge, Godmode Exploit Chip,
+Council Pardon Writ (Legendary). `genOneShotOffer()` (engine.js) makes these
+available to a character a full Reputation Tier below the item's own Tier
+(a Tier-1 "Street Rat" already sees Professional-tier one-shots) — priced 1
+BOND under that Tier's normal price, baked directly into each item's own
+`price` field. `genShopOffers()` has a 40% chance per refresh of adding one.
+`bestGearBonus()` now also returns the underlying item (`{name, bonus,
+item}`, purely additive); a new `consumeOneShotGear(character, attr)`
+(state.js) checks whatever item just contributed a roll's gear bonus and, if
+it's tagged `"1S"`, removes it from `character.gear` — called from both roll
+UIs right before the roll resolves, so a one-shot is spent the instant it's
+actually used, win or lose.
+
+**The regular gear catalog, at 3 models per category per Tier.** Every Tier
+in `DATA.gear` now has exactly 3 items in Weapons/Decks/Vehicles/Social and
+3 in Clothing (2 Stealth-attr + 1 armor) — was as few as 1 in several
+categories. New names throughout keep the existing European/cyberpunk
+naming convention (e.g. Street's Junkyard Shiv, Rustbucket Moped, Cracked
+Tablet Rig; Legendary's Singularity Blade, Meteor Strike AV, Oracle Cortex
+Array — see the updated Appendix B for the full list). `grantBloodbrotherGift()`
+now `pick()`s among the matching Street items instead of always taking the
+catalog's first match, so its variety actually shows now that there's
+something to vary between.
+
+**Downtime lucky breaks, and the Mysterious Benefactor.** `maybeLuckyBreak()`
+(game.js), checked once whenever `nextHubPhase()` actually lands on `"hub"`
+(so on `init()`'s reload, and both the Debrief/Hunt-resolution "Return to
+the Street" buttons — never while already sitting in a rendered Hub): if the
+character is flat broke (0 BONDS) and still carrying Harm, 20% chance of one
+of three breaks — a relationship-≥3 friend takes them in and heals them to
+full (only offered if such a friend exists); a package from **the Mysterious
+Benefactor**, a new recurring NPC type (`state.js`'s `findOrCreateBenefactor()`
+— a Freelance, relationship-0 contact flagged `benefactor: true`, created
+once and reused after, and excluded from `getPerson()`'s ordinary
+Employer/Target/Hireling draws) containing a one-shot item matching the
+character's current lowest-ranked Attribute (`grantBenefactorGift()`); or
++2 BONDS from the nightly "Road-Kill, Faster, Faster(R)" Lottery. Separately,
+`gainReputation()` now compares Reputation Tier before and after every gain,
+and — only for a character who's met the Benefactor at least once — a Tier-up
+has a 40% chance of `maybeBenefactorReturns()` sending another gift, logged
+as a familiar courier finding them again.
+
+**Night on the Street always pays a little.** `finishNightOnStreet()` now
+grants +1 BOOST (capped 10, from the new `DATA.nightBoostFlavor` pool) on
+top of whatever the roll itself resolved — win, lose, or draw — flavored as
+the buzz of the city itself feeding you something.
+
+**A second line for every single-line flavor pool.** `DATA.missionFlavor`
+(each of the 5 mission types), `DATA.delayFlavor`, `DATA.apartmentTier1Flavor`,
+and both `DATA.repairs[].flavor` entries are now 2-line pools, `pick()`'d at
+their usage site instead of read as a fixed string. `HUNT_SUMMARY` (game.js)
+likewise gained a second phrasing per resolution stage — each of its 7
+entries is now a 2-element array of template functions, and
+`renderHuntResolution()` picks one at random. Pools that already had 2+
+lines (complications, gear-damage/cred-loss flavor, Archenemy-invasion
+flavor, Encounter flavor, obituaries) are untouched.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
@@ -1565,20 +1710,38 @@ Sturm.
 A generated name is always `"<first> \"<handle>\""`.
 
 ## Appendix B — Full Gear Catalog
-| Tier | Combat (×2) | Stealth | Driving | Hacking | Social | heal | armor |
+**BATCH 2.1 (§20.10)**: every Tier now has 3 models per Combat/Stealth/
+Driving/Hacking/Social, and Clothing (Stealth + armor) sums to 3 as well —
+was as few as 1 in several categories.
+
+| Tier | Combat (×3) | Stealth (×2) | Driving (×3) | Hacking (×3) | Social (×3) | heal | armor |
 |---|---|---|---|---|---|---|---|
-| Street (1 BOND) | Kessler Snub, Rusted Stiletto | Grigio Overcoat | Ostrava Runner | Bootleg Deck | Kiosk Chits | Field Trauma Wrap (1) | Padded Vest (1) |
-| Professional (2 BONDS) | Halvar Sidearm, Monofilament Edge | Notte Milano | Voss Coupé | Rime Breaker | Broker's Black Book | Dermal Weave (2) | Kevlar Weave Jacket (2) |
-| Military (3 BONDS) | Sturmgewehr SMG, Raptor Talons | Ombra Couture | Panzer AV | Blackline Shard | Ledger of Favors | MedCorp Platinum Chit (3) | Composite Plate (3) |
-| Legendary (4 BONDS, §20.5) | Ares Railgun, Vorpal Monowire | Chameleon Weave | Ghost Chassis AV | Deus Ex Cortex | Voice of the Council | Nanite Reconstructor (4) | Reactive Plate Mk.IV (4) |
+| Street (1 BOND) | Kessler Snub, Rusted Stiletto, Junkyard Shiv | Grigio Overcoat, Faded Trenchcoat | Ostrava Runner, Rustbucket Moped, Borrowed Bicycle | Bootleg Deck, Cracked Tablet Rig, Scavenged Antenna Array | Kiosk Chits, Forged Ration Card, Back-Alley Barter Chip | Field Trauma Wrap (1) | Padded Vest (1) |
+| Professional (2 BONDS) | Halvar Sidearm, Monofilament Edge, Tactical Push Dagger | Notte Milano, Urban Camo Cloak | Voss Coupé, Interceptor Moto, Armored Delivery Van | Rime Breaker, Signal Jammer Rig, Proxy Ghost Suite | Broker's Black Book, Corporate Access Badge, Silver Tongue Earpiece | Dermal Weave (2) | Kevlar Weave Jacket (2) |
+| Military (3 BONDS) | Sturmgewehr SMG, Raptor Talons, Gauss Battle Rifle | Ombra Couture, Optic-Camo Weave | Panzer AV, Wolfpack APC, Stormrunner Interceptor | Blackline Shard, Blacksite Cortex Rig, Warhound ICE Suite | Ledger of Favors, Diplomatic Immunity Chit, SuperState Press Pass | MedCorp Platinum Chit (3) | Composite Plate (3) |
+| Legendary (4 BONDS, §20.5) | Ares Railgun, Vorpal Monowire, Singularity Blade | Chameleon Weave, Phase-Shift Mantle | Ghost Chassis AV, Meteor Strike AV, Nightfall Phantom Coupé | Deus Ex Cortex, Oracle Cortex Array, Genesis Root Kit | Voice of the Council, Shadow Cabinet Seat, Off-World Diplomatic Seal | Nanite Reconstructor (4) | Reactive Plate Mk.IV (4) |
 
 (The Stealth line is deliberately named like fashion labels — "Clothing".)
 Selected items also carry a descriptive `tags` chip (§20.5): `AP`/`EX` on a
 few Weapons, `AR`/`LX`/`CG` on a few Vehicles — Halvar Sidearm/Sturmgewehr
 SMG/Ares Railgun/Vorpal Monowire (AP), Raptor Talons/Ares Railgun (EX),
-Voss Coupé (LX), Panzer AV/Ghost Chassis AV (AR, CG; Ghost Chassis AV also
-LX), and the Nomad turf's starting Kombi Wagon (CG). No mechanical effect
-yet except CG, reserved for a future Inventory/Loadout pass.
+Voss Coupé (LX), Panzer AV/Ghost Chassis AV/Wolfpack APC (AR, CG; Ghost
+Chassis AV also LX), Armored Delivery Van (CG), Stormrunner Interceptor
+(LX), Meteor Strike AV (AR, CG), Nightfall Phantom Coupé (LX), and the
+Nomad turf's starting Kombi Wagon (CG). No mechanical effect yet except CG
+(§20.8's spare-slot math).
+
+**One-shot gear (§20.10, `DATA.oneShotGear`)**: single-use, tagged `1S`,
+removed from inventory the moment they're actually used in a roll
+(`consumeOneShotGear()`, state.js). Available to a character a full
+Reputation Tier below the item's own Tier, priced 1 BOND under that Tier's
+normal price:
+
+| Tier (shown from Rep Tier) | Combat | Stealth | Driving | Hacking | Social |
+|---|---|---|---|---|---|
+| Professional (1 BOND, from Tier 1) | Lucky-Lucky Polymer One-Shot Pistol | Lucifer Smoke Grenade | Nitro Boost Canister | Burner ICE Breaker | Forged Credchip Burner |
+| Military (2 BONDS, from Tier 2) | Hades Thermite Grenade (AP) | Ghost Static Patch | Smoke Screen Kit | Zero-Day Worm | Blackmail Dossier |
+| Legendary (3 BONDS, from Tier 3) | Singularity Grenade (EX) | Chronoslip Field Emitter | Wormhole Jump Charge | Godmode Exploit Chip | Council Pardon Writ |
 
 ## Appendix C — Gear damage flavor
 - Partial (repair, no tier change): "A close call bends something —
@@ -1619,15 +1782,17 @@ yet except CG, reserved for a future Inventory/Loadout pass.
 | Stealth | – | 20 | – | 55 | 25 |
 
 ## Appendix G — Hunt resolution summary lines
+**BATCH 2.1 (§20.10)**: each stage now has 2 phrasings, picked at random.
+
 | Stage | Text |
 |---|---|
-| resolved-evade | "You give `<name>` the slip. For now." |
-| resolved-run-clean | "You put real distance between you and `<name>` tonight." |
-| resolved-run-hit | "Banged up, but clear. `<name>` is still out there." |
-| resolved-run-bad | "Ugly getaway, but a getaway. `<name>` is still out there." |
-| resolved-escape-win | "You come out on top, but `<name>` slips away to lick their wounds." |
-| resolved-escape-clean | "`<name>` gets away clean. This isn't over." |
-| resolved-kill | "`<name>` won't be a problem again." |
+| resolved-evade | "You give `<name>` the slip. For now." / "`<name>` loses your trail in the crowd. Not tonight." |
+| resolved-run-clean | "You put real distance between you and `<name>` tonight." / "`<name>` is a memory in your mirrors before you even hit the highway." |
+| resolved-run-hit | "Banged up, but clear. `<name>` is still out there." / "You shake them off, but not before they get a piece of you. `<name>` lives to try again." |
+| resolved-run-bad | "Ugly getaway, but a getaway. `<name>` is still out there." / "It's a mess getting clear, but you're clear. `<name>` isn't done with you." |
+| resolved-escape-win | "You come out on top, but `<name>` slips away to lick their wounds." / "`<name>` breaks off bleeding. You won this round, not the war." |
+| resolved-escape-clean | "`<name>` gets away clean. This isn't over." / "`<name>` vanishes into the city like they were never there." |
+| resolved-kill | "`<name>` won't be a problem again." / "`<name>` hits the ground and doesn't get up. It's finished." |
 
 ## Appendix H — Encounter flavor (random, pre/post-job)
 "A patrol rounds the corner right into your path." / "A rival crew is

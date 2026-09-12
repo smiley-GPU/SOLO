@@ -21,6 +21,9 @@ function init() {
   const loaded = load();
   if (loaded) {
     G.character = loaded;
+    // BATCH 2.1 (item 6) — seed the "newest log lines" watermark to the
+    // full existing history so a reload doesn't flag old lines as new.
+    G.lastLogCount = G.character.log.length;
     G.phase = nextHubPhase();
   } else {
     G.phase = "create";
@@ -43,7 +46,34 @@ function checkWinCondition() {
 function nextHubPhase() {
   if (checkWinCondition()) return "win";
   if (G.character && checkMultiCorpLoss(G.character)) return "loss";
+  if (G.character) maybeLuckyBreak(G.character); // BATCH 2.1 (item 11)
   return "hub";
+}
+
+// BATCH 2.1 (item 11) — a Downtime "lucky break": if the character arrives
+// at the Hub flat broke (0 BONDS) and still carrying Harm, 20% chance of one
+// of three breaks. Only ever called from nextHubPhase(), which itself is
+// only ever called from init() (resuming a save) and the Debrief/Hunt-
+// resolution "Return to the Street" buttons — never from inside renderHub()
+// — so this can't re-fire while the player just sits in an already-rendered
+// Hub training or shopping.
+function maybeLuckyBreak(c) {
+  if (c.bonds > 0 || !c.health.some(h => h)) return;
+  if (randInt(1, 100) > 20) return;
+  const friends = c.contacts.filter(p => p.relationship >= 3);
+  const options = friends.length ? ["friend", "benefactor", "lottery"] : ["benefactor", "lottery"];
+  const choice = pick(options);
+  if (choice === "friend") {
+    const friend = pick(friends);
+    c.health = c.health.map(() => false);
+    addLog(c, `${friend.name} won't let you sleep rough like this — they take you in and patch you up clean.`);
+  } else if (choice === "benefactor") {
+    grantBenefactorGift(c); // state.js
+  } else {
+    c.bonds += 2;
+    addLog(c, `A ticket you forgot about pays off — the nightly "Road-Kill, Faster, Faster(R)" Lottery hands you 2 BONDS.`);
+  }
+  persist();
 }
 
 function persist() {
@@ -64,9 +94,17 @@ function renderJournal() {
   const journal = document.createElement("div");
   journal.id = "journal";
   if (G.character) {
-    G.character.log.slice().reverse().forEach(line => {
+    const log = G.character.log;
+    // BATCH 2.1 (item 6) — render() fires exactly once per user action
+    // across this whole codebase, so "lines added since the last render()"
+    // is exactly "lines added by the most recent action." Since the array
+    // is rendered reversed (newest first), the newest `newCount` entries
+    // are the first ones out of the loop below.
+    const newCount = Math.max(0, log.length - (G.lastLogCount || 0));
+    G.lastLogCount = log.length;
+    log.slice().reverse().forEach((line, idx) => {
       const p = document.createElement("div");
-      p.className = "log-line";
+      p.className = "log-line" + (idx < newCount ? " log-new" : "");
       p.textContent = line;
       journal.appendChild(p);
     });
@@ -251,7 +289,7 @@ function renderApartmentSection(c) {
   }
 
   if (repTier < 2) {
-    wrap.innerHTML += `<p class="muted">${DATA.apartmentTier1Flavor}</p>`;
+    wrap.innerHTML += `<p class="muted">${pick(DATA.apartmentTier1Flavor)}</p>`;
     return wrap;
   }
 
@@ -526,7 +564,7 @@ function renderHub() {
     DATA.repairs.forEach(r => {
       const btn = document.createElement("button");
       btn.textContent = `${r.name} — ${r.price} BOND${r.price === 1 ? "" : "S"}`;
-      btn.title = r.flavor;
+      btn.title = pick(r.flavor);
       btn.disabled = c.bonds < r.price;
       btn.addEventListener("click", () => {
         c.bonds -= r.price;
@@ -661,6 +699,7 @@ function renderBriefingCard(job, idx) {
   wrap.innerHTML = `
     <h3>${mission.special ? mission.specialName : `Job ${idx + 1}`}</h3>
     ${specialBadge}
+    ${factionSummaryHtml(job)}
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
     <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}<br><strong>Payout:</strong> ${payout} BOND${payout === 1 ? "" : "S"}</p>
     ${fieldRows}
@@ -834,6 +873,14 @@ function finishNightOnStreet() {
   const c = G.character;
   const res = G.restFlow.lastResult;
   const flavor = res.usedAttr === "Combat" ? "a tough street night" : "talking your way into a shelter";
+  // BATCH 2.1 (item 12) — Night on the Street always grants a bonus point of
+  // BOOST on top of whatever the roll itself resolved, win or lose: the city
+  // itself feeds you something, checked before the tier branches below since
+  // it applies no matter what happens next (including a fatal one).
+  if (c.boost < 10) {
+    c.boost += 1;
+    addLog(c, pick(DATA.nightBoostFlavor));
+  }
   if (res.tier === "full") {
     healBox(c);
     addLog(c, `You get through ${flavor} — and actually catch some real rest.`);
@@ -904,11 +951,14 @@ function grantBloodbrotherGift(c) {
   const missingAttrs = ["Combat", "Driving", "Hacking", "Social", "Stealth"].filter(a => !owned.has(a));
   if (missingAttrs.length) {
     const attr = pick(missingAttrs);
-    const item = DATA.gear.Street.find(g => g.attr === attr);
+    // BATCH 2.1 — the catalog now has 3 Street models per attr; pick a
+    // random one instead of always the same first match.
+    const candidates = DATA.gear.Street.filter(g => g.attr === attr);
+    const item = candidates.length ? pick(candidates) : null;
     if (item) {
       const gift = { name: item.name, attr: item.attr, tier: "Street" };
       c.gear.push(gift);
-      autoCarryNewItem(c, gift); // §20.8 — always the category's only item, so always carried anyway
+      autoCarryNewItem(c, gift); // §20.8 — the category has no carried item yet, so this one always is
       addLog(c, `They slip you a ${item.name} on your way out.`);
       return;
     }
@@ -1073,6 +1123,24 @@ function resolveApartmentRaid(c, job) {
     addLog(c, `${agency} pushes their way in.`);
     if (!applyCheckpointDamage(c, job, "harm")) applyCheckpointDamage(c, job, pick(["vehicle", "gear"]));
   }
+}
+
+// BATCH 2.1 (items 4/5) — the Employer's/Target's faction data was already
+// present in the Briefing's prose lines; this makes it legible at a glance
+// instead of buried in a sentence, on the Briefing card and (via
+// jobContextHtml below) on every Challenge screen too.
+function factionSummaryHtml(job) {
+  const targetFaction = job.mission.target ? job.mission.target.faction : null;
+  return `<p class="faction-summary"><strong>Employer Faction:</strong> ${job.employer.faction}` +
+    (targetFaction ? ` &nbsp;•&nbsp; <strong>Target Faction:</strong> ${targetFaction}` : "") + `</p>`;
+}
+
+// BATCH 2.1 (item 5) — keeps job type/employer/location/faction visible on
+// every Challenge-hosting screen (Steps/Encounter/Checkpoint), not just the
+// Briefing you accepted the job from several screens ago.
+function jobContextHtml(job) {
+  if (!job) return "";
+  return `<p class="job-context muted">${job.mission.special ? job.mission.specialName : job.mission.type} for ${job.employer.name} — ${job.location.name} ${heatBarHtml(job.location.heat)}</p>${factionSummaryHtml(job)}`;
 }
 
 function missionFieldRows(mission) {
@@ -1246,6 +1314,17 @@ function renderLoadoutSection() {
       checkbox.type = "checkbox";
       checkbox.checked = !!item.carried;
       checkbox.addEventListener("change", () => {
+        // BATCH 2.1 (item 1) — only one Vehicle can be in use at a time, no
+        // matter how many spare slots exist (you can't drive two cars).
+        // Radio-style swap — checking one auto-uncarries any other carried
+        // Vehicle — rather than a hard block, matching the same mutual-
+        // exclusivity idiom used for the Hunt's Amigue-call checkboxes.
+        if (cat === "Vehicles" && checkbox.checked) {
+          c.gear.forEach(g => { if (gearCategory(g) === "Vehicles" && g !== item) g.carried = false; });
+          item.carried = true;
+          persist(); render();
+          return;
+        }
         if (checkbox.checked) {
           // The category's own item is already accounted for above (it's
           // this checkbox going from off to on) — anything beyond the
@@ -1309,7 +1388,7 @@ function renderEncounter() {
   const job = G.job;
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>Encounter</h2><p class="step-desc">${job.encounter.step.desc}</p>`;
+  wrap.innerHTML = `<h2>Encounter</h2>${jobContextHtml(job)}<p class="step-desc">${job.encounter.step.desc}</p>`;
   els.main.appendChild(wrap);
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
@@ -1352,7 +1431,7 @@ function renderCheckpoint() {
   const cp = job.checkpoint;
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>${cp.agency} Checkpoint</h2>`;
+  wrap.innerHTML = `<h2>${cp.agency} Checkpoint</h2>${jobContextHtml(job)}`;
   els.main.appendChild(wrap);
 
   if (cp.stage === "choice") { renderCheckpointChoice(wrap); return; }
@@ -1492,7 +1571,7 @@ function renderSteps() {
   const step = job.steps[job.stepIndex];
   const wrap = document.createElement("div");
   wrap.className = "card";
-  wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2><p class="step-desc">${step.desc}</p>`;
+  wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2>${jobContextHtml(job)}<p class="step-desc">${step.desc}</p>`;
   els.main.appendChild(wrap);
   renderChallenge(wrap, step, () => finalizeStep(step));
 }
@@ -1614,7 +1693,19 @@ function applyOutcome(c, job, attr, tier) {
 
   if (fallout.heatOnResolve) raiseHeat(c, loc, fallout.heatOnResolve);
 
-  const consequences = pick(tier === "partial" ? fallout.partial : fallout.fail);
+  // BATCH 2.1 (item 7) — a Partial "gearDamage" option costs a flat -1 BOND
+  // (or, with no carried gear, redirects to credLoss's own -1 BOND) — at 0
+  // BONDS that's a silent no-op billed as a cost. Exclude any Partial option
+  // that could land on "gearDamage" while broke, so something else (harm,
+  // heat, a wounded helper) gets picked instead. Fail's own "gearDamage"
+  // degrades an item rather than costing BONDS, so it's unaffected. Safety
+  // net (never hard-lock, matching attrAvailable()): fall back to the
+  // unfiltered list if excluding it would leave nothing to pick from.
+  const options = tier === "partial" ? fallout.partial : fallout.fail;
+  const eligible = tier === "partial" && c.bonds === 0
+    ? options.filter(opt => !opt.includes("gearDamage"))
+    : options;
+  const consequences = pick(eligible.length ? eligible : options);
   for (const key of consequences) {
     if (applyFalloutConsequence(c, job, attr, tier, key, loc)) return; // died — skip any remaining keys in this bundle
   }
@@ -1726,6 +1817,49 @@ function woundJobHelper(c, job) {
   woundPerson(c, h.person);
 }
 
+// BATCH 2.1 (items 8/9/13) — shared by renderChallenge() and renderHuntRoll()
+// so this batch's three additions to "how a roll happens" each live in
+// exactly one place instead of being duplicated across both roll-handling
+// code paths.
+
+// Item 13 — "spend up to 2 BOOST," capped by what the character actually
+// has. Same manual-mutual-exclusivity idiom as the Hunt's Amigue-call
+// checkboxes, generalized into a helper instead of being written twice.
+function boostSpendOptionHtml(c) {
+  const max = Math.min(2, c.boost);
+  if (!max) return "";
+  return Array.from({ length: max }, (_, i) => i + 1)
+    .map(n => `<label class="boost-toggle"><input type="checkbox" class="boost-check" data-amount="${n}" /> Spend ${n} BOOST for +${n}</label>`)
+    .join("");
+}
+// Wires up the checkboxes boostSpendOptionHtml() rendered into `block`:
+// checking one unchecks any other, firing onChange either way. Returns a
+// getter for however much BOOST is currently selected to spend (0 if none).
+function wireBoostSpend(block, onChange) {
+  const checks = Array.from(block.querySelectorAll(".boost-check"));
+  checks.forEach(cb => cb.addEventListener("change", () => {
+    if (cb.checked) checks.forEach(other => { if (other !== cb) other.checked = false; });
+    onChange();
+  }));
+  return () => {
+    const hit = checks.find(cb => cb.checked);
+    return hit ? Number(hit.dataset.amount) : 0;
+  };
+}
+
+// Item 8 — every generic Challenge roll (never Coffin Hotel's or the
+// Apartment raid/invasion's bespoke inline formulas) goes through here so a
+// 12+ total always nets +1 BOOST (capped 10), regardless of tier — a
+// stronger-than-Full success is worth more than a bare Full.
+function resolveRoll(c, attrRank, mods) {
+  const result = resolve(attrRank, mods);
+  if (result.total >= 12 && c.boost < 10) {
+    c.boost = Math.min(10, c.boost + 1);
+    addLog(c, `That roll comes back hot (${result.total}) — +1 BOOST (now ${c.boost}).`);
+  }
+  return result;
+}
+
 // ---------- Shared Challenge UI (roll block, used by steps + encounters) ----------
 // ctx ({job, holder}, optional) lets Rest sub-flows (renderRestSubflow) reuse
 // this without a real accepted job: job is null (no mission/location/ally to
@@ -1751,9 +1885,7 @@ function renderChallenge(container, step, onContinue, ctx) {
   attrs.forEach(attr => {
     const block = document.createElement("div");
     block.className = "challenge";
-    const boostOption = c.boost >= 1
-      ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
-      : "";
+    const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
     // Ally Assist (todo3.md Persons, §20.1: now up to 3 possible) — each
     // not-yet-used, not-benched "ally" Helper's one-time +2 to a single
     // test, consumed on the roll it's checked for. Independent checkboxes —
@@ -1764,31 +1896,31 @@ function renderChallenge(container, step, onContinue, ctx) {
     ).join("");
     block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
-    const boostCheck = block.querySelector(".boost-check");
     const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
     const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
 
     const refreshMods = () => {
-      const mods = computeModifiers(attr, boostCheck && boostCheck.checked, checkedAssistIds(), job);
+      const mods = computeModifiers(attr, getBoostSpend(), checkedAssistIds(), job);
       modsEl.innerHTML = mods.length
         ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
         : `<span class="chip">no modifiers</span>`;
     };
+    const getBoostSpend = wireBoostSpend(block, refreshMods); // BATCH 2.1 (item 13)
     refreshMods();
-    if (boostCheck) boostCheck.addEventListener("change", refreshMods);
     assistChecks.forEach(el => el.addEventListener("change", refreshMods));
 
     const rollBtn = document.createElement("button");
     rollBtn.textContent = `Roll ${attr}`;
     rollBtn.addEventListener("click", () => {
-      const spendBoost = !!(boostCheck && boostCheck.checked);
+      const spendAmount = getBoostSpend();
       const assistIds = checkedAssistIds();
-      const mods = computeModifiers(attr, spendBoost, assistIds, job);
-      if (spendBoost) c.boost -= 1;
+      const mods = computeModifiers(attr, spendAmount, assistIds, job);
+      if (spendAmount) c.boost -= spendAmount;
       if (job && assistIds.length) {
         job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
       }
-      const result = resolve(c.attrs[attr], mods);
+      consumeOneShotGear(c, attr); // BATCH 2.1 (item 9)
+      const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
       result.usedAttr = attr;
       step.usedAttr = attr;
       holder.pendingResult = result;
@@ -1814,7 +1946,9 @@ function attrAvailable(c, job, attr) {
 // job/location/helper modifiers from — see renderChallenge's ctx param).
 // assistIds (§20.1, optional): ids of Helpers whose one-time +2 is spent on
 // this roll — was a single boolean (`spendAlly`) back when there was only
-// ever one recruited Ally; now there can be up to 3.
+// ever one recruited Ally; now there can be up to 3. spendBoost (BATCH 2.1,
+// item 13): was a boolean ("spend 1 BOOST"), now an integer 0-2 — however
+// much BOOST is being spent on this one roll.
 function computeModifiers(attr, spendBoost, assistIds, job) {
   const c = G.character;
   const mods = [];
@@ -1844,7 +1978,7 @@ function computeModifiers(attr, spendBoost, assistIds, job) {
     if (activeCount >= 2 && attr === "Combat") mods.push({ label: "Crew (2+ helpers)", value: 1 });
     else if (activeCount >= 2 && attr === "Stealth") mods.push({ label: "Crew (2+ helpers)", value: -1 });
   }
-  if (spendBoost) mods.push({ label: "Boost", value: 1 });
+  if (spendBoost) mods.push({ label: "Boost", value: spendBoost });
   if (job && assistIds && assistIds.length) {
     job.helpers.forEach(h => {
       if (h.source === "ally" && !h.used && !h.benched && assistIds.includes(h.person.id)) {
@@ -2313,9 +2447,7 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
 
   const block = document.createElement("div");
   block.className = "challenge";
-  const boostOption = c.boost >= 1
-    ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
-    : "";
+  const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
   // A BLOODBROTHER can be called in to help on a Hunt (todo3.md Persons) —
   // a one-time +2, same shape as Ally Assist in renderChallenge(). BATCH 2.0
   // — more than one Amigue can exist now; offer a row per Amigue (mutually
@@ -2326,7 +2458,6 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     : "";
   block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${brotherOption}<div class="mods"></div>`;
   const modsEl = block.querySelector(".mods");
-  const boostCheck = block.querySelector(".boost-check");
   const brotherChecks = Array.from(block.querySelectorAll(".brother-check"));
 
   const buildMods = (spendBoost, callBrotherId) => {
@@ -2341,7 +2472,7 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     if (hunt.atHome && attr === "Combat" && c.apartment && c.apartment.security.length) {
       mods.push({ label: "Security", value: c.apartment.security.length });
     }
-    if (spendBoost) mods.push({ label: "Boost", value: 1 });
+    if (spendBoost) mods.push({ label: "Boost", value: spendBoost }); // BATCH 2.1 (item 13) — integer amount, not a boolean
     const calledBrother = callBrotherId && amigues.find(a => a.id === callBrotherId);
     if (calledBrother) mods.push({ label: calledBrother.name, value: 2 });
     const harmCount = c.health.filter(h => h).length;
@@ -2357,13 +2488,13 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   };
 
   const refreshMods = () => {
-    const mods = buildMods(boostCheck && boostCheck.checked, checkedBrotherId());
+    const mods = buildMods(getBoostSpend(), checkedBrotherId());
     modsEl.innerHTML = mods.length
       ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
       : `<span class="chip">no modifiers</span>`;
   };
+  const getBoostSpend = wireBoostSpend(block, refreshMods); // BATCH 2.1 (item 13)
   refreshMods();
-  if (boostCheck) boostCheck.addEventListener("change", refreshMods);
   brotherChecks.forEach(cb => cb.addEventListener("change", () => {
     if (cb.checked) brotherChecks.forEach(other => { if (other !== cb) other.checked = false; });
     refreshMods();
@@ -2372,12 +2503,13 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   const rollBtn = document.createElement("button");
   rollBtn.textContent = `Roll ${attr}`;
   rollBtn.addEventListener("click", () => {
-    const spendBoost = !!(boostCheck && boostCheck.checked);
+    const spendAmount = getBoostSpend();
     const callBrotherId = checkedBrotherId();
-    const mods = buildMods(spendBoost, callBrotherId);
-    if (spendBoost) c.boost -= 1;
+    const mods = buildMods(spendAmount, callBrotherId);
+    if (spendAmount) c.boost -= spendAmount;
     if (callBrotherId) hunt.bloodbrotherUsed = true;
-    const result = resolve(c.attrs[attr], mods);
+    consumeOneShotGear(c, attr); // BATCH 2.1 (item 9)
+    const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
     result.usedAttr = attr;
     hunt.pendingResult = result;
     persist();
@@ -2626,21 +2758,44 @@ function applyHuntKillReward(c) {
   hunt.stage = "resolved-kill";
 }
 
+// BATCH 2.1 (item 14) — each resolution now has 2 phrasings; renderHuntResolution() picks one.
 const HUNT_SUMMARY = {
-  "resolved-evade": hunt => `You give ${hunt.archenemy.name} the slip. For now.`,
-  "resolved-run-clean": hunt => `You put real distance between you and ${hunt.archenemy.name} tonight.`,
-  "resolved-run-hit": hunt => `Banged up, but clear. ${hunt.archenemy.name} is still out there.`,
-  "resolved-run-bad": hunt => `Ugly getaway, but a getaway. ${hunt.archenemy.name} is still out there.`,
-  "resolved-escape-win": hunt => `You come out on top, but ${hunt.archenemy.name} slips away to lick their wounds.`,
-  "resolved-escape-clean": hunt => `${hunt.archenemy.name} gets away clean. This isn't over.`,
-  "resolved-kill": hunt => `${hunt.archenemy.name} won't be a problem again.`
+  "resolved-evade": [
+    hunt => `You give ${hunt.archenemy.name} the slip. For now.`,
+    hunt => `${hunt.archenemy.name} loses your trail in the crowd. Not tonight.`
+  ],
+  "resolved-run-clean": [
+    hunt => `You put real distance between you and ${hunt.archenemy.name} tonight.`,
+    hunt => `${hunt.archenemy.name} is a memory in your mirrors before you even hit the highway.`
+  ],
+  "resolved-run-hit": [
+    hunt => `Banged up, but clear. ${hunt.archenemy.name} is still out there.`,
+    hunt => `You shake them off, but not before they get a piece of you. ${hunt.archenemy.name} lives to try again.`
+  ],
+  "resolved-run-bad": [
+    hunt => `Ugly getaway, but a getaway. ${hunt.archenemy.name} is still out there.`,
+    hunt => `It's a mess getting clear, but you're clear. ${hunt.archenemy.name} isn't done with you.`
+  ],
+  "resolved-escape-win": [
+    hunt => `You come out on top, but ${hunt.archenemy.name} slips away to lick their wounds.`,
+    hunt => `${hunt.archenemy.name} breaks off bleeding. You won this round, not the war.`
+  ],
+  "resolved-escape-clean": [
+    hunt => `${hunt.archenemy.name} gets away clean. This isn't over.`,
+    hunt => `${hunt.archenemy.name} vanishes into the city like they were never there.`
+  ],
+  "resolved-kill": [
+    hunt => `${hunt.archenemy.name} won't be a problem again.`,
+    hunt => `${hunt.archenemy.name} hits the ground and doesn't get up. It's finished.`
+  ]
 };
 
 function renderHuntResolution(container) {
   const hunt = G.hunt;
   const block = document.createElement("div");
   block.className = "card";
-  const text = (HUNT_SUMMARY[hunt.stage] || (() => ""))(hunt);
+  const variants = HUNT_SUMMARY[hunt.stage];
+  const text = variants ? pick(variants)(hunt) : "";
   block.innerHTML = `<h3>${hunt.stage === "resolved-kill" ? "Archenemy Down" : "It's Over — For Now"}</h3><p class="step-desc">${text}</p>`;
   const btn = document.createElement("button");
   btn.textContent = "Return to the Street";

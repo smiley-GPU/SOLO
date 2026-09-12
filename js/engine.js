@@ -112,7 +112,31 @@ function genShopOffers(reputationTier) {
   const offers = [genShopOffer(reputationTier, 0), genShopOffer(reputationTier, 1)];
   if (randInt(1, 100) <= 50) offers.push(genShopOffer(Math.min(4, reputationTier + 1), 2));
   if (randInt(1, 100) <= 20) offers.push(genShopOffer(Math.min(4, reputationTier + 2), 3));
+  // BATCH 2.1 (item 9) — one-shot gear: single-use, "1S"-tagged items
+  // available a full Tier below what their own Tier would otherwise
+  // require (a Rep Tier 1 "Street Rat" already sees Professional-tier
+  // one-shots), priced 1 BOND under that Tier's normal price (baked into
+  // DATA.oneShotGear's own `price` fields, not recomputed here). 40% chance
+  // per Shop refresh.
+  if (randInt(1, 100) <= 40) {
+    const oneShot = genOneShotOffer(reputationTier, 4);
+    if (oneShot) offers.push(oneShot);
+  }
   return offers;
+}
+
+// BATCH 2.1 (item 9) — reputationTier maps to the Tier *one above* the
+// character's own (DATA.gearTierOrder[reputationTier]: Rep Tier 1 -> index 1
+// "Professional", Tier 2 -> "Military", Tier 3+ -> capped at "Legendary").
+// Returns the same {...item, tier, id} shape genShopOffer() does, so
+// renderShopBox()'s existing Buy handler (which already copies `tags` onto
+// the purchased item) needs no changes to pick up the "1S" tag.
+function genOneShotOffer(reputationTier, idx) {
+  const tierName = DATA.gearTierOrder[Math.min(reputationTier, 3)];
+  const pool = DATA.oneShotGear[tierName];
+  if (!pool || !pool.length) return null;
+  const item = pick(pool);
+  return { ...item, tier: tierName, id: `${item.name}-${Date.now()}-${idx}` };
 }
 
 // allowedTargetFactions (§19.4, optional): restricts the mission Target's
@@ -159,7 +183,7 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
   let assetType = null, assetFlavor = null;
   if (type === "Heist" || type === "Transport" || type === "Hold" || type === "Delay") {
     assetType = pick(["wealth", "rnd", "power"]);
-    assetFlavor = type === "Delay" ? DATA.delayFlavor : pick(DATA.assetTypes[assetType]);
+    assetFlavor = type === "Delay" ? pick(DATA.delayFlavor) : pick(DATA.assetTypes[assetType]); // BATCH 2.1 (item 14)
   }
 
   // 1/2/3 (easy/medium/hard) — drives the BOND payout table (game.js
@@ -170,7 +194,7 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 
   return {
     type,
-    flavor: DATA.missionFlavor[type],
+    flavor: pick(DATA.missionFlavor[type]), // BATCH 2.1 (item 14) — now a 2-line pool
     target,
     location,
     fromLocation,
@@ -232,8 +256,8 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar) {
 
 // The Hub always offers two of these (§19.3). The first is always at/below
 // the player's Reputation Tier; the second has an escalating (with
-// character.restCount) chance of being one tier higher, and a further 10%
-// chance of that being a Special Mission — unless a faction Power struggle
+// character.restCount) chance of being one tier higher, and a further 50%
+// chance (BATCH 2.1, was 10%) of that being a Special Mission — unless a faction Power struggle
 // (§19.7) has a guaranteed war queued up, which always fills the second slot.
 function genMissionBoard(character) {
   const capTier = Math.min(reputationTier(character), 3);
@@ -260,7 +284,10 @@ function genMissionBoard(character) {
     }
     const higherChance = 10 + 10 * character.restCount;
     const wantHigher = randInt(1, 100) <= higherChance;
-    const wantSpecial = wantHigher && randInt(1, 100) <= 10;
+    // BATCH 2.1 (item 2) — raised from 10% to 50%: once the Board's second
+    // slot is already escalating to a higher Tier, a coin flip decides
+    // whether it's a Special Mission instead of an ordinary higher-tier job.
+    const wantSpecial = wantHigher && randInt(1, 100) <= 50;
     jobB = genBoardJob(character, capTier, wantHigher, wantSpecial);
     if (!sameEmployer(jobB)) break;
   }

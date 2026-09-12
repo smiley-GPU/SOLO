@@ -261,3 +261,22 @@ Factions downward trend should be reversed
 check EurCop/SwissGuard heat mechanic
 show if helpers are wounded
 Make a obituary of helper/compi/Amigue death
+
+## BATCH 2.1
+Gear, only one vehicle can be in use, so only one slot for vehicle category, even if you have spares.
+Make probability of SPECIAL MISSION to 50%, if you have higher tier mission.
+Doublecheck that the first job can't be above characters reputational tier.
+Make it visible in mission briefing, who is the employing Faction, and who is the target faction.
+Keep mission type, location, and employer visible in all mission challenge screen.
+Make the latest updates to prompter in a yellow color.
+Make sure that in partial failure -1 BOND result is not chosen, if character has 0 BONDS.
+If character succeeds in check getting 12 or more, give him one boost.
+Make one-shot items, that are available at one tier lower reputation, but cost 1 BOND less to their tier. These have single-shot (1S) tag, and can be used only once and then removed from inventory. Examples "Lucky-Lucky Polymer One-shot pistol" (combat, 1S); "Lucifer Smoke Grenade" (stealth, 1S); "Hades Thermite Grenade" (Combat, AP, 1S); burner ICE and so on. Create couple to each category.
+Create more items, so that each category, each Tier, has 3 models.
+In Downtime, make a 20% chance to "lucky break event" if character has 0 Bonds and damage. These could be:
+    * Higher relationship friend takes you at their place and heal you to max.
+    * Mysterious benefactor (create character type for this, if this person comes back when character got a new rep tier) send you are gift: a single shot item of your lowest skill.
+    * You win a everynight happening "Road-Kill, Faster, Faster(r) Lottery", gain 2 BONDS.
+Night on street gives you always extra boost. Create description where buzzing city and neon light energize you.
+You can use up 2 BOOST to boost any roll, as long as you have BOOST.
+Create a second description to each flavor text.
