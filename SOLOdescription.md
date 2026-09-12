@@ -1319,9 +1319,12 @@ no category and never escalates to SwissGuard.
 job's Location always puts up a checkpoint at both entry and exit —
 `checkpointAgency()` picks EurCop by default, **SwissGuard** if the
 Location is Corpo-category at Heat 4-5 or Crime-category at Heat 5.
-Sequencing (superseding §11's simpler flow): GearUp → checkpoint(pre) →
-encounter(pre) → Steps → encounter(post) → checkpoint(post) → Debrief —
-the checkpoint is the outer gate, Encounters an incidental layer inside it.
+Sequencing (superseding §11's simpler flow; revised by §20.13/BATCH 2.3):
+GearUp → (checkpoint(pre) OR encounter(pre)) → Steps → (checkpoint(post) OR
+encounter(post)) → Debrief — Checkpoint and Encounter are mutually
+exclusive at each boundary, never both (`resolveBoundaryGate()`,
+game.js): Checkpoint (the deterministic Heat gate) is always tried first,
+Encounter only rolls if Checkpoint didn't fire.
 On the **exit** checkpoint only, if any main-sequence step this job already
 came back a Stealth Fail, the roll is skipped entirely and it escalates
 straight to the Fight/Run resolution below — "they already made you."
@@ -1787,6 +1790,32 @@ used to apply a second, independent `-(tier-1)` to every roll based on the
 mission Target's faction Tier (§19.6) — has been removed from
 `computeModifiers()` entirely, since keeping both would penalize the same
 underlying faction strength twice on the same roll.
+
+---
+
+### 20.13 BATCH 2.3: Checkpoint and Random Encounter are mutually exclusive
+
+todo3.md reported EurCop/SwissGuard checkpoints seeming to "loop
+indefinitely." A full trace of the Checkpoint mechanic (§20.7) found its
+own roll → (choice or Fight-or-Run) → end sequence was already correct —
+a Partial/Fail Fight-or-Run always applies its one-time cost and
+unconditionally ends the checkpoint, no re-arming possible. The actual
+cause, confirmed with the player: **Checkpoint and Random Encounter could
+both fire back-to-back at the same job boundary** (entry or exit), since
+whichever of the two got resolved first would, on completion,
+independently roll a chance for the *other* — so a failed Checkpoint's
+Fight-or-Run could be immediately followed by a Random Encounter offering
+its own Stealth/Combat roll, reading exactly like "another fight."
+
+Fixed with one shared gate, `resolveBoundaryGate(stage)` (game.js): tries
+`maybeTriggerCheckpoint(stage)` first (the deterministic, Heat-driven
+gate) and only rolls `maybeTriggerEncounter(stage)` if that didn't fire —
+returning `"checkpoint"`, `"encounter"`, or `null` (neither). All four
+places that used to resolve a boundary (`advanceFromGearUp()`, the
+Steps-complete transition, `finishCheckpoint()`'s `"pre"` branch, and
+`renderEncounter()`'s `"post"` continuation) now go through this one gate
+or its result, so at most one of the two ever fires per boundary, and
+neither one chains into rolling the other afterward.
 
 ---
 

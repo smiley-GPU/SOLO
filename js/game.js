@@ -1403,12 +1403,22 @@ function renderLoadoutSection() {
   return section;
 }
 
-// §20.7 — the mandatory Heat checkpoint is the outer gate, Random Encounters
-// an incidental layer just inside it: GearUp → checkpoint(pre) →
-// encounter(pre) → Steps → encounter(post) → checkpoint(post) → Debrief.
+// §20.7 (BATCH 2.3 fix) — Checkpoint and Random Encounter are mutually
+// exclusive at each job boundary (entry/exit), never both: GearUp →
+// (checkpoint(pre) OR encounter(pre)) → Steps → (checkpoint(post) OR
+// encounter(post)) → Debrief. Checkpoint is the deterministic Heat-driven
+// gate and always gets first chance; Encounter only rolls if Checkpoint
+// didn't fire — todo3.md BATCH 2.3: "should not get a random encounter and
+// a checkpoint in entry or exit" (the two used to be able to chain, one
+// firing right after the other resolved, which read like a Fight-or-Run
+// loop even though neither mechanic actually re-armed itself).
+function resolveBoundaryGate(stage) {
+  if (maybeTriggerCheckpoint(stage)) return "checkpoint";
+  return maybeTriggerEncounter(stage) ? "encounter" : null;
+}
+
 function advanceFromGearUp() {
-  if (maybeTriggerCheckpoint("pre")) return "checkpoint";
-  return maybeTriggerEncounter("pre") ? "encounter" : "steps";
+  return resolveBoundaryGate("pre") || "steps";
 }
 
 function maybeTriggerEncounter(stage) {
@@ -1441,8 +1451,12 @@ function renderEncounter() {
     if (job.encounter.stage === "pre") {
       G.phase = "steps";
     } else {
-      G.phase = maybeTriggerCheckpoint("post") ? "checkpoint" : "debrief";
-      if (G.phase === "debrief") runDebrief();
+      // BATCH 2.3 fix — reaching an Encounter's own resolution at "post"
+      // already means Checkpoint didn't fire at this boundary (Checkpoint
+      // is always tried first, see resolveBoundaryGate), so there's nothing
+      // left to roll here — straight to Debrief, not a second gate.
+      G.phase = "debrief";
+      runDebrief();
     }
     persist();
     render();
@@ -1601,7 +1615,10 @@ function finishCheckpoint() {
   const stage = job.checkpoint.activeStage;
   job.checkpoint.stage = null;
   if (stage === "pre") {
-    G.phase = maybeTriggerEncounter("pre") ? "encounter" : "steps";
+    // BATCH 2.3 fix — Checkpoint firing at "pre" already used up this
+    // boundary's one chance (see resolveBoundaryGate); no separate
+    // Encounter roll afterward.
+    G.phase = "steps";
   } else {
     G.phase = "debrief";
     runDebrief();
@@ -1686,7 +1703,10 @@ function finalizeStep(step) {
 
   job.stepIndex++;
   if (job.stepIndex >= job.steps.length) {
-    G.phase = maybeTriggerEncounter("post") ? "encounter" : (maybeTriggerCheckpoint("post") ? "checkpoint" : "debrief");
+    // BATCH 2.3 fix — Checkpoint tried first, Encounter only if it didn't
+    // fire (resolveBoundaryGate); previously Encounter was checked first
+    // here, and could chain into a Checkpoint roll right after resolving.
+    G.phase = resolveBoundaryGate("post") || "debrief";
     if (G.phase === "debrief") runDebrief();
   }
   persist();

@@ -294,3 +294,8 @@ Change mission parameters in this way:
         NPCs toughness should be same as their Tier and Faction Tier
 Make sure that NPC Tier and Faction tier is not counted twice in mission challenges.
 You can add extra difficulty based on Tier + heat. This difficulty should be between 1-3.
+
+## BATCH 2.3
+The EurCop/SwissGuard  checkpoints seem to loop indefinitely until character dies or succeeds fully.
+Create a cycle where after failed Social or Stealth check character makes only of check: either fight or escape (drive). This check describes how the escape went, and is the last check for this encounter.
+If there is a Authority checkpoint, then it replaces any possible random encounters.
