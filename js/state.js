@@ -111,6 +111,56 @@ function nonDestroyedFactionsIn(character, category) {
   }).map(f => f.name);
 }
 
+// §20.1 — the atk/def modifier formula shared by every faction-vs-faction
+// roll (§19.7's Power struggles and this background-mission roll): each
+// side's count of attributes ≥10, plus +1 if that side's Tier is higher.
+function factionRollMods(attacker, defender) {
+  const atkMod = ["wealth", "rnd", "power"].filter(k => attacker[k] >= 10).length + (attacker.tier > defender.tier ? 1 : 0);
+  const defMod = ["wealth", "rnd", "power"].filter(k => defender[k] >= 10).length + (defender.tier > attacker.tier ? 1 : 0);
+  return atkMod - defMod;
+}
+
+// §20.1 — a lighter background layer than §19.7's Power struggles (which
+// only fire for Power ≥10 attackers and can destroy a faction): once per
+// Debrief, one random faction per category (Corpo/Crime/Nomad) tries a
+// mission of its own against a random same-category rival, using the same
+// roll shape but never destroying anyone — it just moves standings, at a
+// cost on anything short of a clean win.
+function runFactionBackgroundMissions(character) {
+  ["Corpo", "Crime", "Nomad"].forEach(category => {
+    const factions = nonDestroyedFactionsIn(character, category);
+    if (factions.length < 2) return;
+    const actorName = pick(factions);
+    const rivalName = pick(factions.filter(n => n !== actorName));
+    const actor = character.factionStandings[actorName];
+    const rival = character.factionStandings[rivalName];
+
+    const { sum } = roll2d6();
+    const roll = sum + factionRollMods(actor, rival);
+
+    const type = pick(Object.keys(DATA.missionFactionEffects));
+    const effects = DATA.missionFactionEffects[type];
+    const applyEffect = () => {
+      Object.entries(effects.employer).forEach(([param, v]) => adjustFactionParam(character, actorName, param, v));
+      Object.entries(effects.target).forEach(([param, v]) => adjustFactionParam(character, rivalName, param, v));
+    };
+
+    if (roll >= 10) {
+      applyEffect();
+      addLog(character, `${actorName} pulls off a job against ${rivalName} on the quiet.`);
+    } else if (roll >= 7) {
+      applyEffect();
+      adjustFactionParam(character, actorName, "wealth", -1);
+      adjustFactionParam(character, actorName, "power", -1);
+      addLog(character, `${actorName} gets what it wanted from ${rivalName}, but it costs them.`);
+    } else {
+      adjustFactionParam(character, actorName, "wealth", -1);
+      adjustFactionParam(character, actorName, "power", -1);
+      addLog(character, `${actorName}'s move against ${rivalName} falls apart.`);
+    }
+  });
+}
+
 // A destroyed faction drops out of every future draw and its remaining
 // Contacts scatter to Freelance (§19.7).
 function destroyFaction(character, factionName) {
@@ -138,10 +188,8 @@ function runFactionPowerStruggles(character) {
       const targetName = pick(rivals);
       const target = character.factionStandings[targetName];
 
-      const atkMod = ["wealth", "rnd", "power"].filter(k => attacker[k] >= 10).length + (attacker.tier > target.tier ? 1 : 0);
-      const defMod = ["wealth", "rnd", "power"].filter(k => target[k] >= 10).length + (target.tier > attacker.tier ? 1 : 0);
       const { sum } = roll2d6();
-      const roll = sum + atkMod - defMod;
+      const roll = sum + factionRollMods(attacker, target);
 
       if (roll <= 6) {
         attacker.power = Math.max(0, attacker.power - 1);
@@ -340,6 +388,22 @@ function killPerson(character, personId) {
   dead.dead = true;
   character.graveyard.push(dead);
   return dead;
+}
+
+// §20.1 — the persistent wound-then-kill rule for a mission Helper (or,
+// later, the Archenemy home-invasion event): the first wound just marks
+// them (`person.wounded`); a second one anywhere down the line kills them
+// outright via killPerson(). Distinct from a job's own transient `benched`
+// flag, which only lasts the one job.
+function woundPerson(character, person) {
+  if (!person) return;
+  if (person.wounded) {
+    killPerson(character, person.id);
+    addLog(character, `${person.name} doesn't survive this one.`);
+  } else {
+    person.wounded = true;
+    addLog(character, `${person.name} is wounded and won't be much use for a while.`);
+  }
 }
 
 function addLog(character, text) {

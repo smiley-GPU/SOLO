@@ -232,14 +232,23 @@ function genMissionBoard(character) {
   let war = character.pendingWars.length ? character.pendingWars.shift() : null;
   const targetStanding = war && character.factionStandings[war.target];
   if (war && (!targetStanding || targetStanding.destroyed)) war = null;
+
+  // §20.1 — the Board's two jobs always come from different Employers and
+  // different factions (never a repeat of jobA's contact or faction). A
+  // queued war (guaranteed Special Mission) is exempt — it must be exactly
+  // what the Power struggle targeted, so it's never retried against this.
   let jobB;
-  if (war) {
-    jobB = genBoardJob(character, capTier, true, true, war);
-  } else {
+  const sameEmployer = candidate => candidate.employer.id === jobA.employer.id || candidate.employer.faction === jobA.employer.faction;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (war) {
+      jobB = genBoardJob(character, capTier, true, true, war);
+      break;
+    }
     const higherChance = 10 + 10 * character.restCount;
     const wantHigher = randInt(1, 100) <= higherChance;
     const wantSpecial = wantHigher && randInt(1, 100) <= 10;
     jobB = genBoardJob(character, capTier, wantHigher, wantSpecial);
+    if (!sameEmployer(jobB)) break;
   }
   return [jobA, jobB];
 }

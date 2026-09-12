@@ -232,7 +232,8 @@ replaced). Small numbers, 0–20+.
   relationship ≤-3. At Debrief this base is multiplied by an outcome
   multiplier (see §11) and further adjusted by an Ally fee and/or a Side
   Objective bonus. A **Special Mission** (§19.5) adds a flat **+2 BONDS**
-  to this base before the outcome multiplier is applied.
+  to this base before the outcome multiplier is applied. A Crime-category
+  Employer adds a further flat **+1 BOND**, Corpo **+2 BONDS** (§20.1).
 - **`mission.difficulty`** (1/2/3) is set at mission generation:
   `{weak:1, tough:2, elite:3}[worstAdversaryTier]`, bumped to a max of 3 if
   the mission's Time period is "Long" (3).
@@ -794,6 +795,12 @@ Once someone is a Bloodbrother: they unlock **Spend the Night** (§12.3) in
 Briefing and can be **called in for +2 on any Hunt roll**, once per Hunt
 (§13, `bloodbrotherUsed`).
 
+**Revision (§20.4)**: the "one Ally *or* one Hireling" exclusivity above is
+superseded — a job can now bring up to 3 Helpers total, any mix of Ally and
+Hireling, each resolving independently at Debrief with a shared group bonus
+and a persistent two-strike wound rule. §20.4 is canonical where it
+disagrees with the single-slot description above.
+
 ---
 
 ## 15. Side Objective ("More BONDS")
@@ -1087,6 +1094,84 @@ helper** is a new consequence: the job's Hireling or Ally stops
 contributing their bonus (and, for an Ally, forfeits their one-time +2 if
 unused) for the rest of the job — see §19.5 for the harsher Special
 Mission variant, which can kill a Bloodbrother outright instead.
+
+---
+
+## 20. Mission/Tier Faction Economy & Multi-Helper Missions
+
+Design additions layered on top of §19 (`todo3.md`, rows 139+ onward — the
+"SHOP AND TRAINING", "MISSIONS and TIER", "Persons / NPCs", "HEAT EFFECT",
+and "INVENTORY" material). This chapter covers the first slice actually
+implemented — the backend mission/faction economy and the Helper rework —
+not yet the Downtime UI overhaul, NPC specialties, checkpoints, or the
+inventory/loadout system, which remain design-only pending their own
+implementation passes.
+
+### 20.1 Payout by Employer faction Tier
+Extends §5's payout formula: after the relationship adjustment, a flat bonus
+is added based on the Employer's faction's *current* category (§19.6) —
+**+1 BOND** if Crime, **+2 BOND** if Corpo (Nomad, Authority, and Freelance
+Employers: no bonus). Stacks with the existing relationship ±1 and the
+Special Mission +2 (§19.5).
+
+### 20.2 The Mission Board: distinct Employers
+Extends §19.3: the Board's two jobs are never generated with the same
+Employer *or* the same Employer faction — `genMissionBoard()` retries job
+B's generation (bounded, ~5 attempts, falling back to whatever the last
+attempt produced rather than hard-failing) until its Employer differs from
+job A's on both counts. A queued faction-war Special Mission (§19.7) is
+exempt from this retry — it must be exactly what the Power struggle
+targeted.
+
+### 20.3 Background faction missions (supplements §19.7)
+Distinct from §19.7's Power-struggle destroy-attempts (which only fire for
+Power ≥10 attackers, on Rest ticks, and can destroy a faction): once per
+**Debrief**, one random faction in each of Corpo/Crime/Nomad attempts a
+mission of its own against a random same-category rival — a lower-stakes,
+always-on layer of background activity. Uses the same roll shape as §19.7
+(`2d6 + atkMod - defMod`, identical modifier formula) against a randomly
+chosen mission type's standing effects (§19.2's table, applied acting-faction-as-employer/rival-as-target):
+
+- **10+**: the effect applies cleanly.
+- **7-9**: the effect applies, but the acting faction also pays **-1
+  Wealth, -1 Power** for the trouble.
+- **6-**: no effect; the acting faction just pays the same -1/-1 cost.
+
+Never destroys a faction — that stays exclusively a §19.7 outcome.
+
+### 20.4 Helpers: up to 3 per job (supersedes the single Ally/Hireling slot)
+§14's "one Ally *or* one Hireling" limit is replaced by a roster of up to
+**3 concurrent Helpers** per job, freely mixing both kinds:
+
+- **Hire** (unchanged from the old Hireling): 1 BOND, no relationship
+  needed, a passive **+1 to one randomly assigned attribute** for the whole
+  job.
+- **Ally** (unchanged eligibility/cost from §14): a contact at relationship
+  ≥3 — pays 1 BOND from the payout at Debrief if ≥3 but <5, free if ≥5 —
+  granting a **one-time +2 to a single roll of the player's choice**,
+  independently checkable per Helper (bringing more Allies means being able
+  to stack more than one +2 on the same roll, each consuming that Helper's
+  one-time use).
+
+**Group bonus**: 2 or more active (non-benched) Helpers, regardless of
+kind, give the whole crew **+1 to Combat** and **-1 to Stealth** — more
+hands is louder.
+
+**Wounding** (two-strike rule): a Helper hit by the §19.9 `woundHelper`
+fallout, or a Special Mission's Bloodbrother-Ally danger (§19.5), is
+`benched` for the *rest of that job* (stops contributing, and forfeits an
+Ally's unused one-time +2) — a job-scoped flag, reset the next job. But the
+underlying contact also picks up a **persistent** `wounded` flag; if they
+are ever wounded *again* — this job or a future one — they die outright
+(`killPerson`). A Special Mission Fail still kills a Bloodbrother Helper
+immediately regardless of prior wounds (§19.5's harsher rule takes
+precedence over the two-strike count).
+
+At Debrief, every Helper resolves independently: Hire-sourced Helpers get
+the old flat relationship ±1 (Failure/non-Failure); Ally-sourced Helpers
+keep §14's fee/free-and-relationship-delta rules, and a first-time tier-5
+success still tags Bloodbrother and grants +1 Reputation (only once, not on
+every subsequent job with an already-tagged Bloodbrother Helper).
 
 ---
 

@@ -360,12 +360,15 @@ function buildJobFromCandidate(candidate) {
     steps: buildStepSequence(mission),
     stepIndex: 0,
     stepResults: [],
-    hireling: null,
+    // §20.1 — up to 3 concurrent Helpers (was a single Hireling-or-Ally
+    // slot): {person, source:"ally"|"hire", tier:3|5|null, attr, used, benched}.
+    // "ally" = relationship-recruited (rel≥3 fee / rel≥5 free, one-time +2);
+    // "hire" = a paid stranger (1 BOND, passive +1 to their assigned attr).
+    helpers: [],
     pendingResult: null,
     lastResult: null,
     encounter: { pre: { done: false }, post: { done: false }, stage: null },
     outcome: null,
-    ally: null, // relationship-recruited backup (todo3.md Persons) — see renderGearUp
     sideObjective: null // "more BONDS" side job (todo3.md ADD) — see takeSideJob
   };
 }
@@ -699,11 +702,18 @@ function missionFieldRows(mission) {
 // BOND payout is 1 + the mission's difficulty (todo3.md ADD: "Mission
 // payment: 1+ level of difficulty"), not a scaled Cred formula —
 // relationship at this scale is a flat ±1 instead of a percentage.
+// §20.1: a higher-Tier-category Employer also pays a flat bonus — Crime +1,
+// Corpo +2 (Nomad/Authority/Freelance: none).
 function estimatePayout(job) {
   let payout = 1 + (job.mission.difficulty || 1);
   const rel = job.employer.relationship || 0;
   if (rel >= 3) payout += 1;
   else if (rel <= -3) payout = Math.max(1, payout - 1);
+  const employerStanding = G.character.factionStandings[job.employer.faction];
+  if (employerStanding) {
+    if (employerStanding.category === "Corpo") payout += 2;
+    else if (employerStanding.category === "Crime") payout += 1;
+  }
   return payout;
 }
 
@@ -744,38 +754,44 @@ function renderGearUp() {
     wrap.appendChild(row);
   });
 
-  const hireRow = document.createElement("div");
-  hireRow.className = "offer";
-  if (job.hireling) {
-    hireRow.innerHTML = `<span>Hired: ${job.hireling.name} (+1 ${job.hireling.attr})</span>`;
-    wrap.appendChild(hireRow);
-  } else if (!job.ally) {
+  // §20.1 — up to 3 Helpers total, mixing paid strangers (Hire) and
+  // relationship-recruited contacts (Call in a Favor). Already-brought
+  // helpers are listed first, then whatever slots remain.
+  const helperSection = document.createElement("div");
+  helperSection.className = "section";
+  helperSection.innerHTML = `<h3>Helpers (${job.helpers.length}/3)</h3>`;
+
+  job.helpers.forEach(h => {
+    const row = document.createElement("div");
+    row.className = "offer";
+    const perk = h.source === "hire" ? `+1 ${h.attr}` : "+2 to one test of your choice";
+    row.innerHTML = `<span>${h.person.name} (${perk})</span>`;
+    helperSection.appendChild(row);
+  });
+  wrap.appendChild(helperSection);
+
+  if (job.helpers.length < 3) {
+    const hireRow = document.createElement("div");
+    hireRow.className = "offer";
     hireRow.innerHTML = `<span>Hire backup for this job</span><span>1 BOND</span>`;
-    const btn = document.createElement("button");
-    btn.textContent = "Hire";
-    btn.disabled = c.bonds < 1;
-    btn.addEventListener("click", () => {
+    const hireBtn = document.createElement("button");
+    hireBtn.textContent = "Hire";
+    hireBtn.disabled = c.bonds < 1;
+    hireBtn.addEventListener("click", () => {
       c.bonds -= 1;
       const person = getPerson(c, "ally", job.excludeIds);
       const attr = pick(["Combat", "Driving", "Hacking", "Social", "Stealth"]);
-      job.hireling = { ...person, attr };
+      job.helpers.push({ person, source: "hire", tier: null, attr, used: false, benched: false });
       addLog(c, `${person.name} signs on for the job, backing you up on ${attr}.`);
       persist(); render();
     });
-    hireRow.appendChild(btn);
+    hireRow.appendChild(hireBtn);
     wrap.appendChild(hireRow);
-  }
 
-  // Ally recruitment (todo3.md Persons) — call in a favor from a contact
-  // you're square with (relationship ≥3) instead of hiring a stranger.
-  // Shares the same backup slot as the random Hireling above.
-  if (job.ally) {
-    const allyRow = document.createElement("div");
-    allyRow.className = "offer";
-    allyRow.innerHTML = `<span>Bringing along: ${job.ally.person.name} (+2 to one test of your choice)</span>`;
-    wrap.appendChild(allyRow);
-  } else if (!job.hireling) {
-    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy);
+    // Call in a Favor — a contact you're square with (relationship ≥3)
+    // instead of a stranger. Excludes anyone already brought along.
+    const broughtIds = new Set(job.helpers.map(h => h.person.id));
+    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy && !broughtIds.has(p.id));
     if (eligible.length) {
       const allySection = document.createElement("div");
       allySection.className = "section";
@@ -788,7 +804,7 @@ function renderGearUp() {
         const btn = document.createElement("button");
         btn.textContent = "Bring along";
         btn.addEventListener("click", () => {
-          job.ally = { person, tier: free ? 5 : 3, used: false };
+          job.helpers.push({ person, source: "ally", tier: free ? 5 : 3, attr: null, used: false, benched: false });
           addLog(c, `${person.name} agrees to back you up${free ? "" : ", expecting a cut of the payout"}.`);
           persist(); render();
         });
@@ -1042,45 +1058,49 @@ function applyFalloutConsequence(c, job, attr, tier, key, loc) {
   }
 }
 
-// §19.5 — a Bloodbrother riding along as Ally on a Special Mission is at
-// real risk: a Combat Partial wounds them (same "out for the rest of the
-// job" effect as woundJobHelper below), any main-sequence Fail (any attr)
-// kills them outright. Checked per main-sequence step, not side-objective
-// ones or Encounters (neither is "main-sequence").
+// §19.5/§20.1 — any Bloodbrother riding along as a Helper on a Special
+// Mission is at real risk: a Combat Partial wounds them (same "out for the
+// rest of the job" effect as woundJobHelper below), any main-sequence Fail
+// (any attr) kills them outright. Checked per main-sequence step, not
+// side-objective ones or Encounters (neither is "main-sequence") — and
+// against every Bloodbrother Helper present, not just one.
 function applySpecialMissionBloodbrotherDanger(c, job, res) {
-  if (!job.mission.special || !job.ally) return;
-  const person = job.ally.person;
-  if (!person.bloodbrother) return;
-  // A Fail kills them outright regardless of whether the generic §19.9
-  // fallout already wounded them this same step (woundJobHelper) — Fail
-  // takes priority over "already wounded", so check it before that guard.
-  if (res.tier === "fail") {
-    addLog(c, `${person.name} doesn't walk away from this one. Special Missions don't forgive.`);
-    killPerson(c, person.id);
-    job.ally = null;
-    return;
-  }
-  if (job.ally.wounded) return; // the Partial-wound rule below only ever applies once
-  if (res.usedAttr === "Combat" && res.tier === "partial") {
-    job.ally.wounded = true;
-    job.ally.used = true;
-    addLog(c, `${person.name} takes a bad hit backing you up on this one — they're out for the rest of the job.`);
-  }
+  if (!job.mission.special || !job.helpers.length) return;
+  job.helpers
+    .filter(h => h.person.bloodbrother)
+    .forEach(h => {
+      // A Fail kills them outright regardless of whether the generic §19.9
+      // fallout already benched them this same step (woundJobHelper) — Fail
+      // takes priority over "already benched", so check it before that guard.
+      if (res.tier === "fail") {
+        addLog(c, `${h.person.name} doesn't walk away from this one. Special Missions don't forgive.`);
+        killPerson(c, h.person.id);
+        job.helpers = job.helpers.filter(x => x !== h);
+        return;
+      }
+      if (h.benched) return; // the Partial-wound rule below only ever applies once
+      if (res.usedAttr === "Combat" && res.tier === "partial") {
+        h.benched = true;
+        h.used = true;
+        addLog(c, `${h.person.name} takes a bad hit backing you up on this one — they're out for the rest of the job.`);
+      }
+    });
 }
 
-// §19.9 — a wounded Hireling/Ally stops contributing their bonus (and an
-// Ally forfeits their unused one-time +2) for the rest of the job. Ally
-// takes the hit first if both are present. Special Mission Bloodbrothers
-// have their own harsher rule — see applySpecialMissionBloodbrotherDanger() above.
+// §19.9/§20.1 — a benched Helper stops contributing their bonus (and, if
+// they're an "ally"-source Helper, forfeits their unused one-time +2) for
+// the rest of the job, and takes the persistent wound-then-kill hit
+// (woundPerson, state.js) that follows them into future jobs. Picks one
+// random still-active Helper — Special Mission Bloodbrothers have their own
+// harsher rule, see applySpecialMissionBloodbrotherDanger() above.
 function woundJobHelper(c, job) {
-  if (job.ally && !job.ally.wounded) {
-    job.ally.wounded = true;
-    job.ally.used = true;
-    addLog(c, `${job.ally.person.name} takes a hit backing you up — they're out for the rest of this job.`);
-  } else if (job.hireling && !job.hireling.wounded) {
-    job.hireling.wounded = true;
-    addLog(c, `${job.hireling.name} takes a hit — no more use to you tonight.`);
-  }
+  const active = job.helpers.filter(h => !h.benched);
+  if (!active.length) return;
+  const h = pick(active);
+  h.benched = true;
+  h.used = true;
+  addLog(c, `${h.person.name} takes a hit backing you up — they're out for the rest of this job.`);
+  woundPerson(c, h.person);
 }
 
 // ---------- Shared Challenge UI (roll block, used by steps + encounters) ----------
@@ -1111,35 +1131,40 @@ function renderChallenge(container, step, onContinue, ctx) {
     const boostOption = c.boost >= 1
       ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
       : "";
-    // Ally Assist (todo3.md Persons) — a recruited contact's one-time +2 to
-    // a single test, consumed on the roll it's checked for. Not offered once
-    // wounded (§19.9) — that forfeits the unused checkbox for the job.
-    const allyOption = job && job.ally && !job.ally.used
-      ? `<label class="boost-toggle"><input type="checkbox" class="ally-check" /> ${job.ally.person.name}: +2 to this roll</label>`
-      : "";
-    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${allyOption}<div class="mods"></div>`;
+    // Ally Assist (todo3.md Persons, §20.1: now up to 3 possible) — each
+    // not-yet-used, not-benched "ally" Helper's one-time +2 to a single
+    // test, consumed on the roll it's checked for. Independent checkboxes —
+    // bringing more helpers means being able to stack more than one.
+    const assistHelpers = job ? job.helpers.filter(h => h.source === "ally" && !h.used && !h.benched) : [];
+    const assistOptions = assistHelpers.map(h =>
+      `<label class="boost-toggle"><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /> ${h.person.name}: +2 to this roll</label>`
+    ).join("");
+    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
     const boostCheck = block.querySelector(".boost-check");
-    const allyCheck = block.querySelector(".ally-check");
+    const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
+    const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
 
     const refreshMods = () => {
-      const mods = computeModifiers(attr, boostCheck && boostCheck.checked, allyCheck && allyCheck.checked, job);
+      const mods = computeModifiers(attr, boostCheck && boostCheck.checked, checkedAssistIds(), job);
       modsEl.innerHTML = mods.length
         ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
         : `<span class="chip">no modifiers</span>`;
     };
     refreshMods();
     if (boostCheck) boostCheck.addEventListener("change", refreshMods);
-    if (allyCheck) allyCheck.addEventListener("change", refreshMods);
+    assistChecks.forEach(el => el.addEventListener("change", refreshMods));
 
     const rollBtn = document.createElement("button");
     rollBtn.textContent = `Roll ${attr}`;
     rollBtn.addEventListener("click", () => {
       const spendBoost = !!(boostCheck && boostCheck.checked);
-      const spendAlly = !!(allyCheck && allyCheck.checked);
-      const mods = computeModifiers(attr, spendBoost, spendAlly, job);
+      const assistIds = checkedAssistIds();
+      const mods = computeModifiers(attr, spendBoost, assistIds, job);
       if (spendBoost) c.boost -= 1;
-      if (spendAlly) job.ally.used = true;
+      if (job && assistIds.length) {
+        job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
+      }
       const result = resolve(c.attrs[attr], mods);
       result.usedAttr = attr;
       step.usedAttr = attr;
@@ -1163,13 +1188,15 @@ function attrAvailable(c, job, attr) {
 }
 
 // job may be null (a Rest sub-flow's Challenge has no accepted job to pull
-// job/location/ally modifiers from — see renderChallenge's ctx param).
-function computeModifiers(attr, spendBoost, spendAlly, job) {
+// job/location/helper modifiers from — see renderChallenge's ctx param).
+// assistIds (§20.1, optional): ids of Helpers whose one-time +2 is spent on
+// this roll — was a single boolean (`spendAlly`) back when there was only
+// ever one recruited Ally; now there can be up to 3.
+function computeModifiers(attr, spendBoost, assistIds, job) {
   const c = G.character;
   const mods = [];
   const gearBonus = bestGearBonus(c, attr);
   if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
-  if (job && job.hireling && !job.hireling.wounded && job.hireling.attr === attr) mods.push({ label: `Hireling`, value: 1 });
   if (job && (attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
   if (job && (attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
     const p = tierPenalty(job.mission.worstTier);
@@ -1183,8 +1210,25 @@ function computeModifiers(attr, spendBoost, spendAlly, job) {
   }
   // §19.5 — every Challenge on a Special Mission carries an extra -1.
   if (job && job.mission && job.mission.special) mods.push({ label: "Special Mission", value: -1 });
+  // §20.1 — up to 3 Helpers: each "hire" Helper gives a passive +1 to their
+  // assigned attr; 2+ active (non-benched) Helpers of any kind give the
+  // whole crew +1 Combat / -1 Stealth.
+  if (job && job.helpers) {
+    job.helpers.forEach(h => {
+      if (!h.benched && h.source === "hire" && h.attr === attr) mods.push({ label: h.person.name, value: 1 });
+    });
+    const activeCount = job.helpers.filter(h => !h.benched).length;
+    if (activeCount >= 2 && attr === "Combat") mods.push({ label: "Crew (2+ helpers)", value: 1 });
+    else if (activeCount >= 2 && attr === "Stealth") mods.push({ label: "Crew (2+ helpers)", value: -1 });
+  }
   if (spendBoost) mods.push({ label: "Boost", value: 1 });
-  if (spendAlly && job && job.ally) mods.push({ label: job.ally.person.name, value: 2 });
+  if (job && assistIds && assistIds.length) {
+    job.helpers.forEach(h => {
+      if (h.source === "ally" && !h.used && !h.benched && assistIds.includes(h.person.id)) {
+        mods.push({ label: h.person.name, value: 2 });
+      }
+    });
+  }
   const harmCount = c.health.filter(h => h).length;
   if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
   else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
@@ -1312,31 +1356,32 @@ function runDebrief() {
     }
   }
 
-  if (job.hireling) {
-    nudgeRelationship(c, job.hireling.id, relAmp(outcome === "Failure" ? -1 : 1));
-  }
-
-  // Ally recruitment resolution (todo3.md Persons). job.ally can be null
-  // here even if one was brought along — a Special Mission Fail kills a
-  // Bloodbrother Ally mid-job (§19.5, see applySpecialMissionBloodbrotherDanger).
-  if (job.ally) {
+  // §20.1 — Helper resolution, up to 3 of them. A Special Mission Fail can
+  // already have removed a Bloodbrother Helper mid-job (§19.5, see
+  // applySpecialMissionBloodbrotherDanger) — job.helpers only holds whoever
+  // is left standing by the time Debrief runs.
+  job.helpers.forEach(h => {
+    if (h.source === "hire") {
+      nudgeRelationship(c, h.person.id, relAmp(outcome === "Failure" ? -1 : 1));
+      return;
+    }
     if (outcome !== "Failure") {
-      nudgeRelationship(c, job.ally.person.id, relAmp(1));
-      if (job.ally.tier === 3) {
+      nudgeRelationship(c, h.person.id, relAmp(1));
+      if (h.tier === 3) {
         const fee = Math.min(c.bonds, 1);
         c.bonds -= fee;
         totalPayout -= fee;
-        addLog(c, `${job.ally.person.name} takes ${fee} BOND off the top for the help.`);
-      } else {
-        tagBloodbrother(c, job.ally.person);
+        addLog(c, `${h.person.name} takes ${fee} BOND off the top for the help.`);
+      } else if (!h.person.bloodbrother) {
+        tagBloodbrother(c, h.person);
         gainReputation(c, 1); // §19.1
-        addLog(c, `${job.ally.person.name} watches your back, no questions asked. You're blood now.`);
-        addLog(c, `Reputation +1 — "Friend of ${job.ally.person.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
+        addLog(c, `${h.person.name} watches your back, no questions asked. You're blood now.`);
+        addLog(c, `Reputation +1 — "Friend of ${h.person.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
       }
     } else {
-      nudgeRelationship(c, job.ally.person.id, relAmp(-2));
+      nudgeRelationship(c, h.person.id, relAmp(-2));
     }
-  }
+  });
 
   // Side objective resolution (todo3.md ADD: "more BONDS" button) — pays
   // +2 BONDS only if neither of its 2 appended steps came back a Fail.
@@ -1358,6 +1403,11 @@ function runDebrief() {
   }
 
   decayOtherLocations(c, job.location.name);
+
+  // §20.1 — one background faction-vs-faction mission per category, every
+  // Debrief (distinct from §19.7's Rest-tick-only Power-struggle destroy
+  // attempts, which only fire for Power ≥10 attackers).
+  runFactionBackgroundMissions(c);
 
   job.outcome = outcome;
   job.payout = totalPayout;
