@@ -113,6 +113,12 @@ header h1 {
   margin-top: 6px; font-size: 12px; color: var(--danger);
   border: 1px solid var(--danger); border-radius: 4px; padding: 4px 6px; display: inline-block;
 }
+.cyber-badges { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.cyber-badge {
+  font-size: 11px; color: var(--danger);
+  border: 1px solid var(--danger); border-radius: 10px; padding: 1px 6px;
+}
+.cyber-mod { color: var(--danger); font-weight: bold; margin-left: 2px; }
 #sheet ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
 #sheet li { padding: 2px 0; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #sheet li em { color: var(--muted); font-style: normal; }

@@ -300,14 +300,22 @@ const DATA = {
   },
 
   // Repair options for a Permanent Injury (gamedesc.md §1 Health). Cybernetic
-  // is the cheap, standard fix but leaves a lasting rough edge; Biovat costs
-  // more but grows back clean.
+  // is the cheap, standard fix but leaves a lasting piece of chrome behind
+  // (see cyberneticParts below); Biovat costs more but grows back clean.
   // BATCH 2.1 (item 14) — each flavor is now a 2-entry pool; renderHub()
   // (game.js) picks one for the button's title each render.
   repairs: [
-    { name: "Cybernetic Replacement", price: 2, sideEffect: true, flavor: ["Quick and cheap. It works — but it's never quite the same.", "Off-the-shelf chrome, bolted on fast. You'll feel the seam forever."] },
-    { name: "Biovat Regrowth", price: 3, sideEffect: false, flavor: ["Slow and expensive. Grown clean, no compromises.", "A long, quiet stretch in the tank — but you come out whole, not patched."] }
+    { name: "Cybernetic Replacement", price: 2, cybernetic: true, flavor: ["Quick and cheap. It works — but it's never quite the same.", "Off-the-shelf chrome, bolted on fast. You'll feel the seam forever."] },
+    { name: "Biovat Regrowth", price: 3, flavor: ["Slow and expensive. Grown clean, no compromises.", "A long, quiet stretch in the tank — but you come out whole, not patched."] }
   ],
+
+  // BATCH 2.0 (todo3.md) — "count cybernetic replacements — getting to
+  // borg": every Cybernetic Replacement repair bolts on a random one of
+  // these. Arms+legs together add Combat and a point of chrome armor;
+  // Faceplate/Cyberlung each add a point of chrome armor on their own,
+  // and a Faceplate also costs Social — see cyberAttrModifier()/
+  // cyberArmorCount() in state.js.
+  cyberneticParts: ["Cyberarm", "Cyberleg", "Faceplate", "Cyberlung"],
 
   encounterFlavor: [
     "A patrol rounds the corner right into your path.",

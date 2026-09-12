@@ -1698,6 +1698,55 @@ flavor, Encounter flavor, obituaries) are untouched.
 
 ---
 
+### 20.11 A faction-war fix, and cybernetic replacements ("getting to borg")
+
+A verification pass over `todo3.md` found the whole file already implemented
+except one bug and one unimplemented line; this closes both.
+
+**Faction Power-struggle bugfix (§19.7).** A Power struggle's 7-9 result
+queues a guaranteed Special Mission (`job.mission.forcedFactionWar =
+{attacker, target}`, set in `genBoardJob()`/`genMissionBoard()`,
+engine.js) that's supposed to destroy the target faction outright if the
+mission succeeds. The field was set but never read. `runDebrief()`
+(game.js) now checks it alongside the existing Assassination-success kill:
+on a non-Failure outcome, `destroyFaction(c, forcedFactionWar.target)`
+fires and logs which faction paid for the war.
+
+**Cybernetic replacements (BATCH 2.0, "count cybernetic replacements —
+getting to borg").** Previously unimplemented; the mechanic below is per the
+player's own spec. Repairing a Permanent Injury with **Cybernetic
+Replacement** (§4.4) now bolts on a random part from
+`DATA.cyberneticParts` (`character.cyberneticReplacements`, an array,
+displayed as chips under Health on the sheet) instead of the old flat
+random attribute -1:
+
+- **Cyberarm** and **Cyberleg** together: **+1 Combat** (shown as a red
+  badge next to the stat, `cyberAttrModifier()`, state.js) and a point of
+  chrome armor.
+- **Faceplate** and **Cyberlung** each add a point of chrome armor on
+  their own; **Faceplate** also costs **-1 Social** (red badge).
+- Chrome armor (`cyberArmorCount()`) is a second, non-depleting 50%-chance
+  absorb check in `applyHarm()` (state.js), tried after carried gear armor
+  and before a Harm box is actually marked — unlike gear, it never breaks.
+- The Combat/Social modifier is folded into every place that already
+  builds a Combat/Social roll: `computeModifiers()` (Steps, Encounters,
+  Checkpoints, Night on the Street, Spend the Night), the Hunt's
+  `buildMods`, Coffin Hotel's healing roll, and the Apartment raid's
+  haggling roll.
+- **Cyberpsycho risk**: any Harm box actually landing during the job flow
+  (Steps/Encounters/Checkpoints — not Rest or the Archenemy Hunt, which
+  are separate systems) rolls `2d6 + cyberneticReplacements.length`
+  (`maybeTriggerCyberpsycho()`, game.js) if the character has any chrome
+  at all: **6-** nothing happens; **7-9** every mission Adversary, the
+  mission Target, and every current Helper are killed outright (each
+  killed Helper also costs -1 relationship with every other contact of
+  their faction), then the job continues to Debrief as normal — a
+  successful mission still pays; **10+** the Employer dies too and the run
+  ends immediately (`G.phase = "death"`, "SwissGuard fries you with a
+  microwave cannon"), bypassing Debrief the same way a second Down does.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,

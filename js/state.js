@@ -32,6 +32,7 @@ function defaultCharacter(name, profession, turf) {
     boost: trf.boostBonus || 0, // spendable pool — see bestGearBonus/renderChallenge (game.js)
     health: [false, false, false], // true = Harm marked
     permanentInjury: false, // going Down leaves this until a repair is paid for
+    cyberneticReplacements: [], // BATCH 2.0 — one entry per Cybernetic Replacement repair; see cyberAttrModifier()
     bonds: trf.bonds, // BOND — the abstracted currency (todo3.md), replaces Cred. Win at 20.
     gear, // §20.8 — carried defaults computed below, once the full character object exists
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
@@ -259,6 +260,7 @@ function migrateCharacter(character) {
   });
   if (!character.nextPersonId) character.nextPersonId = maxId + 1;
   if (typeof character.permanentInjury !== "boolean") character.permanentInjury = false;
+  if (!character.cyberneticReplacements) character.cyberneticReplacements = []; // BATCH 2.0
 
   if (typeof character.boost !== "number") {
     // Old saves had per-track Rep instead of a single BOOST pool — carry the
@@ -590,6 +592,30 @@ function healBox(character) {
 // sets how many hits an armor item can take, not the odds. This is the one
 // path anything should use in place of a bare markHarm() call.
 const ARMOR_ABSORB_CHANCE = 0.5;
+
+// BATCH 2.0 (todo3.md) — "count cybernetic replacements — getting to borg".
+// hasCyberPart/cyberArmorCount/cyberAttrModifier are the three read-only
+// helpers everything else (applyHarm below, and every Combat/Social
+// modifier list in game.js) builds on.
+function hasCyberPart(character, part) {
+  return character.cyberneticReplacements.includes(part);
+}
+function cyberArmorCount(character) {
+  const limbBonus = hasCyberPart(character, "Cyberarm") && hasCyberPart(character, "Cyberleg") ? 1 : 0;
+  const faceplates = character.cyberneticReplacements.filter(p => p === "Faceplate").length;
+  const lungs = character.cyberneticReplacements.filter(p => p === "Cyberlung").length;
+  return limbBonus + faceplates + lungs;
+}
+function cyberAttrModifier(character, attr) {
+  if (attr === "Combat") {
+    return hasCyberPart(character, "Cyberarm") && hasCyberPart(character, "Cyberleg") ? 1 : 0;
+  }
+  if (attr === "Social") {
+    return -character.cyberneticReplacements.filter(p => p === "Faceplate").length;
+  }
+  return 0;
+}
+
 function applyHarm(character) {
   const armor = character.gear.find(item => item.carried && item.armor > 0);
   if (armor && Math.random() < ARMOR_ABSORB_CHANCE) {
@@ -600,6 +626,12 @@ function applyHarm(character) {
       addLog(character, `${armor.name} is wrecked — it won't stop another one.`);
     }
     return false; // absorbed clean — no Health box marked, so never "wentDown" here
+  }
+  // BATCH 2.0 — a Faceplate/Cyberlung/arm+leg pair gives a second, permanent
+  // (non-depleting) absorb chance once carried gear armor doesn't apply.
+  if (cyberArmorCount(character) > 0 && Math.random() < ARMOR_ABSORB_CHANCE) {
+    addLog(character, "Your chrome takes the hit for you.");
+    return false;
   }
   const down = markHarm(character);
   // §20.9 (BATCH 2.0) — every non-absorbed hit states its effect plainly,

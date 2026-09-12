@@ -419,7 +419,13 @@ function renderStocksBox(active) {
 function renderSheet() {
   const c = G.character;
   if (!c) { els.sheet.innerHTML = ""; return; }
-  const attrRows = Object.entries(c.attrs).map(([k, v]) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`).join("");
+  // BATCH 2.0 — a cybernetic Combat/Social modifier shows as a small red
+  // badge next to the base attribute (cyberAttrModifier(), state.js).
+  const attrRows = Object.entries(c.attrs).map(([k, v]) => {
+    const cyberMod = cyberAttrModifier(c, k);
+    const modBadge = cyberMod ? ` <span class="cyber-mod">${cyberMod > 0 ? "+" : ""}${cyberMod}</span>` : "";
+    return `<div class="stat"><span>${k}</span><span>${v}${modBadge}</span></div>`;
+  }).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
   const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name} <em>(${g.tier || "Street"}${g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : ""})</em></li>`).join("") : "<li><em>none</em></li>";
   // "People" is the full recurring-cast pool, not just friendly contacts —
@@ -449,6 +455,10 @@ function renderSheet() {
   // The permanent 12-location map (gamedesc.md §6) — fills in as you visit.
   const locationsList = Object.entries(c.locations).map(([name, loc]) => `<li>${name} ${heatBarHtml(loc.heat)}</li>`).join("");
   const injuryBadge = c.permanentInjury ? `<div class="injury-badge">⚠ Permanent Injury — needs repair</div>` : "";
+  // BATCH 2.0 — cybernetic replacements, shown under Health as small chips.
+  const cyberBadges = c.cyberneticReplacements.length
+    ? `<div class="cyber-badges">${c.cyberneticReplacements.map(p => `<span class="cyber-badge">${p}</span>`).join("")}</div>`
+    : "";
   // Rest clock (todo3.md) — 4 Rest uses builds toward an Archenemy Hunt.
   const restClock = c.restCount > 0
     ? `<div class="section"><h3>Someone's Asking Around</h3><span class="heatbar">${Array.from({ length: 4 }, (_, i) => `<span class="heatseg${i < c.restCount ? " filled" : ""}"></span>`).join("")}</span></div>`
@@ -457,7 +467,7 @@ function renderSheet() {
   els.sheet.innerHTML = `
     <div class="sheet-header"><h2>${c.name}</h2><button id="retire-btn" class="danger btn-small">Retire</button></div>
     <div class="tag">${c.profession} / ${c.turf}</div>
-    <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${injuryBadge}</div>
+    <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${cyberBadges}${injuryBadge}</div>
     <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
@@ -570,10 +580,19 @@ function renderHub() {
         c.bonds -= r.price;
         c.health = [false, false, false];
         c.permanentInjury = false;
-        if (r.sideEffect) {
-          const attr = pick(Object.keys(c.attrs));
-          c.attrs[attr] = Math.max(1, c.attrs[attr] - 1);
-          addLog(c, `${r.name} patches you up, but the ${attr} side never sits quite right again (${attr} -1).`);
+        if (r.cybernetic) {
+          // BATCH 2.0 — "count cybernetic replacements — getting to borg":
+          // a random chrome part goes in instead of the old flat attribute
+          // penalty — see cyberAttrModifier()/cyberArmorCount() (state.js).
+          const part = pick(DATA.cyberneticParts);
+          c.cyberneticReplacements.push(part);
+          const partFlavor = {
+            Cyberarm: "A cyberarm — steadier hands, heavier fists.",
+            Cyberleg: "A cyberleg — you'll never quite walk soft again.",
+            Faceplate: "A faceplate — plated and unreadable, but people notice.",
+            Cyberlung: "A cyberlung — you don't get winded anymore. You also don't quite breathe."
+          }[part];
+          addLog(c, `${r.name} goes in clean. ${partFlavor}`);
         } else {
           addLog(c, `${r.name} grows you back clean. No compromises.`);
         }
@@ -852,7 +871,7 @@ function restCoffinHotel() {
   const c = G.character;
   c.bonds -= 1;
   const { sum } = roll2d6();
-  const total = sum + c.attrs.Combat + bestHealBonus(c);
+  const total = sum + c.attrs.Combat + bestHealBonus(c) + cyberAttrModifier(c, "Combat");
   const openWounds = c.health.filter(h => h).length;
   if (total >= 10) {
     if (openWounds > 0) { healBox(c); addLog(c, `You crash hard in a coffin pod and wake up steadier (rolled ${total}).`); }
@@ -1103,7 +1122,7 @@ function resolveApartmentRaid(c, job) {
   const agency = checkpointAgency(job.location, c.factionStandings) || "EurCop";
   const gearBonus = bestGearBonus(c, "Social");
   const { sum } = roll2d6();
-  const total = sum + c.attrs.Social + (gearBonus ? gearBonus.bonus : 0);
+  const total = sum + c.attrs.Social + (gearBonus ? gearBonus.bonus : 0) + cyberAttrModifier(c, "Social");
 
   if (total >= 10) {
     addLog(c, `${agency} comes knocking, but you talk them off your doorstep clean.`);
@@ -1533,7 +1552,7 @@ function finishCheckpointCombat() {
 // next-step logic.
 function applyCheckpointDamage(c, job, kind) {
   if (kind === "harm") {
-    return handleGoingDown(c, applyHarm(c));
+    return applyMissionHarm(c, job);
   } else if (kind === "vehicle") {
     // §20.8 — only a carried vehicle can take this hit.
     const vehicles = c.gear.filter(g => g.carried && g.attr === "Driving");
@@ -1711,6 +1730,56 @@ function applyOutcome(c, job, attr, tier) {
   }
 }
 
+// BATCH 2.0 (todo3.md) — the one path a mission-scoped Harm hit should use:
+// applies the hit, handles permadeath as before, and — only if a Harm box
+// was actually marked (not absorbed by carried armor or chrome) — rolls the
+// cyberpsycho risk. Returns true if either ended the run.
+function applyMissionHarm(c, job) {
+  const before = c.health.filter(Boolean).length;
+  if (handleGoingDown(c, applyHarm(c))) return true;
+  if (c.health.filter(Boolean).length > before) return maybeTriggerCyberpsycho(c, job);
+  return false;
+}
+
+// BATCH 2.0 (todo3.md) — "count cybernetic replacements — getting to borg".
+// Only ever checked on a Harm box actually landing during the job flow
+// (Steps/Encounters/Checkpoints, via applyMissionHarm above) — Rest and the
+// Archenemy Hunt are their own separate systems and sit outside this.
+// Returns true if this ended the run (10+, killed by SwissGuard).
+function maybeTriggerCyberpsycho(c, job) {
+  if (!c.cyberneticReplacements.length) return false;
+  const { sum } = roll2d6();
+  const roll = sum + c.cyberneticReplacements.length;
+  if (roll <= 6) {
+    addLog(c, "Red creeps in at the edges of your vision. You grit your teeth and hold the line.");
+    return false;
+  }
+
+  if (roll >= 10) {
+    addLog(c, "Something snaps behind your eyes. The red haze doesn't lift this time.");
+    if (job.employer) killPerson(c, job.employer.id);
+    if (job.mission.target) killPerson(c, job.mission.target.id);
+    (job.mission.adversaries || []).forEach(a => killPerson(c, a.id));
+    job.helpers.forEach(h => killPerson(c, h.person.id));
+    addLog(c, "SwissGuard finds you standing over the wreckage and fries you where you stand with a microwave cannon.");
+    G.phase = "death";
+    return true;
+  }
+
+  // 7-9 — everyone opposing you tonight dies, and so does anyone standing
+  // too close, but you come back to yourself once the mission's over.
+  addLog(c, "The red haze takes you. When it clears, everyone standing against you tonight is dead — and so is anyone who was standing too close.");
+  (job.mission.adversaries || []).forEach(a => killPerson(c, a.id));
+  if (job.mission.target) killPerson(c, job.mission.target.id);
+  job.helpers.slice().forEach(h => {
+    killPerson(c, h.person.id);
+    c.contacts.forEach(p => { if (p.faction === h.person.faction) nudgeRelationship(c, p.id, -1); });
+  });
+  if (job.helpers.length) addLog(c, "Word of what you did to your own help gets back to their people fast.");
+  job.helpers = [];
+  return false;
+}
+
 // Returns true if this call ended the run in death (handleGoingDown,
 // BATCH 2.0) — applyOutcome's caller must stop applying any further
 // consequence keys in the same bundle and bail.
@@ -1720,7 +1789,7 @@ function applyFalloutConsequence(c, job, attr, tier, key, loc) {
     case "harm2": {
       const hits = key === "harm2" ? 2 : 1;
       for (let i = 0; i < hits; i++) {
-        if (handleGoingDown(c, applyHarm(c))) return true;
+        if (applyMissionHarm(c, job)) return true;
         if (isDown(c)) break; // fully Down but an Amigue saved you — no more hits to land
       }
       return false;
@@ -1954,6 +2023,10 @@ function computeModifiers(attr, spendBoost, assistIds, job) {
   const mods = [];
   const gearBonus = bestGearBonus(c, attr);
   if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
+  // BATCH 2.0 — cybernetic replacements (§ "getting to borg"): +1 Combat for
+  // an arm+leg pair, -1 Social per Faceplate.
+  const cyberMod = cyberAttrModifier(c, attr);
+  if (cyberMod) mods.push({ label: "Cyberware", value: cyberMod });
   if (job && (attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
   if (job && (attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
     const p = tierPenalty(job.mission.worstTier);
@@ -2106,6 +2179,15 @@ function runDebrief() {
     if (outcome !== "Failure") {
       killPerson(c, job.mission.target.id);
       addLog(c, `${job.mission.target.name} won't be a problem for anyone again.`);
+      // §19.7 — a guaranteed Special Mission queued by a faction Power
+      // struggle's 7-9 result destroys the target faction outright on
+      // success (todo3.md FACTIONS: "if the mission succeeds then it
+      // destroys the target faction").
+      if (job.mission.forcedFactionWar) {
+        const { attacker, target } = job.mission.forcedFactionWar;
+        destroyFaction(c, target);
+        addLog(c, `${attacker} gets what it paid for — ${target} is finished.`);
+      }
     } else if (job.stepResults.some(r => r.attr === "Stealth" && r.tier === "fail")) {
       // A botched hit where you were also spotted leaves the target alive
       // and gunning for you (todo3.md Persons).
@@ -2464,6 +2546,8 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     const mods = [];
     const gearBonus = bestGearBonus(c, attr);
     if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
+    const cyberMod = cyberAttrModifier(c, attr); // BATCH 2.0
+    if (cyberMod) mods.push({ label: "Cyberware", value: cyberMod });
     const tp = tierPenalty(hunt.archenemy.tier);
     if (tp) mods.push({ label: hunt.archenemy.name, value: tp });
     if (extraBonus) mods.push({ label: "Caught them off guard", value: extraBonus });
