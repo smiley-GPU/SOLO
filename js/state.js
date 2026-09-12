@@ -23,6 +23,7 @@ function defaultCharacter(name, profession, turf) {
   const trf = TURFS[turf];
   prof.boosts.forEach(a => attrs[a] = Math.min(3, attrs[a] + 1));
   attrs[trf.boost] = Math.min(3, attrs[trf.boost] + 1);
+  const factionStandings = defaultFactionStandings();
 
   return {
     name, profession, turf,
@@ -34,11 +35,11 @@ function defaultCharacter(name, profession, turf) {
     gear: [...prof.gear, ...trf.gear].map(g => ({ ...g, tier: g.tier || "Street" })),
     // The people pool: every Employer/Target/Adversary/Hireling ever drawn
     // or generated lives here (not just friendly contacts). See getPerson().
-    contacts: [{ id: 1, name: genName(), faction: trf.contactFaction, profession: "Fixer", relationship: 1, favor: turf === "Corpo" ? -1 : 0 }],
+    contacts: [{ id: 1, name: genName(), faction: trf.contactFaction, profession: "Fixer", relationship: 1, favor: turf === "Corpo" ? -1 : 0, factionTier: factionStandings[trf.contactFaction].tier }],
     nextPersonId: 2,
     graveyard: [], // people killed off by mission outcomes; never redrawn
     locations: {}, // name -> {area, faction, heat}
-    factionStandings: defaultFactionStandings(),
+    factionStandings,
     factionRelations: {}, // lazy pairwise map, see nudgeFactionRelation()
     restCount: 0, // Coffin Hotel / Night on the Street uses since the last Hunt (todo3.md)
     archenemyId: null, // locked in on the first Rest — see processRestTick() in game.js
@@ -254,6 +255,13 @@ function migrateCharacter(character) {
   if (!character.factionStandings) character.factionStandings = defaultFactionStandings();
   if (!character.factionRelations) character.factionRelations = {};
 
+  // §20.6 — backfill factionTier on any contact created before this field
+  // existed, from their faction's *current* Tier (a one-time snapshot, same
+  // as a freshly generated NPC would get).
+  character.contacts.forEach(p => {
+    if (typeof p.factionTier !== "number") assignFactionTier(character, p);
+  });
+
   (character.gear || []).forEach(item => {
     if (!item.tier) item.tier = "Street";
   });
@@ -313,10 +321,20 @@ function getPerson(character, roleCategory, excludeIds, allowedFactionNames) {
     person.id = character.nextPersonId++;
     person.relationship = roleCategory === "hostile" ? -randInt(1, 2) : 0;
     person.favor = 0;
+    assignFactionTier(character, person);
     character.contacts.push(person);
   }
   excludeIds.add(person.id);
   return person;
+}
+
+// §20.6 — every NPC gets a Tier from their faction's *current* Tier at the
+// moment they're created (Freelance → Tier 1), a plain field distinct from
+// the "weak"/"tough"/"elite" combat-tier string Adversaries/Archenemies
+// carry (tierPenalty()) — not kept in sync afterward.
+function assignFactionTier(character, person) {
+  const standing = character.factionStandings[person.faction];
+  person.factionTier = standing ? standing.tier : 1;
 }
 
 // -- Employer/Target faction pairing (§19.4) --------------------------------
@@ -359,6 +377,7 @@ function castWarTarget(character, factionName, excludeIds) {
     person.id = character.nextPersonId++;
     person.relationship = -randInt(1, 2);
     person.favor = 0;
+    assignFactionTier(character, person);
     character.contacts.push(person);
   }
   excludeIds.add(person.id);

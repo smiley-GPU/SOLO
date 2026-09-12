@@ -355,6 +355,9 @@ penalty, see §13).
 **A person becomes a Bloodbrother from:** succeeding on a job with them as
 a free (relationship ≥5) recruited Ally (§14).
 
+**Display rename (§20.6)**: shown to the player as "Amigue"; the
+`bloodbrother` field/function names above are unchanged.
+
 Any contact tagged `archenemy` shows a small **Hunt** button next to their
 name in the sheet's People list (only rendered while `G.phase === "hub"`,
 so it can't interrupt an in-progress job) — clicking it starts a
@@ -1241,6 +1244,48 @@ faction immediately: **+1** on any rise (**+2** if Wealth just crossed into
 ≥10), or a loss equal to however far Wealth fell (floored at 0 held). A
 destroyed faction (§19.7) wipes any stock held in it outright — it isn't
 sellable first.
+
+### 20.6 NPC Tiers, specialties, AMIGUE/COMPI, and the Archenemy home invasion
+**Display rename**: BLOODBROTHER is now shown to the player as **Amigue**
+everywhere (the sheet badge, Rest/Hunt UI, Debrief/log copy) — internal
+field and function names (`bloodbrother`, `tagBloodbrother`,
+`findBloodbrother`, `hunt.bloodbrotherUsed`) are unchanged, this is cosmetic
+only. Any contact at relationship **3-4** (Ally-eligible but not yet free,
+§14) additionally shows a **Compi** badge, also purely cosmetic — no new
+field, just a `relationship >= 3` display check.
+
+**Every NPC gets a `factionTier`**: assigned once, at creation
+(`assignFactionTier()`, state.js), from their faction's *current* Tier
+(§19.6) at that moment — Freelance NPCs default to Tier 1. This is a plain
+number, distinct from the pre-existing `"weak"/"tough"/"elite"` combat-tier
+*string* an Adversary or Archenemy separately carries for Hunt/Challenge
+modifiers (`tierPenalty()`) — the two never overlap on the same field.
+
+**NPC specialties** (`DATA.npcSpecialty`, one or two attributes per
+profession): a Hire-sourced Helper's passive attribute bonus (§20.4) now
+comes from their profession's specialty (a random pick between the two, for
+professions with two) instead of a flat random attribute across all five.
+
+**Archenemy home invasion** (`resolveArchenemyClockEvent()`, called from
+Debrief's tail, right after §20.3's background faction missions): whenever
+the Rest clock sits at **exactly 3** boxes — one tick short of the forced
+Hunt (§12.4) — there's a **50% chance** the locked-in Archenemy moves first,
+hitting either a friend (any contact at relationship ≥3) or the player's
+Apartment (§20.5), whichever is available (a coin flip between the two if
+both are; no-op if neither exists).
+- **Hitting a friend**: the same persistent two-strike rule as a Helper
+  wound (§20.4's `woundPerson()`) — wounded the first time, killed outright
+  if they're ever hit again.
+- **Hitting the Apartment**: a standalone roll, `2d6 + (Archenemy's
+  factionTier − installed Security features)` vs. 10+/7-9/6- — no player
+  attribute involved, this is entirely the Archenemy's side:
+  - **10+** ("Evil things", `1d6`): 1-3 steals a random owned gear item;
+    4-5 torches the apartment outright (`character.apartment = null`); 6
+    plants a trap — the *next* "Rest at your Apartment" (§20.5) deals 2 Harm
+    boxes instead of its usual heal roll, then clears itself.
+  - **7-9**: Security scares them off, no effect.
+  - **6-**: they get burned — the Archenemy's own `factionTier` drops by 1
+    (floored at 1), not the faction's.
 
 ---
 

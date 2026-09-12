@@ -82,6 +82,10 @@ header h1 {
   font-size: 11px; color: var(--accent);
   border: 1px solid var(--accent); border-radius: 10px; padding: 1px 6px;
 }
+.compi-badge {
+  font-size: 11px; color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 10px; padding: 1px 6px;
+}
 .hunt-btn { padding: 2px 6px; font-size: 10px; margin: 0 0 0 4px; }
 #sheet .tag {
   display: inline-block;

@@ -351,15 +351,19 @@ function renderSheet() {
   // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
   // A contact tagged Archenemy gets a Hunt button (only from the Hub — a
   // Hunt shouldn't interrupt whatever job phase is in progress); a
-  // BLOODBROTHER gets its own badge. Both tags are mutually exclusive
-  // (tagArchenemy/tagBloodbrother in state.js).
+  // BLOODBROTHER shows as "Amigue" (§20.6 display rename — the internal
+  // field/function names are unchanged). Both tags are mutually exclusive
+  // (tagArchenemy/tagBloodbrother in state.js). Anyone at relationship 3-4
+  // (Ally-eligible but not yet free) gets a "Compi" badge — cosmetic only.
   const contactList = c.contacts.map(ct => {
     let tag = "";
     if (ct.archenemy) {
       const huntBtn = G.phase === "hub" ? `<button class="btn-small hunt-btn" data-hunt-id="${ct.id}">Hunt</button>` : "";
       tag = ` <span class="archenemy-badge">⚠ Archenemy</span>${huntBtn}`;
     } else if (ct.bloodbrother) {
-      tag = ` <span class="bloodbrother-badge">🩸 Bloodbrother</span>`;
+      tag = ` <span class="bloodbrother-badge">🩸 Amigue</span>`;
+    } else if (ct.relationship >= 3) {
+      tag = ` <span class="compi-badge">Compi</span>`;
     }
     return `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})${tag}</li>`;
   }).join("");
@@ -505,11 +509,19 @@ function renderHub() {
   // §20.5 — a free heal-a-box roll if you own an Apartment, independent of
   // the Rest clock/Mission Board reroll (this doesn't tick restCount or
   // reroll the job search — it's just "how you spend a bit of downtime").
+  // §20.6 — unless the Archenemy left a trap under the bed: 2 Harm boxes
+  // instead, one time, then it's cleared.
   if (c.apartment) {
     const homeBtn = document.createElement("button");
     homeBtn.textContent = "Rest at your Apartment (Free)";
     homeBtn.addEventListener("click", () => {
-      if (Math.random() < 0.5 && c.health.some(h => h)) {
+      if (c.apartment.trapped) {
+        c.apartment.trapped = false;
+        applyHarm(c);
+        const wentDown = applyHarm(c);
+        if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+        addLog(c, "The place goes up the second you're inside — you'd left something behind, alright, and it wasn't yours.");
+      } else if (Math.random() < 0.5 && c.health.some(h => h)) {
         healBox(c);
         addLog(c, "You crash at home for a while — it helps.");
       } else {
@@ -622,9 +634,9 @@ function renderBriefingCard(job, idx) {
     : "";
   // Special Missions (§19.5): unrestricted faction pairing, an extra -1 on
   // every roll, +2 BONDS, amplified relationship/standing swings, and real
-  // risk to a Bloodbrother riding along as Ally.
+  // risk to an Amigue riding along as a Helper.
   const specialBadge = mission.special
-    ? `<p class="special-badge">⚠ SPECIAL MISSION — extra -1 to every roll, +2 BONDS, bigger relationship swings. A Bloodbrother riding along can be wounded or killed.</p>`
+    ? `<p class="special-badge">⚠ SPECIAL MISSION — extra -1 to every roll, +2 BONDS, bigger relationship swings. An Amigue riding along can be wounded or killed.</p>`
     : "";
   wrap.innerHTML = `
     <h3>${mission.special ? mission.specialName : `Job ${idx + 1}`}</h3>
@@ -706,7 +718,7 @@ function renderRestSubflow(container) {
   } else if (stage === "brothernight") {
     const bb = findBloodbrother(G.character);
     const w = document.createElement("div");
-    w.innerHTML = `<h4>A night with ${bb ? bb.name : "your Bloodbrother"}.</h4>`;
+    w.innerHTML = `<h4>A night with ${bb ? bb.name : "your Amigue"}.</h4>`;
     container.appendChild(w);
     renderChallenge(w, { attr: "Social", desc: "Spend the night." }, finishBrotherNight, ctx);
   } else if (stage === "brotherfight") {
@@ -801,7 +813,7 @@ function finishBrotherNight() {
     G.restFlow = null;
     processRestTick();
   } else {
-    addLog(c, `It goes sideways fast — you and ${bb ? bb.name : "your Bloodbrother"} end up in a street fight.`);
+    addLog(c, `It goes sideways fast — you and ${bb ? bb.name : "your Amigue"} end up in a street fight.`);
     G.restFlow = { stage: "brotherfight", pendingResult: null, lastResult: null };
     persist();
     render();
@@ -898,6 +910,64 @@ function findBloodbrother(c) {
   return c.contacts.find(p => p.bloodbrother);
 }
 
+// §20.6 — one tick short of the forced Hunt (restCount === 3), the locked-in
+// Archenemy has a 50% chance of striking first: either a friend (any
+// Amigue/Compi, relationship ≥3) or the player's Apartment, whichever is
+// available (a coin flip between the two if both are). No-ops if neither a
+// friend nor an apartment exists, or the Archenemy is somehow already gone.
+function resolveArchenemyClockEvent(c) {
+  if (c.restCount !== 3) return;
+  if (Math.random() >= 0.5) return;
+  const archenemy = c.contacts.find(p => p.id === c.archenemyId);
+  if (!archenemy) return;
+
+  const friends = c.contacts.filter(p => p.relationship >= 3 && p.id !== archenemy.id);
+  const hasApartment = !!c.apartment;
+  if (!friends.length && !hasApartment) return;
+
+  const hitApartment = hasApartment && (!friends.length || Math.random() < 0.5);
+  if (hitApartment) {
+    resolveApartmentInvasion(c, archenemy);
+  } else {
+    const target = pick(friends);
+    addLog(c, `While you're out on the job, ${archenemy.name} ${pick(DATA.archenemyInvasion.friendHit)} ${target.name}.`);
+    woundPerson(c, target);
+  }
+}
+
+// §20.6 — the Archenemy's own break-in roll: 2d6 + (their factionTier -
+// installed Security features) vs. 10+/7-9/6-. No player attribute is
+// involved — this is entirely the Archenemy's side of the roll.
+function resolveApartmentInvasion(c, archenemy) {
+  const features = c.apartment.security.length;
+  const { sum } = roll2d6();
+  const roll = sum + ((archenemy.factionTier || 1) - features);
+
+  if (roll >= 10) {
+    const evil = randInt(1, 6);
+    if (evil <= 3) {
+      if (c.gear.length) {
+        const item = pick(c.gear);
+        c.gear = c.gear.filter(g => g !== item);
+        addLog(c, `${pick(DATA.archenemyInvasion.steal)} (lost: ${item.name})`);
+      } else {
+        addLog(c, `${archenemy.name}'s people break in but find nothing worth taking.`);
+      }
+    } else if (evil <= 5) {
+      addLog(c, pick(DATA.archenemyInvasion.torch));
+      c.apartment = null;
+    } else {
+      c.apartment.trapped = true; // §20.6 — 2 Harm boxes next time you Rest at home
+      addLog(c, pick(DATA.archenemyInvasion.trap));
+    }
+  } else if (roll >= 7) {
+    addLog(c, pick(DATA.archenemyInvasion.spooked));
+  } else {
+    archenemy.factionTier = Math.max(1, (archenemy.factionTier || 1) - 1);
+    addLog(c, `${archenemy.name} ${pick(DATA.archenemyInvasion.burned)}`);
+  }
+}
+
 function missionFieldRows(mission) {
   // Heist/Transport/Hold/Delay carry an asset flavor line — what's actually
   // being stolen/moved/held decides which faction parameter the job affects
@@ -981,7 +1051,10 @@ function renderGearUp() {
     hireBtn.addEventListener("click", () => {
       c.bonds -= 1;
       const person = getPerson(c, "ally", job.excludeIds);
-      const attr = pick(["Combat", "Driving", "Hacking", "Social", "Stealth"]);
+      // §20.6 — their passive bonus attr comes from their profession's
+      // specialty (a random pick between the two, for a profession with two)
+      // instead of a flat random attribute.
+      const attr = pick(DATA.npcSpecialty[person.profession] || ["Social"]);
       job.helpers.push({ person, source: "hire", tier: null, attr, used: false, benched: false });
       addLog(c, `${person.name} signs on for the job, backing you up on ${attr}.`);
       persist(); render();
@@ -1608,6 +1681,12 @@ function runDebrief() {
   // Debrief (distinct from §19.7's Rest-tick-only Power-struggle destroy
   // attempts, which only fire for Power ≥10 attackers).
   runFactionBackgroundMissions(c);
+
+  // §20.6 — while the Rest clock sits one tick short of a forced Hunt, the
+  // Archenemy might move on a friend or the player's home instead of
+  // waiting. Checked after payment (per todo3.md) and before any future
+  // Heat/EurCop raid check (§20 Phase 3).
+  resolveArchenemyClockEvent(c);
 
   job.outcome = outcome;
   job.payout = totalPayout;

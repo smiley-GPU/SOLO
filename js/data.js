@@ -49,6 +49,26 @@ const DATA = {
     "Media", "Cop", "Civilian", "Medtech", "Techie", "Body Doc"
   ],
 
+  // §20.6 — every NPC's profession gives them a specialty: the attribute(s)
+  // their passive Helper bonus applies to (a Hire-sourced Helper gets one,
+  // picked at random if two are listed) — todo3.md only names 3
+  // (Solo→Combat, Nomad [Rider]→Driving/Social, Hacker [Netrunner]→
+  // Stealth/tech); the rest extend that logic to the other 9 professions.
+  npcSpecialty: {
+    Fixer: ["Social"],
+    "Corp Exec": ["Social"],
+    Ganger: ["Combat"],
+    "Nomad Rider": ["Driving", "Social"],
+    Netrunner: ["Hacking", "Stealth"],
+    Solo: ["Combat"],
+    Media: ["Social"],
+    Cop: ["Combat", "Social"],
+    Civilian: ["Social"],
+    Medtech: ["Social"],
+    Techie: ["Hacking"],
+    "Body Doc": ["Social"]
+  },
+
   // Fixed, permanent world map — always these 12, never randomly combined.
   // faction is null for open/neutral turf. See gamedesc.md §6. Original
   // European names (Corrections.md) mixing French/Italian/Nordic/German/
@@ -269,6 +289,17 @@ const DATA = {
     greek: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Theta", "Kappa", "Sigma", "Omega", "Rho", "Omicron"],
     shape: ["Hex", "Cube", "Prism", "Spiral", "Vertex", "Wedge", "Torus", "Rhombus", "Helix", "Shard", "Obelisk", "Lattice"],
     color: ["Cyan", "Magenta", "Crimson", "Amber", "Jade", "Cobalt", "Onyx", "Violet", "Ember", "Slate", "Indigo", "Bone"]
+  },
+
+  // §20.6 — Archenemy home-invasion event (Rest clock at 3 boxes, checked
+  // at Debrief). "evil" keys match the 1d6 sub-table on a 10+ break-in.
+  archenemyInvasion: {
+    friendHit: ["shows up looking for", "sends people around asking about"],
+    spooked: ["Your security spooks them off before they get anywhere.", "They case the place, think better of it, and leave."],
+    burned: ["They get burned trying it and come away weaker for it.", "It goes wrong for them fast — word gets around."],
+    steal: ["They clean out whatever gear you left behind.", "You come home short a piece of kit — they knew exactly where to look."],
+    torch: ["They torch the place. It's gone.", "Fire's still going when you get the word — there's nothing left to save."],
+    trap: ["They leave something under your bed on the way out.", "Nothing looks touched. That's the problem."]
   },
 
   // §20.5 — Apartments (Downtime "GEAR, GUNS AND GENERAL GOODNESS" panel).
