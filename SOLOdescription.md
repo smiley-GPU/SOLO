@@ -1389,6 +1389,170 @@ mission").
 
 ---
 
+### 20.9 BATCH 2.0: Permadeath, Reputation loss, Apartment Rest overhaul, faction rebalance, and playtesting fixes
+
+A grab-bag pass over `todo3.md` rows 245-264 — real design decisions (agreed
+with the player up front) plus a round of live-playtesting bug fixes.
+
+#### 20.9.1 Permadeath, and the Amigue's last favor
+Every one of the ~9 scattered `if (wentDown && !c.permanentInjury)
+resolveDownEvent(c);` call sites (the apartment trap, both Rest-fight
+branches, Checkpoint combat, Fallout harm, both Hunt combat paths, Hunt Run)
+now funnels through one function:
+
+```js
+function handleGoingDown(c, wentDown) {
+  if (!wentDown) return false;
+  if (!c.permanentInjury) { resolveDownEvent(c); return false; }
+  const amigues = c.contacts.filter(p => p.bloodbrother);
+  if (amigues.length) {
+    // an AMIGUE (§14) throws themselves in — sacrificing their own life
+    killPerson(c, pick(amigues).id);
+    return false;
+  }
+  G.phase = "death"; // no save — permanently game over
+  return true;
+}
+```
+
+Going Down for the first time is unchanged (§Appendix — `resolveDownEvent`'s
+BOOST-loss chance, then `permanentInjury = true`). Going Down again while
+already carrying a Permanent Injury is normally fatal — unless an AMIGUE is
+on the contact list, in which case *they* die in the player's place instead
+(logged, moved to `graveyard`, obituary line per §20.9.5) and the run
+continues. `handleGoingDown()` returns `true` only when the run actually
+ended, so the handful of call chains that would otherwise keep going and
+silently overwrite `G.phase` back to normal (`finalizeStep`, the Encounter
+continue callback, `finishCheckpointCombat`, both Rest-fight finishers) all
+check the return value and bail before their usual continuation logic.
+
+A new `death` phase (`renderDeath()`) mirrors `renderWin`/`renderLoss`
+exactly: flavor text, then "Start a New Runner" clears the save.
+
+#### 20.9.2 Reputation can go down
+Supplements §19.1 (which only ever described gains). Two triggers, agreed
+with the player as the ones with an actual mechanical hook today (a third,
+"betraying an Ally/Amigue," is deferred — no player action currently
+constitutes betrayal):
+- **Mission Failure** (`runDebrief()`): a Failure now costs Reputation using
+  the *same* stacking rule as a Success gain (+1 base, +1 if the base payout
+  was ≥4, +1 if Assassination, +1 if Special Mission) — a botched
+  high-stakes job costs proportionally more.
+- **Losing to your Archenemy**: -1 Reputation whenever a Hunt resolves
+  "they get away clean" (a failed chase-escape roll, or manually choosing
+  "Let Them Go"), and -1 whenever `resolveArchenemyClockEvent` actually
+  lands a hit (a friend hurt, or an apartment-invasion "Evil things"
+  outcome) — never on a result where the player comes out ahead (spooked
+  off, burned, etc).
+
+#### 20.9.3 Apartment Rest joins the Rest cycle, and gets a teeth
+Supersedes the old free-standing "Rest at your Apartment" card in the plain
+Downtime hub (§20.5). It now lives in `renderRestOptions()` alongside
+Coffin Hotel (§12.1) and Night on the Street (§12.2), and — unlike before —
+calls `processRestTick()` afterward, so it ticks the same clock (§12.4)
+instead of being a free action outside the cycle.
+
+**Home-invasion Hunt**: if this tick is the one that fills the Rest clock
+(`restCount` hits 4) while resting at the apartment, the resulting Hunt is
+flagged `atHome: true` on `G.hunt` instead of the normal street encounter —
+same Hunt flow (§13), narrated as the Archenemy coming to the player's own
+front door. Two differences while `atHome`:
+- **Security count → Combat**: every installed security item (regardless of
+  Tier) adds a flat +1 modifier to Combat rolls only, on top of the usual
+  gear/Wounded/BOOST stack (`renderHuntRoll`'s `buildMods`) — "other rolls
+  as normal."
+- **Tier-4 armor pool**: each installed Tier-4 security item grants a
+  2-charge absorb pool for the duration of that one Hunt (`homeArmorCharges`
+  on `G.hunt`, same 50%-chance-to-absorb math as carried Armor gear). A new
+  `applyHuntHarm(c)` checks this pool before falling through to the normal
+  `applyHarm()`; a charge, once spent, is gone for the rest of that Hunt.
+
+**Security now costs BONDS to install** (`renderApartmentSection()`): 1 BOND
+for a Tier 3 option (Reinforced doors/Hitek Locks), 2 BONDS for a Tier 4
+one (Security Drone/Security-AI/E-shok-Loks/ABLocks/RoboDOG) — previously
+free, per §20.6's original security-options list.
+
+#### 20.9.4 Faction economy rebalance
+The trend from §19.6/§19.7/§20.1/§20.3 was one-directional (standings only
+ever fell), so:
+- **Passive recovery**: a new `applyFactionPassiveRecovery(character)`
+  runs once per Rest tick alongside `runFactionPowerStruggles` — picks one
+  random non-destroyed faction and adds +1 to one randomly chosen attribute
+  (wealth/rnd/power), logged ("X quietly rebuilds (+1 attr)").
+- **Gentler background-mission cost** (§20.3): both the 7-9 and ≤6 branches
+  of `runFactionBackgroundMissions()` used to cost the acting faction two
+  points (-1 wealth **and** -1 power); now a single randomly-chosen point.
+  `runFactionPowerStruggles`'s own roll≤6 cost (-1 power only) was already
+  a single point and is unchanged.
+- **Cap lowered to 10** (`adjustFactionParam()`, was 20 per §19.6) — every
+  Tier-up/power-struggle threshold is already "≥10," so a maxed stat now
+  simply sits at its own threshold permanently, which the two changes above
+  make meaningfully easier to sustain.
+
+#### 20.9.5 Small fixes
+- **Coffin Hotel is repeatable** (§12.1): no longer gated by `boardRerolled`
+  — BONDS are the only limiter now.
+- **Shop refreshes after every Debrief**, not only on a Rest tick (§20.5):
+  `runDebrief()` regenerates `c.shopOffers` at its tail.
+- **Wounded Helpers show a badge** in the Gear Up Helper list (§20.4) when
+  `h.benched` is true.
+- **Obituaries**: a new `DATA.obituaries` flavor pool; `killPerson()`
+  (state.js) logs a line from it whenever the dead contact had
+  `relationship >= 3` or was tagged, instead of leaving every call site to
+  write its own one-off death text.
+- **Multiple AMIGUEs and Archenemies**: "Spend the Night" (§12.3) and the
+  Hunt-assist checkbox (§13) now offer one row per Bloodbrother contact
+  (mutually exclusive — picking one unchecks any other) instead of always
+  grabbing `findBloodbrother()`'s first match. Separately, `nudgeRelationship`
+  (state.js) now auto-tags **any** contact as soon as their relationship
+  clamps to exactly -5 (not just the single worst one the Rest clock counts
+  toward, §12.4's `lockInArchenemy`) — so more than one Archenemy can exist
+  at once, each huntable from their Hub contact row.
+- **Repair Gear**: the Shop (§20.5) gained a "Repair Gear" section
+  mirroring "Sell Gear" — any owned item below Legendary tier can be paid up
+  one Tier for that Tier's normal fresh-purchase price.
+- **Ally recruitment shows a specialty hint**: "Call in a Favor" rows
+  (§20.4) now show the contact's profession and `DATA.npcSpecialty` next to
+  their name, alongside the existing free "+2 to one test" perk.
+
+#### 20.9.6 Live-playtesting fixes
+- **Bug — stale Heat mid-job**: `resolveLocation()` (state.js) used to
+  return a fresh plain-object *copy* of the persisted location record, so
+  `job.location.heat` was a snapshot frozen at job start — every in-job
+  Heat rise (Combat's always-on +1, a Stealth Fail's +2, etc.) mutated
+  `character.locations[name]` directly and never touched that snapshot.
+  Since `maybeTriggerCheckpoint`, the Heat roll modifier, and
+  `resolveApartmentRaid` (§20.7) all read `job.location.heat`, the exit
+  checkpoint/raid check never saw heat that climbed during the mission's
+  own Steps. Fixed by returning the live `character.locations[name]` object
+  directly — every heat mutation is now visible everywhere the job holds a
+  reference to it. This was the root cause of checkpoints/raids being rare
+  to witness in play.
+- **Effect transparency**: partial/fail outcomes used to sometimes log only
+  flavor text with no stated mechanical effect. `applyHarm()` (state.js)
+  now always logs an explicit line ("-1 Harm box." / "You go down — every
+  Harm box marked.") even on the plain non-absorbed case; a new
+  `raiseHeat(character, location, amount)` both mutates and logs every Heat
+  change ("Heat +N at <location> (now <heat>)."), replacing several
+  scattered silent `loc.heat = Math.min(5, ...)` assignments; the
+  gearDamage Partial fallout and the Checkpoint bribe now both append the
+  BOND amount spent to their log line.
+- **Target faction visibility** (§20.7's Briefing fields): Transport's
+  Cargo line now shows the cargo owner's faction alongside their name;
+  Delay/Hold now show a full `Target:` line (name, profession, faction)
+  matching Assassination/Heist's existing format.
+- **No self-targeting** (§19.4's Employer/Target pairing): `pairedFactionsFor()`
+  now excludes the Employer's own faction name from the Target's allowed
+  factions (previously same-category always included it). Special Missions
+  (§19.5), which pass an unrestricted target-faction list, now filter that
+  list through a new `nonDestroyedFactionNames(character)` minus the
+  Employer's faction — "any role" no longer means "against yourself." A
+  forced-war Special Mission's Employer draw (§19.7) can now also exclude
+  the war's own target faction, via a new optional exclusion parameter on
+  `getEmployer()`.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
