@@ -302,6 +302,17 @@ const DATA = {
     trap: ["They leave something under your bed on the way out.", "Nothing looks touched. That's the problem."]
   },
 
+  // BATCH 2.0 — obituary flavor for a killPerson() call on someone the
+  // player actually knew (relationship ≥3, or Amigue/Compi/Archenemy
+  // tagged) rather than each call site writing its own one-off line.
+  obituaries: [
+    "took too many hits and didn't walk away from this one.",
+    "is gone. Word travels fast on the street.",
+    "won't be answering calls anymore.",
+    "clocked out for good tonight.",
+    "is one more name for the wall."
+  ],
+
   // §20.5 — Apartments (Downtime "GEAR, GUNS AND GENERAL GOODNESS" panel).
   // Tier 1 has nothing to buy. Price is computed at purchase time
   // (2×tier, +1 if the chosen Location's faction is Corpo-category) since
@@ -312,9 +323,11 @@ const DATA = {
     4: { name: "Penthouse, Office, or Nightclub Backroom", securitySlots: 4, flavor: "The kind of address that does half your talking for you." }
   },
   apartmentTier1Flavor: "You are street rat. What are you thinking? Gutter, sewers, under the bridge — that's your home.",
-  // Security options available at each Apartment Tier (installed free,
-  // capped at that Tier's securitySlots) — their defensive effect belongs
-  // to the Archenemy home-invasion/EurCop raid mechanics (§20 Phase 2/3).
+  // Security options available at each Apartment Tier (BATCH 2.0: costs
+  // BONDS to install — 1 for a Tier 3 option, 2 for a Tier 4 one, see
+  // renderApartmentSection — capped at that Tier's securitySlots). Their
+  // defensive effect belongs to the Archenemy home-invasion/EurCop raid
+  // mechanics (§20 Phase 2/3, BATCH 2.0 §3).
   securityOptions: {
     3: ["Reinforced doors and windows", "Hitek Locks"],
     4: ["Security Drone", "Security-AI", "E-shok-Loks", "ABLocks", "RoboDOG"]

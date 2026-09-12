@@ -152,20 +152,32 @@ function runFactionBackgroundMissions(character) {
       Object.entries(effects.target).forEach(([param, v]) => adjustFactionParam(character, rivalName, param, v));
     };
 
+    // BATCH 2.0 — gentler cost: a single random attribute point instead of
+    // both wealth and power, so this doesn't compound into a downward spiral.
     if (roll >= 10) {
       applyEffect();
       addLog(character, `${actorName} pulls off a job against ${rivalName} on the quiet.`);
     } else if (roll >= 7) {
       applyEffect();
-      adjustFactionParam(character, actorName, "wealth", -1);
-      adjustFactionParam(character, actorName, "power", -1);
+      adjustFactionParam(character, actorName, pick(["wealth", "power"]), -1);
       addLog(character, `${actorName} gets what it wanted from ${rivalName}, but it costs them.`);
     } else {
-      adjustFactionParam(character, actorName, "wealth", -1);
-      adjustFactionParam(character, actorName, "power", -1);
+      adjustFactionParam(character, actorName, pick(["wealth", "power"]), -1);
       addLog(character, `${actorName}'s move against ${rivalName} falls apart.`);
     }
   });
+}
+
+// BATCH 2.0 — counters the faction economy's downward trend: once per
+// Rest tick, one random non-destroyed faction gets +1 to one randomly
+// chosen attribute, on top of whatever the mission-driven swings did.
+function applyFactionPassiveRecovery(character) {
+  const all = nonDestroyedFactionNames(character);
+  if (!all.length) return;
+  const factionName = pick(all);
+  const param = pick(["wealth", "rnd", "power"]);
+  adjustFactionParam(character, factionName, param, 1);
+  addLog(character, `${factionName} quietly rebuilds (+1 ${param}).`);
 }
 
 // A destroyed faction drops out of every future draw and its remaining
@@ -436,6 +448,7 @@ function castWarTarget(character, factionName, excludeIds) {
 function nudgeRelationship(character, personId, delta) {
   const person = character.contacts.find(p => p.id === personId);
   if (!person) return;
+  const before = person.relationship;
   person.relationship = Math.max(-5, Math.min(5, person.relationship + delta));
   // A BLOODBROTHER whose relationship turns negative flips to Archenemy
   // (todo3.md Persons) — checked here so it applies no matter what caused
@@ -443,6 +456,13 @@ function nudgeRelationship(character, personId, delta) {
   if (person.bloodbrother && person.relationship < 0) {
     tagArchenemy(character, person);
     addLog(character, `${person.name} turns on you. What you had is gone.`);
+  } else if (!person.archenemy && person.relationship === -5 && before > -5) {
+    // BATCH 2.0 — more than one Archenemy can exist now: hitting the
+    // relationship floor tags them regardless of the Rest clock, which
+    // still separately locks in its own single worst-relationship target
+    // (lockInArchenemy, game.js) — that assignment is untouched.
+    tagArchenemy(character, person);
+    addLog(character, `${person.name} will never forgive this. You've made an Archenemy.`);
   }
 }
 
@@ -468,6 +488,11 @@ function killPerson(character, personId) {
   const [dead] = character.contacts.splice(idx, 1);
   dead.dead = true;
   character.graveyard.push(dead);
+  // BATCH 2.0 — a proper obituary for anyone the player actually knew,
+  // instead of leaving every call site to write its own one-off line.
+  if (dead.relationship >= 3 || dead.bloodbrother || dead.archenemy) {
+    addLog(character, `${dead.name} ${pick(DATA.obituaries)}`);
+  }
   return dead;
 }
 
@@ -586,12 +611,14 @@ function nudgeFactionRelation(character, factionA, factionB, delta) {
 
 // Bumps one Wealth/R&D/Power parameter for a faction (a job's employer gains,
 // its target loses — see runDebrief() in game.js). No-ops for untracked
-// factions (Freelance, null turf).
+// factions (Freelance, null turf). Capped at 10 (BATCH 2.0, was 20) — every
+// Tier-up/Power-struggle threshold is already "≥10", so a maxed stat now
+// just sits at its own threshold permanently instead of climbing further.
 function adjustFactionParam(character, factionName, param, delta) {
   const standing = character.factionStandings[factionName];
   if (!standing || standing.destroyed) return;
   const before = standing[param];
-  standing[param] = Math.max(0, Math.min(20, standing[param] + delta));
+  standing[param] = Math.max(0, Math.min(10, standing[param] + delta));
   if (param === "rnd" || param === "wealth") updateFactionTier(character, factionName);
   if (param === "wealth") settleStockGains(character, factionName, before, standing.wealth);
 }

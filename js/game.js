@@ -177,6 +177,36 @@ function renderShopBox(active) {
     box.appendChild(sellSection);
   }
 
+  // BATCH 2.0 — repair a degraded (downgraded-a-tier) item back up one
+  // Tier, priced the same as buying that next Tier fresh (DATA.gearTierBonus
+  // doubles as the BOND-scale price for every catalog entry at that tier).
+  const repairable = c.gear.filter(item => DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.length - 1);
+  if (repairable.length) {
+    const repairSection = document.createElement("div");
+    repairSection.className = "section";
+    repairSection.innerHTML = `<h4>Repair Gear</h4><p class="muted">Pay an item up one Tier.</p>`;
+    repairable.forEach(item => {
+      const nextTier = DATA.gearTierOrder[DATA.gearTierOrder.indexOf(item.tier || "Street") + 1];
+      const cost = DATA.gear[nextTier][0].price; // same price as buying fresh at that Tier
+      const row = document.createElement("div");
+      row.className = "offer";
+      row.innerHTML = `<span>${item.name} <em>(${item.tier} → ${nextTier})</em></span>`;
+      const btn = document.createElement("button");
+      btn.textContent = `Repair — ${cost} BOND${cost === 1 ? "" : "S"}`;
+      btn.disabled = c.bonds < cost;
+      btn.addEventListener("click", () => {
+        c.bonds -= cost;
+        item.tier = nextTier;
+        if (item.armor) item.armor = DATA.gearTierBonus[nextTier]; // full charges at the new tier
+        addLog(c, `You get the ${item.name} fixed up to ${nextTier} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
+        persist(); render();
+      });
+      row.appendChild(btn);
+      repairSection.appendChild(row);
+    });
+    box.appendChild(repairSection);
+  }
+
   box.appendChild(renderApartmentSection(c));
   return box;
 }
@@ -200,12 +230,18 @@ function renderApartmentSection(c) {
     wrap.innerHTML += `<p class="muted">${def.name} at ${c.apartment.location} (Tier ${c.apartment.tier}). Security: ${secList}.</p>`;
     const options = (DATA.securityOptions[c.apartment.tier] || []).filter(o => !c.apartment.security.includes(o));
     if (c.apartment.security.length < def.securitySlots) {
+      // BATCH 2.0 — Security items cost BONDS to install now: 1 BOND for a
+      // Tier 3 option, 2 BONDS for a Tier 4 one (Tier 4 ones also grant an
+      // armor-charge pool in a home-invasion Hunt — see startHunt/applyHuntHarm).
+      const cost = c.apartment.tier >= 4 ? 2 : 1;
       options.forEach(opt => {
         const btn = document.createElement("button");
-        btn.textContent = `Install ${opt}`;
+        btn.textContent = `Install ${opt} — ${cost} BOND${cost === 1 ? "" : "S"}`;
+        btn.disabled = c.bonds < cost;
         btn.addEventListener("click", () => {
+          c.bonds -= cost;
           c.apartment.security.push(opt);
-          addLog(c, `${opt} goes in at your place.`);
+          addLog(c, `${opt} goes in at your place (-${cost} BOND${cost === 1 ? "" : "S"}).`);
           persist(); render();
         });
         wrap.appendChild(btn);
@@ -955,6 +991,8 @@ function resolveArchenemyClockEvent(c) {
     const target = pick(friends);
     addLog(c, `While you're out on the job, ${archenemy.name} ${pick(DATA.archenemyInvasion.friendHit)} ${target.name}.`);
     woundPerson(c, target);
+    gainReputation(c, -1); // BATCH 2.0 — a landed hit costs Reputation
+    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
   }
 }
 
@@ -988,6 +1026,10 @@ function resolveApartmentInvasion(c, archenemy) {
       c.apartment.trapped = true; // §20.6 — 2 Harm boxes next time you Rest at home
       addLog(c, pick(DATA.archenemyInvasion.trap));
     }
+    // BATCH 2.0 — a landed hit costs Reputation; being spooked off or
+    // burned (below) are player wins, not losses.
+    gainReputation(c, -1);
+    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
   } else if (roll >= 7) {
     addLog(c, pick(DATA.archenemyInvasion.spooked));
   } else {
@@ -1101,7 +1143,9 @@ function renderGearUp() {
     const row = document.createElement("div");
     row.className = "offer";
     const perk = h.source === "hire" ? `+1 ${h.attr}` : "+2 to one test of your choice";
-    row.innerHTML = `<span>${h.person.name} (${perk})</span>`;
+    // BATCH 2.0 — show if this Helper is wounded/benched for the rest of the job.
+    const woundedBadge = h.benched ? ` <span class="archenemy-badge">wounded — out</span>` : "";
+    row.innerHTML = `<span>${h.person.name} (${perk})${woundedBadge}</span>`;
     helperSection.appendChild(row);
   });
   wrap.appendChild(helperSection);
@@ -1139,7 +1183,10 @@ function renderGearUp() {
         const free = person.relationship >= 5;
         const row = document.createElement("div");
         row.className = "offer";
-        row.innerHTML = `<span>${person.name} (+2 to one test)</span><span>${free ? "Free" : "pays 1 BOND from payout"}</span>`;
+        // BATCH 2.0 — the free "+2 to one test" perk stays as-is, but hint at
+        // what this Amigue is actually good at via their profession specialty.
+        const specialty = (DATA.npcSpecialty[person.profession] || ["Social"]).join("/");
+        row.innerHTML = `<span>${person.name} <em>(${person.profession}, good with ${specialty})</em> (+2 to one test)</span><span>${free ? "Free" : "pays 1 BOND from payout"}</span>`;
         const btn = document.createElement("button");
         btn.textContent = "Bring along";
         btn.addEventListener("click", () => {
@@ -1898,7 +1945,8 @@ function runDebrief() {
   }
 
   // §19.1 — Reputation: a non-Failure always gives +1, plus stacking +1s
-  // for a big payout, an Assassination, and a Special Mission.
+  // for a big payout, an Assassination, and a Special Mission. BATCH 2.0:
+  // a Failure mirrors the exact same stacking rule as a loss instead.
   if (outcome !== "Failure") {
     let repGain = 1;
     if (basePayout >= 4) repGain += 1;
@@ -1909,6 +1957,13 @@ function runDebrief() {
     if (job.mission.special) repGain += 1;
     gainReputation(c, repGain);
     addLog(c, `Reputation +${repGain} (now ${c.reputation}, ${reputationTitle(c)}).`);
+  } else {
+    let repLoss = 1;
+    if (basePayout >= 4) repLoss += 1;
+    if (job.mission.type === "Assassination") repLoss += 1;
+    if (job.mission.special) repLoss += 1;
+    gainReputation(c, -repLoss);
+    addLog(c, `Reputation -${repLoss} (now ${c.reputation}, ${reputationTitle(c)}).`);
   }
 
   // Outcomes retire people permanently: a successful hit kills its target;
@@ -1979,6 +2034,11 @@ function runDebrief() {
   }
 
   decayOtherLocations(c, job.location.name);
+
+  // BATCH 2.0 ("kauppojen pitää päivittyä" — the shops need to update):
+  // also refresh here, not just on a Rest tick, so a player who never
+  // Rests still sees new stock between jobs.
+  c.shopOffers = genShopOffers(reputationTier(c));
 
   // §20.1 — one background faction-vs-faction mission per category, every
   // Debrief (distinct from §19.7's Rest-tick-only Power-struggle destroy
@@ -2257,17 +2317,19 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     ? `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> Spend 1 BOOST for +1</label>`
     : "";
   // A BLOODBROTHER can be called in to help on a Hunt (todo3.md Persons) —
-  // a one-time +2, same shape as Ally Assist in renderChallenge().
-  const bb = findBloodbrother(c);
-  const brotherOption = bb && !hunt.bloodbrotherUsed
-    ? `<label class="boost-toggle"><input type="checkbox" class="brother-check" /> Call ${bb.name}: +2 to this roll</label>`
+  // a one-time +2, same shape as Ally Assist in renderChallenge(). BATCH 2.0
+  // — more than one Amigue can exist now; offer a row per Amigue (mutually
+  // exclusive, like a picker) instead of always grabbing the first one found.
+  const amigues = c.contacts.filter(p => p.bloodbrother);
+  const brotherOption = amigues.length && !hunt.bloodbrotherUsed
+    ? amigues.map(a => `<label class="boost-toggle"><input type="checkbox" class="brother-check" data-id="${a.id}" /> Call ${a.name}: +2 to this roll</label>`).join("")
     : "";
   block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${brotherOption}<div class="mods"></div>`;
   const modsEl = block.querySelector(".mods");
   const boostCheck = block.querySelector(".boost-check");
-  const brotherCheck = block.querySelector(".brother-check");
+  const brotherChecks = Array.from(block.querySelectorAll(".brother-check"));
 
-  const buildMods = (spendBoost, callBrother) => {
+  const buildMods = (spendBoost, callBrotherId) => {
     const mods = [];
     const gearBonus = bestGearBonus(c, attr);
     if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
@@ -2280,7 +2342,8 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
       mods.push({ label: "Security", value: c.apartment.security.length });
     }
     if (spendBoost) mods.push({ label: "Boost", value: 1 });
-    if (callBrother && bb) mods.push({ label: bb.name, value: 2 });
+    const calledBrother = callBrotherId && amigues.find(a => a.id === callBrotherId);
+    if (calledBrother) mods.push({ label: calledBrother.name, value: 2 });
     const harmCount = c.health.filter(h => h).length;
     if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
     else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
@@ -2288,24 +2351,32 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     return mods;
   };
 
+  const checkedBrotherId = () => {
+    const checked = brotherChecks.find(cb => cb.checked);
+    return checked ? checked.dataset.id : null;
+  };
+
   const refreshMods = () => {
-    const mods = buildMods(boostCheck && boostCheck.checked, brotherCheck && brotherCheck.checked);
+    const mods = buildMods(boostCheck && boostCheck.checked, checkedBrotherId());
     modsEl.innerHTML = mods.length
       ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
       : `<span class="chip">no modifiers</span>`;
   };
   refreshMods();
   if (boostCheck) boostCheck.addEventListener("change", refreshMods);
-  if (brotherCheck) brotherCheck.addEventListener("change", refreshMods);
+  brotherChecks.forEach(cb => cb.addEventListener("change", () => {
+    if (cb.checked) brotherChecks.forEach(other => { if (other !== cb) other.checked = false; });
+    refreshMods();
+  }));
 
   const rollBtn = document.createElement("button");
   rollBtn.textContent = `Roll ${attr}`;
   rollBtn.addEventListener("click", () => {
     const spendBoost = !!(boostCheck && boostCheck.checked);
-    const callBrother = !!(brotherCheck && brotherCheck.checked);
-    const mods = buildMods(spendBoost, callBrother);
+    const callBrotherId = checkedBrotherId();
+    const mods = buildMods(spendBoost, callBrotherId);
     if (spendBoost) c.boost -= 1;
-    if (callBrother) hunt.bloodbrotherUsed = true;
+    if (callBrotherId) hunt.bloodbrotherUsed = true;
     const result = resolve(c.attrs[attr], mods);
     result.usedAttr = attr;
     hunt.pendingResult = result;
@@ -2480,13 +2551,10 @@ function renderHuntRun(container) {
       addLog(c, `Clean break. You lose ${hunt.archenemy.name} in the traffic.`);
       hunt.stage = "resolved-run-clean";
     } else if (res.tier === "partial") {
-      const wentDown = applyHarm(c);
-      if (wentDown && !c.permanentInjury) resolveDownEvent(c);
       addLog(c, `You get away, but ${hunt.archenemy.name} clips you on the way out.`);
-      hunt.stage = "resolved-run-hit";
+      if (!handleGoingDown(c, applyHuntHarm(c))) hunt.stage = "resolved-run-hit";
     } else {
-      const wentDown = applyHarm(c);
-      if (wentDown && !c.permanentInjury) resolveDownEvent(c);
+      handleGoingDown(c, applyHuntHarm(c));
       const carried = c.gear.filter(g => g.carried); // §20.8
       if (carried.length && Math.random() < 0.5) {
         degradeGearItem(c, pick(carried));
@@ -2515,6 +2583,8 @@ function renderHuntChase(container) {
     } else {
       addLog(c, `${hunt.archenemy.name} gets away clean.`);
       hunt.stage = "resolved-escape-clean";
+      gainReputation(c, -1); // BATCH 2.0 — losing clean to your Archenemy costs Reputation
+      addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
     }
     persist(); render();
   });
@@ -2530,6 +2600,8 @@ function renderHuntChase(container) {
       const c = G.character, hunt = G.hunt;
       addLog(c, `You ease off — ${hunt.archenemy.name} gets away clean.`);
       hunt.stage = "resolved-escape-clean";
+      gainReputation(c, -1); // BATCH 2.0
+      addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
       persist(); render();
     });
     row.appendChild(letGoBtn);
