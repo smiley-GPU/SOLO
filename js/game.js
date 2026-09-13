@@ -188,7 +188,7 @@ function renderShopBox() {
   if (!G.shopTab) G.shopTab = "All"; // ephemeral UI state — never persisted
   box.innerHTML += tabBarHtml(GEAR_TABS, G.shopTab, "shop-tab");
 
-  c.shopOffers.filter(item => G.shopTab === "All" || gearCategory(item) === G.shopTab).forEach(item => {
+  c.shopOffers.filter(item => matchesGearTab(item, G.shopTab)).forEach(item => {
     const price = item.price;
     const row = document.createElement("div");
     row.className = "offer";
@@ -213,7 +213,7 @@ function renderShopBox() {
 
   // Sell Gear (todo3.md Items) — 2 Street items = 1 BOND, 1 higher-tier item
   // = 1 BOND; a Fixer contact at relationship ≥3 adds +1 BOND per sale.
-  const sellable = c.gear.filter(item => G.shopTab === "All" || gearCategory(item) === G.shopTab);
+  const sellable = c.gear.filter(item => matchesGearTab(item, G.shopTab));
   if (sellable.length) {
     const sellSection = document.createElement("div");
     sellSection.className = "section";
@@ -252,7 +252,7 @@ function renderWorkshopBox() {
 
   const repairable = c.gear
     .filter(item => DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.length - 1)
-    .filter(item => G.workshopTab === "All" || gearCategory(item) === G.workshopTab);
+    .filter(item => matchesGearTab(item, G.workshopTab));
   if (!repairable.length) box.innerHTML += `<p class="muted">Nothing to fix up in this category.</p>`;
   repairable.forEach(item => {
     const nextTier = DATA.gearTierOrder[DATA.gearTierOrder.indexOf(item.tier || "Street") + 1];
@@ -461,9 +461,15 @@ function renderStocksBox() {
 }
 
 // INTERFACE 2.4.1 — the five Loadout categories (§20.8) plus "All"; a plain
-// tab bar over the sheet's Gear list. Heal-gear has no category (exempt
-// from the carry system entirely) so it only ever shows up under "All".
-const GEAR_TABS = ["All", "Weapons", "Clothing", "Decks", "Vehicles", "Social"];
+// tab bar over the sheet's Gear list, and (§20.16) the Shop/Workshop offer
+// lists. INTERFACE 2.4.3 added "Other" for anything gearCategory() can't
+// place (heal-gear, previously only ever visible under "All").
+const GEAR_TABS = ["All", "Weapons", "Clothing", "Decks", "Vehicles", "Social", "Other"];
+function matchesGearTab(item, tab) {
+  if (tab === "All") return true;
+  const cat = gearCategory(item);
+  return tab === "Other" ? !cat : cat === tab;
+}
 // INTERFACE 2.4.1 — People tabs: Friends (Amigue/Compi), Faces (everyone
 // else not an Archenemy), Enemies (Archenemy-tagged), All.
 const PEOPLE_TABS = ["Friends", "Faces", "Enemies", "All"];
@@ -509,7 +515,7 @@ function renderSheet() {
     : "";
 
   if (!G.gearTab) G.gearTab = "All"; // ephemeral UI state — never persisted, see G in game.js header
-  const gearShown = c.gear.filter(g => G.gearTab === "All" || gearCategory(g) === G.gearTab);
+  const gearShown = c.gear.filter(g => matchesGearTab(g, G.gearTab));
   const gearList = gearShown.length
     ? gearShown.map(g => {
         const kind = g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : "";
@@ -720,7 +726,10 @@ function renderHub() {
   else renderRestOptions(laylowContent);
 
   if (!G.restFlow) {
+    // todo3.md INTERFACE 2.4.3 — "the button that actually starts the real
+    // game": centered, ~20% larger, a distinct gold color (.btn-cta).
     const jobBtn = document.createElement("button");
+    jobBtn.className = "btn-cta";
     jobBtn.textContent = "Find a Job";
     jobBtn.addEventListener("click", () => goFindJob());
     wrap.appendChild(jobBtn);
@@ -826,17 +835,17 @@ function buildJobFromCandidate(candidate) {
 // the Return to Street box go with it, with nothing extra to discard by hand.
 function renderBriefing() {
   const header = document.createElement("div");
-  header.className = "card";
+  header.className = "card centered"; // todo3.md INTERFACE 2.4.3 — "align Mission board to center"
   header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or return to the street.</p>`;
   els.main.appendChild(header);
 
   const row = document.createElement("div");
-  row.className = "mission-row";
+  row.className = "mission-row"; // centered via CSS (justify-content: center)
   els.main.appendChild(row);
   G.board.forEach((job, idx) => renderBriefingCard(row, job, idx));
 
   const returnBox = document.createElement("div");
-  returnBox.className = "card return-street-box";
+  returnBox.className = "card centered return-street-box";
   returnBox.innerHTML = `<h3>Not Tonight</h3><p>Head back to the street — the same two jobs will still be waiting.</p>`;
   const returnBtn = document.createElement("button");
   returnBtn.textContent = "Return to Street";
@@ -849,11 +858,15 @@ function renderBriefing() {
   els.main.appendChild(returnBox);
 }
 
-// todo3.md INTERFACE 2.4.2 — one trading-card-style mission offer, appended
-// into the shared `row` (a .mission-row flex container) instead of straight
-// into #main. Deliberately just two font sizes throughout (.mission-card's
-// CSS): an 18px headline (the title, and the Job/Payout line) and one 14px
-// body size for everything else — no muted/grey text on the card.
+// todo3.md INTERFACE 2.4.2/2.4.3 — one trading-card-style mission offer,
+// appended into the shared `row` (a .mission-row flex container) instead of
+// straight into #main. Deliberately just two font sizes throughout
+// (.mission-card's CSS): an 18px headline (the title/payout line, and the
+// job description right under it) and one 14px body size for everything
+// else — no muted/grey text on the card. INTERFACE 2.4.3: the title line is
+// now "Job N: X BONDS" (payout folded into the headline, "only put the
+// BONDS" — no separate "Payout:" line), with the job description directly
+// below it instead of down among the other details.
 function renderBriefingCard(row, job, idx) {
   const { employer, mission, location } = job;
   const wrap = document.createElement("div");
@@ -861,6 +874,7 @@ function renderBriefingCard(row, job, idx) {
   const adversaryList = mission.adversaries.map(a => `<li>${a.name} — ${a.profession} (${a.tier})</li>`).join("");
   const fieldRows = missionFieldRows(mission);
   const payout = estimatePayout(job);
+  const title = mission.special ? mission.specialName : `Job ${idx + 1}`;
   const sideRow = job.sideObjective
     ? `<p><strong>Side job:</strong> ${job.sideObjective.type} — ${job.sideObjective.target.name} (+2 BONDS if it goes clean)</p>`
     : "";
@@ -871,11 +885,11 @@ function renderBriefingCard(row, job, idx) {
     ? `<p><strong>⚠ SPECIAL MISSION</strong> — extra -1 to every roll, +2 BONDS, bigger relationship swings. An Amigue riding along can be wounded or killed.</p>`
     : "";
   wrap.innerHTML = `
-    <h3>${mission.special ? mission.specialName : `Job ${idx + 1}`}</h3>
+    <h3>${title}: ${payout} BOND${payout === 1 ? "" : "S"}</h3>
     ${specialBadge}
+    <p class="step-desc">${mission.type} — ${mission.flavor}</p>
     ${factionSummaryHtml(job)}
     <p><strong>Employer:</strong> ${employer.name} — ${employer.faction} ${employer.profession}</p>
-    <p class="step-desc"><strong>Job:</strong> ${mission.type} — ${mission.flavor}<br><strong>Payout:</strong> ${payout} BOND${payout === 1 ? "" : "S"}</p>
     ${fieldRows}
     ${sideRow}
     <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction} turf` : ""}) — Heat ${location.heat} ${heatBarHtml(location.heat)}</p>
@@ -1394,7 +1408,7 @@ function renderGearUp() {
   const job = G.job;
 
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card centered"; // todo3.md INTERFACE 2.4.3 — "align Gear Up window to the center"
   wrap.innerHTML = `<h2>Gear Up</h2><p class="muted">Anyone coming with you? Gear's sorted from the Shop back in town.</p>`;
 
   // §20.1 — up to 3 Helpers total, mixing paid strangers (Hire) and

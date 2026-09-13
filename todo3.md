@@ -339,3 +339,12 @@ Let's move to middle section of our interface.
 * put LAY LOW options side by side. Stay at Friends and Stay at own appartmen can be put below the initial three options.
 * make SHOP/WORKSHOP/APARTMENT/ STREET-DOJO as high as the tallest of them even if there is no content. It looks better this way.
 * Move EUROSTOXX below Factions on the right hand side column/Window.
+
+## INTERFACE UPDATE 2.4.3
+* Align GEAR YP window to the center. 
+* GEAR UP phase, make it less high. Adjust spacing between gear category and items to smaller. Make sure the selection box is aligned with the item.
+* DOWNTIME window: align Find A Job to the center of the window. Make it 20% larger and change the color to brinf attention. This is the button that actually starts the real game.
+* Add all gear tabs "Other" where you place items that don't have a category.
+* Mission / Job cars. Put Payout on the top next to Job 1/2, only put the BONDS, e.g. "JOB 1: 3 BONDS"
+* Place the Job Description below the "JOB 1/2: x BONDS" text.
+* Align Mission board to center of the middle "column".

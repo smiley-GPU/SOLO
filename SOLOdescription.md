@@ -2038,6 +2038,56 @@ every other Downtime commerce panel.
 
 ---
 
+### 20.18 INTERFACE UPDATE 2.4.3: centering, a compact Loadout, an "Other" gear tab, and Mission Board cards with the payout in the headline
+
+todo3.md's "INTERFACE UPDATE 2.4.3" section (rows 343-350) — six more
+polish items on the middle column, all cosmetic/layout, no new mechanics.
+
+**Gear Up and the Mission Board are centered.** A new opt-in `.card.centered`
+class (`margin-left/right: auto`) is applied to Gear Up's wrap and to the
+Mission Board's header card and "Not Tonight"/Return-to-Street card; the
+`.mission-row` holding the two mission cards gained `justify-content:
+center`. Every other `.card` (Steps, Encounter, Checkpoint, Debrief, ...)
+stays left-aligned as before — only the two screens the todo named move.
+
+**A more compact Loadout.** Two bugs were quietly making Gear Up taller than
+it needed to be: `.card label` (a leftover rule for the Character-creation
+form) was out-specificity-ing `.offer`'s own `display: flex` on every
+Loadout checkbox row — since a Loadout row is a `<label class="offer">`
+inside a `.card` — forcing it to `display: block` with a 12px bottom margin,
+which broke the checkbox/item-text alignment (todo3.md: "make sure the
+selection box is aligned with the item") and added real height row after
+row. A new `.card label.offer` rule (higher specificity by construction)
+restores the flex row, tightens the row padding, and drops the stray
+margin. Separately, each category's bare `<h4>` was falling back to the
+browser's own sizable default margins (no rule targeted it); `.section h4 {
+margin: 10px 0 4px; ... }` gives it the same tight spacing `.downtime-box
+h4` already had, closing most of the category-to-items gap.
+
+**"Find a Job" is the one real call-to-action.** A new `.btn-cta` class —
+centered in the (now full-width, §20.17) Downtime window, ~20% larger
+(16px/11px×18px vs. the base button's 13px/9px×14px), and colored `--warn`
+(gold) instead of the sitewide teal — so it reads as the button that starts
+the game, not one option among many.
+
+**A 7th gear tab, "Other."** `GEAR_TABS` gained `"Other"`, and a new
+`matchesGearTab(item, tab)` helper (game.js) replaces the three inline
+`tab === "All" || gearCategory(item) === tab` checks (the sheet's Gear tabs,
+and the Shop/Workshop offer lists, §20.16/§20.17) — `"Other"` matches
+anything `gearCategory()` can't place (heal-gear), which previously only
+ever showed up under "All."
+
+**Mission cards: the payout moves into the headline, the description right
+under it.** `renderBriefingCard()`'s `<h3>` is now `"Job N: X BONDS"` (or
+the Special Mission name, `": X BONDS"`) — folding the old separate
+"Payout:" line into the title, "only put the BONDS" per the todo — with the
+job's type + flavor line (`.step-desc`, the card's other 18px headline text)
+immediately under it. Employer/faction-summary/target/location/opposition
+all follow in their previous order, just below the description instead of
+above the Job/Payout line.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
