@@ -447,6 +447,24 @@ function renderStocksBox(active) {
   return box;
 }
 
+// INTERFACE 2.4.1 — the five Loadout categories (§20.8) plus "All"; a plain
+// tab bar over the sheet's Gear list. Heal-gear has no category (exempt
+// from the carry system entirely) so it only ever shows up under "All".
+const GEAR_TABS = ["All", "Weapons", "Clothing", "Decks", "Vehicles", "Social"];
+// INTERFACE 2.4.1 — People tabs: Friends (Amigue/Compi), Faces (everyone
+// else not an Archenemy), Enemies (Archenemy-tagged), All.
+const PEOPLE_TABS = ["Friends", "Faces", "Enemies", "All"];
+function personBucket(ct) {
+  if (ct.archenemy) return "Enemies";
+  if (ct.bloodbrother || ct.relationship >= 3) return "Friends";
+  return "Faces";
+}
+function tabBarHtml(tabs, active, dataAttr) {
+  return `<div class="tab-bar">${tabs.map(t =>
+    `<button type="button" class="tab-btn${t === active ? " active" : ""}" data-${dataAttr}="${t}">${t}</button>`
+  ).join("")}</div>`;
+}
+
 function renderSheet() {
   const c = G.character;
   if (!c) { els.sheet.innerHTML = ""; return; }
@@ -458,7 +476,35 @@ function renderSheet() {
     return `<div class="stat"><span>${k}</span><span>${v}${modBadge}</span></div>`;
   }).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
-  const gearList = c.gear.length ? c.gear.map(g => `<li>${g.name} <em>(${g.tier || "Street"}${g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : ""})</em></li>`).join("") : "<li><em>none</em></li>";
+
+  // Armor boxes (INTERFACE 2.4.1): carried gear armor (depletable — one box
+  // per charge, filled left-to-right as charges are spent, the whole row
+  // gone once the item itself is wrecked and removed) plus a chrome-colored
+  // box per non-depleting cybernetic armor point (§20.11's Faceplate/
+  // Cyberlung/arm+leg pair) — those never fill in, they're a second,
+  // permanent absorb chance, not a shared charge pool.
+  const armorItem = carriedArmorItem(c);
+  const gearArmorMax = armorItem ? (DATA.gearTierBonus[armorItem.tier] || armorItem.armor) : 0;
+  const gearArmorUsed = armorItem ? Math.max(0, gearArmorMax - armorItem.armor) : 0;
+  const cyberArmor = cyberArmorCount(c);
+  const armorSection = (armorItem || cyberArmor)
+    ? `<div class="section"><h3>Armor</h3><div class="hboxes">${
+        Array.from({ length: gearArmorMax }, (_, i) => `<span class="abox${i < gearArmorUsed ? " used" : ""}"></span>`).join("")
+      }${
+        Array.from({ length: cyberArmor }, () => `<span class="abox cyber"></span>`).join("")
+      }</div></div>`
+    : "";
+
+  if (!G.gearTab) G.gearTab = "All"; // ephemeral UI state — never persisted, see G in game.js header
+  const gearShown = c.gear.filter(g => G.gearTab === "All" || gearCategory(g) === G.gearTab);
+  const gearList = gearShown.length
+    ? gearShown.map(g => {
+        const kind = g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : "";
+        const stowed = gearCategory(g) && !g.carried ? ", stowed" : ""; // §20.8 — only carried gear does anything
+        return `<li>${g.name} <em>(${g.tier || "Street"}${kind}${stowed})</em></li>`;
+      }).join("")
+    : "<li><em>none</em></li>";
+
   // "People" is the full recurring-cast pool, not just friendly contacts —
   // Adversaries and Targets you've crossed paths with end up here too, with
   // a negative relationship. See getPerson()/nudgeRelationship() in state.js.
@@ -468,7 +514,10 @@ function renderSheet() {
   // field/function names are unchanged). Both tags are mutually exclusive
   // (tagArchenemy/tagBloodbrother in state.js). Anyone at relationship 3-4
   // (Ally-eligible but not yet free) gets a "Compi" badge — cosmetic only.
-  const contactList = c.contacts.map(ct => {
+  if (!G.peopleTab) G.peopleTab = "All";
+  const peopleShown = (G.peopleTab === "All" ? c.contacts.slice() : c.contacts.filter(ct => personBucket(ct) === G.peopleTab))
+    .sort((a, b) => (a.relationship - b.relationship) * (G.peopleTab === "Enemies" ? 1 : -1)); // Enemies ascending (worst first), everything else descending
+  const contactList = peopleShown.map(ct => {
     let tag = "";
     if (ct.archenemy) {
       const huntBtn = G.phase === "hub" ? `<button class="btn-small hunt-btn" data-hunt-id="${ct.id}">Hunt</button>` : "";
@@ -478,7 +527,10 @@ function renderSheet() {
     } else if (ct.relationship >= 3) {
       tag = ` <span class="compi-badge">Compi</span>`;
     }
-    return `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})${tag}</li>`;
+    // todo3.md INTERFACE 2.4.1 — a red mark for anyone currently wounded
+    // (woundPerson, state.js), cleared automatically by recoverWoundedContacts().
+    const woundedMark = ct.wounded ? ` <span class="wounded-mark" title="Wounded — sidelined">●</span>` : "";
+    return `<li>${ct.name} — ${ct.faction} (${ct.relationship >= 0 ? "+" : ""}${ct.relationship})${tag}${woundedMark}</li>`;
   }).join("");
   const graveyardSection = c.graveyard && c.graveyard.length
     ? `<div class="section"><h3>Graveyard</h3><ul>${c.graveyard.map(p => `<li>${p.name} — ${p.faction}</li>`).join("")}</ul></div>`
@@ -494,17 +546,24 @@ function renderSheet() {
   const restClock = c.restCount > 0
     ? `<div class="section"><h3>Someone's Asking Around</h3><span class="heatbar">${Array.from({ length: 4 }, (_, i) => `<span class="heatseg${i < c.restCount ? " filled" : ""}"></span>`).join("")}</span></div>`
     : "";
+  // todo3.md INTERFACE 2.4.1 — earned honorifics under Reputation, newest
+  // first; the same list is reused as the obituary/score chart on the
+  // win/loss/death screens (addTitle(), state.js).
+  const titlesList = c.titles.length
+    ? `<ul class="titles-list">${c.titles.slice().reverse().map(t => `<li>${t}</li>`).join("")}</ul>`
+    : "";
 
   els.sheet.innerHTML = `
     <div class="sheet-header"><h2>${c.name}</h2><button id="retire-btn" class="danger btn-small">Retire</button></div>
     <div class="tag">${c.profession} / ${c.turf}</div>
+    ${armorSection}
     <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${cyberBadges}${injuryBadge}</div>
     <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
-    <div class="section"><h3>Reputation</h3><div class="cred">${c.reputation} <span class="tag" style="margin:0;display:inline">${reputationTitle(c)} (T${reputationTier(c)})</span></div></div>
-    <div class="section"><h3>Gear</h3><ul>${gearList}</ul></div>
-    <div class="section"><h3>People</h3><ul>${contactList}</ul></div>
+    <div class="section"><h3>Reputation</h3><div class="cred">${c.reputation} <span class="tag" style="margin:0;display:inline">${reputationTitle(c)} (T${reputationTier(c)})</span></div>${titlesList}</div>
+    <div class="section"><h3>Gear</h3>${tabBarHtml(GEAR_TABS, G.gearTab, "gear-tab")}<ul>${gearList}</ul></div>
+    <div class="section"><h3>People</h3>${tabBarHtml(PEOPLE_TABS, G.peopleTab, "people-tab")}<ul>${contactList}</ul></div>
     ${graveyardSection}
     <div class="section"><h3>Locations</h3><ul>${locationsList || "<li><em>none visited yet</em></li>"}</ul></div>
     ${restClock}
@@ -519,6 +578,14 @@ function renderSheet() {
   });
   els.sheet.querySelectorAll(".hunt-btn").forEach(btn => {
     btn.addEventListener("click", () => startHuntManual(Number(btn.dataset.huntId)));
+  });
+  // Tab clicks are pure UI state (G.gearTab/G.peopleTab, never persisted) —
+  // re-render just the sheet, not the whole screen.
+  els.sheet.querySelectorAll("[data-gear-tab]").forEach(btn => {
+    btn.addEventListener("click", () => { G.gearTab = btn.dataset.gearTab; renderSheet(); });
+  });
+  els.sheet.querySelectorAll("[data-people-tab]").forEach(btn => {
+    btn.addEventListener("click", () => { G.peopleTab = btn.dataset.peopleTab; renderSheet(); });
   });
 }
 
@@ -1033,6 +1100,7 @@ function processRestTick(viaApartment) {
   c.shopOffers = genShopOffers(reputationTier(c)); // §20.5 — new stock on the shelves each tick
   runFactionPowerStruggles(c);
   applyFactionPassiveRecovery(c); // BATCH 2.0 — counters the downward trend
+  recoverWoundedContacts(c); // INTERFACE 2.4.1 — wounded contacts sit out 2 rounds, then clear
   if (checkMultiCorpLoss(c)) {
     G.job = null;
     G.board = null;
@@ -2223,6 +2291,7 @@ function runDebrief() {
     if (job.mission.type === "Assassination") {
       repGain += 1;
       addLog(c, `Word travels: "Shadow of ${job.location.name}."`);
+      addTitle(c, `Shadow of ${job.location.name}`);
     }
     if (job.mission.special) repGain += 1;
     gainReputation(c, repGain);
@@ -2287,6 +2356,7 @@ function runDebrief() {
         gainReputation(c, 1); // §19.1
         addLog(c, `${h.person.name} watches your back, no questions asked. You're blood now.`);
         addLog(c, `Reputation +1 — "Friend of ${h.person.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
+        addTitle(c, `Friend of ${h.person.name}`);
       }
     } else {
       nudgeRelationship(c, h.person.id, relAmp(-2));
@@ -2366,6 +2436,21 @@ function renderDebrief() {
 // ---------- WIN ----------
 // 20 BONDS is the game's win condition (todo3.md) — a clean retirement
 // instead of a loss/failure screen.
+// todo3.md INTERFACE 2.4.1 — "use these [titles], when character dies /
+// flatlines, or wins the game to write an obituary or a score chart."
+// Shared by renderWin/renderLoss/renderDeath below.
+function obituaryHtml(c) {
+  const titles = c.titles.length
+    ? `<ul class="titles-list">${c.titles.slice().reverse().map(t => `<li>${t}</li>`).join("")}</ul>`
+    : `<p class="muted">No honors earned — a quiet run.</p>`;
+  return `
+    <div class="section"><h3>Final Score</h3>
+      <p class="muted">Reputation ${c.reputation} — ${reputationTitle(c)} (Tier ${reputationTier(c)}) · ${c.bonds} BONDS</p>
+      ${titles}
+    </div>
+  `;
+}
+
 function renderWin() {
   const c = G.character;
   const wrap = document.createElement("div");
@@ -2378,6 +2463,7 @@ function renderWin() {
     <p>You clear out your gear, settle what you owe, and walk onto the shuttle
     without looking back. Most runners don't get this far. You did.</p>
     <p class="muted">${c.name} — retired, ${c.bonds} BONDS to their name.</p>
+    ${obituaryHtml(c)}
   `;
   const btn = document.createElement("button");
   btn.textContent = "Start a New Runner";
@@ -2414,6 +2500,7 @@ function renderLoss() {
     anything else. Every fixer, every gang, every Turf answers to one
     balance sheet now, and yours is not the name on it.</p>
     <p class="muted">${c.name} — still on the street, in a city that isn't anyone's anymore.</p>
+    ${obituaryHtml(c)}
   `;
   const btn = document.createElement("button");
   btn.textContent = "Start a New Runner";
@@ -2444,6 +2531,7 @@ function renderDeath() {
     ripperdoc, no coffin pod, no lucky break this time — just the street,
     and then nothing.</p>
     <p class="muted">${c.name} — didn't make it off Europunk's streets.</p>
+    ${obituaryHtml(c)}
   `;
   const btn = document.createElement("button");
   btn.textContent = "Start a New Runner";
@@ -2914,6 +3002,7 @@ function applyHuntKillReward(c) {
   addLog(c, `${hunt.archenemy.name} goes down for good. You walk away with a ${weapon.name}, a surge of BOOST, and 2 more BONDS.`);
   gainReputation(c, 2); // §19.1
   addLog(c, `Reputation +2 — "Killer of ${hunt.archenemy.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
+  addTitle(c, `Killer of ${hunt.archenemy.name}`);
   killPerson(c, hunt.archenemy.id);
   hunt.stage = "resolved-kill";
 }

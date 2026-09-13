@@ -302,3 +302,13 @@ If there is a Authority checkpoint, then it replaces any possible random encount
 
 ## PATCH 2.4
 Make it a choice whether or not to use single-shot (1S) item in a challenge.
+
+## INTERFACE UPDATE 2.4.1
+Let's do a major interface update.
+Let's keep Character at left side as it is. To Character colun let's do following changes:
+* Add Armor boxes above healt. Make Boxes if character has items or other features (cybernetic replacement) that gives him armor. Mark the boxes when they are used. If the last box is used and armor is destroyed then remove the boxes.
+* make sure that boxes are always filled from the left most box and unfilled (heal / repair) from the right most box.
+* to Reputation add different reputational names under the score: eg. Killer of xxx, Shadow of xxx. USe these, when character dies / flatlines, or wins the game to write an obituary or a score chart.
+* Gear: make gear to different tabs by category, so player can click to see all armor, all weapons etc. Also make a tab called "All" where you have all items. 
+* Sort People under tabs "Friends" (Compi, Amigue), Faces (other), "Enemies" (Archenemies), "All". Sort them by relationship score: Friends and Faces in descending, Enemies in ascending order.
+* Add "red" mark next to wounded people. remove it when they are healed (available again to work).

@@ -47,6 +47,7 @@ function defaultCharacter(name, profession, turf) {
     archenemyId: null, // locked in on the first Rest — see processRestTick() in game.js
     pendingSaleItem: null, // a banked Street-tier item awaiting its pair — see sellGearItem() in game.js
     reputation: 1, // §19.1 — 1-20, never spent, gates the Mission Board (reputationTier() below)
+    titles: [], // INTERFACE 2.4.1 — earned honorifics ("Killer of X", "Shadow of X", "Friend of X"), see addTitle()
     pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
     stocks: {}, // §20.5 EuroStoxx — {factionName: amount}, Corpo factions only
     apartment: null, // §20.5 — {locationName, tier, security: [names]} once bought
@@ -302,6 +303,7 @@ function migrateCharacter(character) {
 
   // §19.1 / §19.6 / §19.7 — Reputation, Faction Tiers, pending faction wars.
   if (typeof character.reputation !== "number") character.reputation = 1;
+  if (!character.titles) character.titles = []; // INTERFACE 2.4.1
   if (!character.pendingWars) character.pendingWars = [];
   Object.entries(character.factionStandings).forEach(([name, standing]) => {
     const f = DATA.factions.find(f => f.name === name);
@@ -568,8 +570,26 @@ function woundPerson(character, person) {
     addLog(character, `${person.name} doesn't survive this one.`);
   } else {
     person.wounded = true;
+    person.woundedRounds = 2; // todo3.md Persons/NPCs — sidelined for 2 rounds/nights, see recoverWoundedContacts()
     addLog(character, `${person.name} is wounded and won't be much use for a while.`);
   }
+}
+
+// INTERFACE 2.4.1 — the sheet shows a red mark on any `wounded` contact
+// ("remove it when they are healed, available again to work"); this is what
+// clears it. Ticks once per Rest (processRestTick, game.js) — the same
+// "round/night" cadence the faction Power struggles use.
+function recoverWoundedContacts(character) {
+  character.contacts.forEach(p => {
+    if (!p.wounded) return;
+    if (typeof p.woundedRounds !== "number") p.woundedRounds = 2; // backfill for anyone wounded before this field existed
+    p.woundedRounds -= 1;
+    if (p.woundedRounds <= 0) {
+      p.wounded = false;
+      delete p.woundedRounds;
+      addLog(character, `${p.name} is back on their feet.`);
+    }
+  });
 }
 
 function addLog(character, text) {
@@ -588,9 +608,14 @@ function markHarm(character) {
   if (idx !== -1) character.health[idx] = true;
   return isDown(character);
 }
+// INTERFACE 2.4.1 — boxes are always marked leftmost-first (markHarm above
+// already does this); healing has to clear from the rightmost marked box
+// instead of the leftmost, or a heal would open a gap in the middle of the
+// row instead of shrinking it from the end.
 function healBox(character) {
-  const idx = character.health.findIndex(h => h);
-  if (idx !== -1) character.health[idx] = false;
+  for (let i = character.health.length - 1; i >= 0; i--) {
+    if (character.health[i]) { character.health[i] = false; return; }
+  }
 }
 
 // Armor (Corrections.md): a flat chance to fully absorb a Harm mark
@@ -624,8 +649,15 @@ function cyberAttrModifier(character, attr) {
   return 0;
 }
 
+// INTERFACE 2.4.1 — the one carried armor item currently absorbing hits;
+// shared by applyHarm() and the sheet's Armor-boxes row so they never
+// disagree about which item is "the" armor.
+function carriedArmorItem(character) {
+  return character.gear.find(item => item.carried && item.armor > 0);
+}
+
 function applyHarm(character) {
-  const armor = character.gear.find(item => item.carried && item.armor > 0);
+  const armor = carriedArmorItem(character);
   if (armor && Math.random() < ARMOR_ABSORB_CHANCE) {
     armor.armor -= 1;
     addLog(character, `${armor.name} takes the hit for you.`);
@@ -685,6 +717,15 @@ function reputationTier(character) {
 function reputationTitle(character) {
   const entry = DATA.reputationTiers.find(t => character.reputation <= t.max);
   return entry ? entry.title : DATA.reputationTiers[DATA.reputationTiers.length - 1].title;
+}
+
+// INTERFACE 2.4.1 — earned honorifics ("Killer of X", "Shadow of X", "Friend
+// of X"), one per Reputation-granting deed that already gets its own log
+// line. Kept as a simple running list (not deduped — killing a second
+// Archenemy is a second honor) shown under Reputation on the sheet, and
+// doubling as the obituary/score chart on the win/loss/death screens.
+function addTitle(character, title) {
+  character.titles.push(title);
 }
 
 // -- Faction system (todo2.md) --------------------------------------------

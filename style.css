@@ -123,6 +123,31 @@ header h1 {
 #sheet li { padding: 2px 0; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #sheet li em { color: var(--muted); font-style: normal; }
 
+/* INTERFACE 2.4.1 — Armor boxes: gear-armor charges (unused = amber outline,
+   used = dimmed fill, the whole row vanishes once the item breaks) plus a
+   solid-filled box per non-depleting cybernetic armor point. */
+.abox {
+  width: 18px; height: 18px; border: 2px solid var(--warn); border-radius: 3px; display: inline-block;
+}
+.abox.used { background: var(--muted); border-color: var(--muted); }
+.abox.cyber { background: var(--accent); border-color: var(--accent); }
+
+/* INTERFACE 2.4.1 — Gear/People tabs on the character sheet. */
+.tab-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.tab-btn {
+  background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px;
+  padding: 2px 8px; font-size: 11px; margin: 0; cursor: pointer; font-weight: 600;
+}
+.tab-btn:hover:not(.active) { color: var(--text); border-color: var(--muted); }
+.tab-btn.active { background: var(--accent); color: #06110f; border-color: var(--accent); }
+
+.wounded-mark { color: var(--danger); font-size: 10px; }
+
+/* INTERFACE 2.4.1 — earned honorifics, shown under Reputation and reused
+   as the obituary/score chart on the win/loss/death screens. */
+.titles-list { margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; color: var(--warn); }
+.titles-list li { padding: 1px 0; }
+
 .heatbar { display: inline-flex; gap: 2px; vertical-align: middle; }
 .heatseg {
   width: 8px; height: 8px; border-radius: 2px;

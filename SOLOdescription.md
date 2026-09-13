@@ -1848,6 +1848,74 @@ there's no roll UI there to offer a choice on.
 
 ---
 
+### 20.15 INTERFACE UPDATE 2.4.1: Armor boxes, Gear/People tabs, Reputation titles, wounded recovery
+
+todo3.md's "INTERFACE UPDATE 2.4.1" section (rows 306-315) — a pass over the
+Character column's readability, with one small mechanic (wounded recovery)
+added to back a display requirement that had no underlying state yet.
+
+**Armor boxes**, above Health. `carriedArmorItem(c)` (state.js, also now the
+one thing `applyHarm()` itself calls) finds the carried gear-armor item;
+its box count is `DATA.gearTierBonus[item.tier]` (the charge count the tier
+started with), filled left-to-right as `gearMax - item.armor` — i.e. exactly
+as many boxes read "used" as charges have actually been spent. The whole
+gear-armor row disappears on its own the moment the item breaks (`applyHarm`
+already removes a 0-charge item from `gear` — nothing extra to do). A
+second, differently-colored box per point of non-depleting cybernetic armor
+(`cyberArmorCount()`, §20.11) is appended after — those never fill in, since
+a chrome absorb chance isn't a shared charge pool, just a second independent
+roll `applyHarm()` tries after gear armor doesn't apply.
+
+**Health (and Armor) boxes heal from the right.** `markHarm()` already filled
+the leftmost *empty* box first; `healBox()` used to clear the leftmost
+*marked* box, which could open a gap in the middle of the row instead of
+shrinking it from the end (`[true,true,false]` healing to `[false,true,false]`).
+Fixed to clear the rightmost marked box instead, so marked boxes are always
+a contiguous block starting at index 0 — "filled from the leftmost box,
+unfilled from the rightmost," per the todo.
+
+**Reputation gets an earned-titles list.** A new `character.titles` array
+(state.js, `addTitle()`) collects the honorific line already logged at each
+Reputation-granting deed — "Shadow of `<Location>`" (Assassination),
+"Friend of `<name>`" (a Helper becoming an Amigue), "Killer of `<name>`" (a
+Hunt kill) — instead of those strings only ever existing as one-off log
+lines. Shown under Reputation on the sheet (newest first), and reused
+verbatim as a "Final Score" obituary/score-chart block (`obituaryHtml()`,
+game.js: Reputation, Tier, BONDS, then the full titles list) on the Win,
+Loss (MULTI-CORP), and Death screens alike.
+
+**Gear tabs.** The sheet's Gear list now sits behind a small tab bar — All,
+Weapons, Clothing, Decks, Vehicles, Social (`GEAR_TABS`, game.js) — filtering
+by the existing `gearCategory()` (state.js, §20.8); heal-gear has no
+category of its own (exempt from the Loadout/carry system entirely, §20.8)
+so it only ever shows under All. Selected tab is ephemeral UI state
+(`G.gearTab`, never persisted) and a click re-renders only the sheet, not
+the whole screen. A carried-system item shown while not currently carried
+gets a small ", stowed" suffix.
+
+**People tabs.** Likewise for the People list — Friends, Faces, Enemies, All
+(`PEOPLE_TABS`/`personBucket()`, game.js): Friends is anyone tagged Amigue
+(`bloodbrother`) or at relationship ≥3 (Compi-eligible); Enemies is anyone
+tagged Archenemy; Faces is everyone else, including ordinary negative-
+relationship contacts that were never tagged. Friends/Faces/All sort
+descending by relationship (best first); Enemies sorts ascending (most
+hated first).
+
+**Wounded contacts get a red mark — and a way to clear it.** `woundPerson()`
+(state.js) already set a persistent `wounded` flag (§20.4's two-strike
+rule); the sheet now renders a small red dot next to any wounded contact's
+row. Since nothing previously ever cleared that flag, a matching recovery
+was added to back "remove it when they are healed, available again to
+work": `woundPerson()` now also stamps `woundedRounds = 2`, and a new
+`recoverWoundedContacts()` (state.js), called once per Rest tick alongside
+the existing faction-recovery calls in `processRestTick()` (game.js),
+counts it down and clears `wounded` (logging "`<name>` is back on their
+feet.") once it reaches 0 — the "sidelined for two rounds/nights" recovery
+todo3.md's Persons/NPCs section originally called for but that was never
+wired up.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
