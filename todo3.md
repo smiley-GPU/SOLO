@@ -312,3 +312,24 @@ Let's keep Character at left side as it is. To Character colun let's do followin
 * Gear: make gear to different tabs by category, so player can click to see all armor, all weapons etc. Also make a tab called "All" where you have all items. 
 * Sort People under tabs "Friends" (Compi, Amigue), Faces (other), "Enemies" (Archenemies), "All". Sort them by relationship score: Friends and Faces in descending, Enemies in ascending order.
 * Add "red" mark next to wounded people. remove it when they are healed (available again to work).
+
+## INTERFACE UPDATE 2.4.2
+Let's move to middle section of our interface.
+* Move log to the top of the screen. Make the box ten rows high, increase log font to same we have at "Find a Job" button. Make the box scrollable so that the player can scroll to older messages. Also make a button, where player can increase the window/box size to 20 rows, and then cliccking this button again, it would make it normal (10 rows high).
+* Make a DOWNTIME window/box under the LOG.
+* In the DOWNTIME window you will have all DOWNTIME options (Coffin Hotel, Street, Apartment, Stay at Friends). These should be visible always, until you press FIND A JOB button that should be below these downtime options. 
+* Move SHOP, WORKSHOP, APARTMENT, STREET-DOJO, EUROSTOXX as a columns under the DOWNTIME.
+* Make tabs to SHOP and WORKSHOP by item category and also add tab "ALL" where is all products.  
+* FIND A JOB button opens missions. Missions will be presented as a cards that open side by side in their own windows. Player must choose either mission or a third option ("RETURN TO STREET") that is in it's own window below the cards. 
+* Return to Street: will discard the missions and activete Downtime window and other windows that where under them. Keep the same missions still available if player click FIND A JOB again. Change the missions (and update the Tier probabilities on the 2nd job) only if player chooses some other option than FIND A JOB from DOWNTIME window.
+* When player chooses a mission, discard the other mission window and RETURN TO STREET window.
+* Align the mission window in the center and adjust it's size if necessary. Run the mission in this window. Mission box should be so low, that LOG (10 rows) is fully visible.
+* Make a new box under the mission when it start. This is "ABORT MISSION".
+* If you abort mission, you need to roll Evasion roll which is either Stealth or Driving. 
+    10+: you abort mission. 
+    7-9: you abort mission, but either take one damage or damage one item or if available help (hired, Compi, Amigue) is wounded.
+    6 or below: you take two of the following: one damage, damage one item, if available help is wounded. You can take same twice so it can result to two damage, dead help (two wounds to same help), destroyed item.
+    In all cases: Mission failed, normal penalty to your rep, and hired help returned to stock, so has to be hired again to get their help in a new mission. 
+ * When the mission is resolved:succeeded or failed, the window is closed.
+* Mission cards make the layout look like a trading card game cards. Make sure that you only use two font sizes (text and headline) and the contrast between background and font is good. No grey text on black background.
+

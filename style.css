@@ -34,21 +34,52 @@ header h1 {
 
 #layout {
   display: grid;
-  grid-template-columns: 260px 1fr 260px 320px;
+  grid-template-columns: 260px 1fr 320px;
   gap: 1px;
   background: var(--border);
   min-height: calc(100vh - 53px);
 }
-#sheet, #main, #factions, #downtime {
+#sheet, #main, #factions {
   background: var(--panel);
   padding: 16px;
   overflow-y: auto;
 }
 #main { background: var(--bg); }
 
-/* §20.5 — Downtime panels (Shop/Training/EuroStoxx), always visible next
-   to Factions; greyed and inert (not literally hidden) once a job is on. */
-#downtime h2 { color: var(--accent); margin-top: 0; font-size: 18px; }
+/* INTERFACE 2.4.2 — the journal now lives at the top of #main, a fixed-height
+   scrollable box (10 rows, 20 when expanded) instead of a footer under the
+   phase card. Font matches a button's own size (13px) per the todo. */
+.journal-box { margin-bottom: 16px; }
+.journal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.journal-head h3 {
+  margin: 0; font-size: 13px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+#journal {
+  font-size: 13px;
+  max-height: calc(1.6em * 10);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 10px;
+}
+#journal.expanded { max-height: calc(1.6em * 20); }
+.log-line {
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border);
+  color: var(--muted);
+}
+.log-line:first-child { color: var(--text); }
+/* BATCH 2.1 (item 6) — the newest line(s) added by the most recent action,
+   overriding the muted/first-child defaults above regardless of position. */
+.log-line.log-new { color: var(--warn); font-weight: 600; }
+
+/* INTERFACE 2.4.2 — Downtime moved into #main: a Lay-Low window (rest
+   options + Find a Job) followed by a row of Shop/Workshop/Apartment/
+   Street-Dojo/EuroStoxx columns, both only ever shown at the Hub. */
+.downtime-columns { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.downtime-columns .downtime-box { flex: 1 1 220px; min-width: 220px; margin-bottom: 0; }
 .downtime-box {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -61,8 +92,6 @@ header h1 {
   text-transform: uppercase; letter-spacing: 1px;
 }
 .downtime-box h4 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); }
-.downtime-box.disabled { opacity: 0.45; }
-.downtime-box.disabled * { color: var(--muted) !important; pointer-events: none; }
 .downtime-box .offer { padding: 6px 0; font-size: 13px; }
 .downtime-box select {
   display: block; width: 100%; margin: 6px 0;
@@ -226,11 +255,6 @@ button.danger { background: var(--danger); color: #2a0000; }
 .faction-row.destroyed { opacity: 0.5; }
 .faction-row.destroyed .faction-stats { color: var(--danger); letter-spacing: 1px; }
 
-.special-badge {
-  margin: 6px 0; font-size: 12px; color: var(--danger);
-  border: 1px solid var(--danger); border-radius: 4px; padding: 4px 6px; display: inline-block;
-}
-
 .step-desc {
   text-align: center;
   font-size: 1.15em;
@@ -248,23 +272,30 @@ button.danger { background: var(--danger); color: #2a0000; }
 .faction-summary { font-size: 13px; color: var(--muted); margin: 4px 0; }
 .faction-summary strong { color: var(--accent); }
 
-#journal {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  max-height: 320px;
-  overflow-y: auto;
-  font-size: 12px;
+/* INTERFACE 2.4.2 — the Mission Board: two trading-card-style offers side by
+   side, plus a "Return to Street" card below. Deliberately only two font
+   sizes anywhere on a mission card — an 18px headline (title, and the Job/
+   Payout line) and one 14px body size for everything else — and no muted/
+   grey text on it (todo3.md: "no grey text on black background"). */
+.mission-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+.mission-card {
+  flex: 1 1 320px; max-width: 420px;
+  background: var(--panel-2);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 18px;
 }
-.log-line {
-  padding: 5px 0;
-  border-bottom: 1px dashed var(--border);
-  color: var(--muted);
-}
-.log-line:first-child { color: var(--text); }
-/* BATCH 2.1 (item 6) — the newest line(s) added by the most recent action,
-   overriding the muted/first-child defaults above regardless of position. */
-.log-line.log-new { color: var(--warn); font-weight: 600; }
+.mission-card.special { border-color: var(--accent-2); }
+.mission-card h3 { font-size: 18px; margin: 0 0 10px; color: var(--accent); }
+.mission-card.special h3 { color: var(--accent-2); }
+.mission-card p, .mission-card li { font-size: 14px; color: var(--text); margin: 4px 0; }
+.mission-card strong { color: var(--warn); font-weight: 600; }
+.mission-card ul { margin: 4px 0; padding-left: 18px; }
+.mission-card .step-desc { font-size: 18px; text-align: left; font-weight: 600; margin: 8px 0; color: var(--text); }
+.return-street-box { margin-top: 14px; }
+
+/* INTERFACE 2.4.2 — "Abort Mission": shown once a job is under way. */
+.abort-box { margin-top: 14px; }
 
 .boost-toggle { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; cursor: pointer; }
 .boost-toggle input { margin-right: 6px; }

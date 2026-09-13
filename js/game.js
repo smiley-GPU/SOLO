@@ -13,8 +13,7 @@ const G = {
 const els = {
   sheet: document.getElementById("sheet"),
   main: document.getElementById("main"),
-  factions: document.getElementById("factions"),
-  downtime: document.getElementById("downtime")
+  factions: document.getElementById("factions")
 };
 
 function init() {
@@ -84,15 +83,26 @@ function render() {
   renderSheet();
   renderMain();
   renderFactions();
-  renderDowntime();
 }
 
-// Journal, appended into #main below the phase card — newest line on top,
-// old ones pushed down (todo2.md INTERFACE). No auto-scroll needed since the
+// INTERFACE 2.4.2 — the journal now sits at the top of #main (was a footer
+// under the phase card), a fixed-height scrollable box — 10 rows, or 20 with
+// the Expand toggle — instead of one open-ended list. Newest line on top,
+// old ones pushed down (todo2.md INTERFACE); no auto-scroll needed since the
 // newest entry is always the first thing visible.
-function renderJournal() {
+function renderJournalBox() {
+  const box = document.createElement("div");
+  box.className = "journal-box";
+  const expanded = !!G.logExpanded;
+  box.innerHTML = `
+    <div class="journal-head">
+      <h3>Journal</h3>
+      <button type="button" id="journal-toggle" class="btn-small">${expanded ? "Shrink" : "Expand"}</button>
+    </div>
+  `;
   const journal = document.createElement("div");
   journal.id = "journal";
+  journal.className = expanded ? "expanded" : "";
   if (G.character) {
     const log = G.character.log;
     // BATCH 2.1 (item 6) — render() fires exactly once per user action
@@ -109,7 +119,12 @@ function renderJournal() {
       journal.appendChild(p);
     });
   }
-  return journal;
+  box.appendChild(journal);
+  box.querySelector("#journal-toggle").addEventListener("click", () => {
+    G.logExpanded = !G.logExpanded; // ephemeral UI state, never persisted
+    renderMain();
+  });
+  return box;
 }
 
 // Right-hand panel: every faction in the game (todo2.md INTERFACE/Factions),
@@ -138,71 +153,39 @@ function renderFactions() {
   els.factions.innerHTML = `<h2>Factions</h2>${html}`;
 }
 
-// ---------- DOWNTIME (§20.5) ----------
-// Three always-visible panels — Shop, Training, EuroStoxx — that replace
-// the old per-job Gear Up buy screen and the Hub's inline Training/Sell
-// sections. Always rendered (todo3.md: "except during missions... closed,
-// all grey font"), just greyed out and inert once G.phase leaves "hub".
-function renderDowntime() {
-  const el = els.downtime;
-  if (!el) return;
-  el.innerHTML = "";
-  if (!G.character) return;
-  // BATCH 2.2 — "Downtime and laylow options to same screen": Lay Low
-  // (Coffin Hotel/Night on the Street/Spend the Night/Rest at Apartment)
-  // used to live inside the Mission Board card; it's a fourth box here now,
-  // alongside Shop/Training/EuroStoxx. Browsing a Briefing isn't a mission
-  // yet, so the whole column stays open through "briefing" too — only
-  // actually being on a job closes it.
-  const active = G.phase === "hub" || G.phase === "briefing";
-  const header = document.createElement("h2");
-  header.textContent = "Downtime";
-  el.appendChild(header);
-  el.appendChild(renderShopBox(active));
-  el.appendChild(renderTrainingBox(active));
-  el.appendChild(renderStocksBox(active));
-  el.appendChild(renderLayLowBox(active));
-}
-
-// "Lay Low" — Rest options, moved into the same Downtime column as Shop/
-// Training/EuroStoxx (todo3.md BATCH 2.2) instead of living inside the
-// Mission Board card. Its actual content still needs a Board on the wire
-// (G.board) — resting rerolls that Board, so there has to be one to reroll.
-function renderLayLowBox(active) {
-  const box = document.createElement("div");
-  box.className = `downtime-box${active ? "" : " disabled"}`;
-  box.innerHTML = `<h3>Lay Low</h3>`;
-  if (!active) {
-    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
-    return box;
-  }
-  const content = document.createElement("div");
-  box.appendChild(content);
-  if (!G.board) {
-    content.innerHTML = `<p class="muted">Find a job first — lay-low options show up once the Wire's got offers on it.</p>`;
-  } else if (G.restFlow) {
-    renderRestSubflow(content);
-  } else {
-    renderRestOptions(content);
-  }
-  return box;
+// ---------- DOWNTIME (§20.5, restructured — todo3.md INTERFACE 2.4.2) ------
+// Shop/Workshop/Apartment/Street-Dojo/EuroStoxx used to live in their own
+// permanent 4th sidebar column, always visible-but-greyed outside the Hub;
+// INTERFACE 2.4.2 moves them into #main as a row of columns under the
+// Lay-Low/Find-a-Job window (renderHub, below) — both are now rendered only
+// at the Hub, so there's no more "closed for the job" grey state to track:
+// they simply aren't in the DOM once a job is under way.
+function renderDowntimeColumns() {
+  const wrap = document.createElement("div");
+  wrap.className = "downtime-columns";
+  wrap.appendChild(renderShopBox());
+  wrap.appendChild(renderWorkshopBox());
+  wrap.appendChild(renderApartmentBox());
+  wrap.appendChild(renderTrainingBox());
+  wrap.appendChild(renderStocksBox());
+  return wrap;
 }
 
 // "GEAR, GUNS AND GENERAL GOODNESS" — buy from the Reputation-Tier-scaled
-// offer pool (genShopOffers, engine.js), sell owned gear, and buy/upgrade
-// an Apartment (renderApartmentSection below).
-function renderShopBox(active) {
+// offer pool (genShopOffers, engine.js) and sell owned gear. Repair and
+// Apartments now have their own columns (renderWorkshopBox/renderApartmentBox
+// below) instead of being nested in here. Tabbed by gear category + "All"
+// (todo3.md INTERFACE 2.4.2), filtering both the Buy offers and Sell list.
+function renderShopBox() {
   const c = G.character;
   const box = document.createElement("div");
-  box.className = `downtime-box${active ? "" : " disabled"}`;
+  box.className = "downtime-box";
   box.innerHTML = `<h3>Gear, Guns &amp; General Goodness</h3>`;
-  if (!active) {
-    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
-    return box;
-  }
   if (!c.shopOffers) c.shopOffers = genShopOffers(reputationTier(c));
+  if (!G.shopTab) G.shopTab = "All"; // ephemeral UI state — never persisted
+  box.innerHTML += tabBarHtml(GEAR_TABS, G.shopTab, "shop-tab");
 
-  c.shopOffers.forEach(item => {
+  c.shopOffers.filter(item => G.shopTab === "All" || gearCategory(item) === G.shopTab).forEach(item => {
     const price = item.price;
     const row = document.createElement("div");
     row.className = "offer";
@@ -227,56 +210,81 @@ function renderShopBox(active) {
 
   // Sell Gear (todo3.md Items) — 2 Street items = 1 BOND, 1 higher-tier item
   // = 1 BOND; a Fixer contact at relationship ≥3 adds +1 BOND per sale.
-  if (c.gear.length) {
+  const sellable = c.gear.filter(item => G.shopTab === "All" || gearCategory(item) === G.shopTab);
+  if (sellable.length) {
     const sellSection = document.createElement("div");
     sellSection.className = "section";
     const hasFixerDeal = c.contacts.some(p => p.profession === "Fixer" && p.relationship >= 3);
     const bankNote = c.pendingSaleItem ? `<p class="muted">Banked: ${c.pendingSaleItem} — sell one more Street item to cash in.</p>` : "";
     sellSection.innerHTML = `<h4>Sell Gear</h4><p class="muted">2 Street items = 1 BOND. 1 higher-tier item = 1 BOND.${hasFixerDeal ? " Your fixer kicks in +1 BOND per sale." : ""}</p>${bankNote}`;
-    c.gear.forEach((item, idx) => {
+    sellable.forEach(item => {
       const row = document.createElement("div");
       row.className = "offer";
       row.innerHTML = `<span>${item.name} <em>(${item.tier || "Street"})</em></span>`;
       const btn = document.createElement("button");
       btn.textContent = "Sell";
-      btn.addEventListener("click", () => sellGearItem(idx));
+      btn.addEventListener("click", () => sellGearItem(c.gear.indexOf(item)));
       row.appendChild(btn);
       sellSection.appendChild(row);
     });
     box.appendChild(sellSection);
   }
 
-  // BATCH 2.0 — repair a degraded (downgraded-a-tier) item back up one
-  // Tier, priced the same as buying that next Tier fresh (DATA.gearTierBonus
-  // doubles as the BOND-scale price for every catalog entry at that tier).
-  const repairable = c.gear.filter(item => DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.length - 1);
-  if (repairable.length) {
-    const repairSection = document.createElement("div");
-    repairSection.className = "section";
-    repairSection.innerHTML = `<h4>Repair Gear</h4><p class="muted">Pay an item up one Tier.</p>`;
-    repairable.forEach(item => {
-      const nextTier = DATA.gearTierOrder[DATA.gearTierOrder.indexOf(item.tier || "Street") + 1];
-      const cost = DATA.gear[nextTier][0].price; // same price as buying fresh at that Tier
-      const row = document.createElement("div");
-      row.className = "offer";
-      row.innerHTML = `<span>${item.name} <em>(${item.tier} → ${nextTier})</em></span>`;
-      const btn = document.createElement("button");
-      btn.textContent = `Repair — ${cost} BOND${cost === 1 ? "" : "S"}`;
-      btn.disabled = c.bonds < cost;
-      btn.addEventListener("click", () => {
-        c.bonds -= cost;
-        item.tier = nextTier;
-        if (item.armor) item.armor = DATA.gearTierBonus[nextTier]; // full charges at the new tier
-        addLog(c, `You get the ${item.name} fixed up to ${nextTier} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
-        persist(); render();
-      });
-      row.appendChild(btn);
-      repairSection.appendChild(row);
-    });
-    box.appendChild(repairSection);
-  }
+  box.querySelectorAll("[data-shop-tab]").forEach(btn => {
+    btn.addEventListener("click", () => { G.shopTab = btn.dataset.shopTab; render(); });
+  });
+  return box;
+}
 
-  box.appendChild(renderApartmentSection(c));
+// "WORKSHOP" (todo3.md INTERFACE 2.4.2) — repairing a degraded (downgraded-
+// a-tier) item back up one Tier, priced the same as buying that next Tier
+// fresh; split out of the old combined Shop panel. Tabbed like the Shop.
+function renderWorkshopBox() {
+  const c = G.character;
+  const box = document.createElement("div");
+  box.className = "downtime-box";
+  box.innerHTML = `<h3>Workshop</h3><p class="muted">Pay an item up one Tier.</p>`;
+  if (!G.workshopTab) G.workshopTab = "All";
+  box.innerHTML += tabBarHtml(GEAR_TABS, G.workshopTab, "workshop-tab");
+
+  const repairable = c.gear
+    .filter(item => DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.length - 1)
+    .filter(item => G.workshopTab === "All" || gearCategory(item) === G.workshopTab);
+  if (!repairable.length) box.innerHTML += `<p class="muted">Nothing to fix up in this category.</p>`;
+  repairable.forEach(item => {
+    const nextTier = DATA.gearTierOrder[DATA.gearTierOrder.indexOf(item.tier || "Street") + 1];
+    const cost = DATA.gear[nextTier][0].price; // same price as buying fresh at that Tier
+    const row = document.createElement("div");
+    row.className = "offer";
+    row.innerHTML = `<span>${item.name} <em>(${item.tier} → ${nextTier})</em></span>`;
+    const btn = document.createElement("button");
+    btn.textContent = `Repair — ${cost} BOND${cost === 1 ? "" : "S"}`;
+    btn.disabled = c.bonds < cost;
+    btn.addEventListener("click", () => {
+      c.bonds -= cost;
+      item.tier = nextTier;
+      if (item.armor) item.armor = DATA.gearTierBonus[nextTier]; // full charges at the new tier
+      addLog(c, `You get the ${item.name} fixed up to ${nextTier} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
+      persist(); render();
+    });
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+
+  box.querySelectorAll("[data-workshop-tab]").forEach(btn => {
+    btn.addEventListener("click", () => { G.workshopTab = btn.dataset.workshopTab; render(); });
+  });
+  return box;
+}
+
+// "APARTMENT" (todo3.md INTERFACE 2.4.2) — buy/upgrade a place and install
+// Security; its own column now instead of nested inside the Shop panel.
+// renderApartmentSection (below) is unchanged — this is just its new home.
+function renderApartmentBox() {
+  const box = document.createElement("div");
+  box.className = "downtime-box";
+  box.innerHTML = `<h3>Apartment</h3>`;
+  box.appendChild(renderApartmentSection(G.character));
   return box;
 }
 
@@ -290,7 +298,7 @@ function renderShopBox(active) {
 function renderApartmentSection(c) {
   const wrap = document.createElement("div");
   wrap.className = "section";
-  wrap.innerHTML = "<h4>Apartments</h4>";
+  wrap.innerHTML = ""; // INTERFACE 2.4.2 — heading now lives one level up, on the Apartment column itself
   const repTier = reputationTier(c);
 
   if (c.apartment) {
@@ -373,15 +381,13 @@ function renderApartmentSection(c) {
 
 // "LESSONS FROM THE STREET" — unchanged Training mechanic, relocated out
 // of the Hub's inline section.
-function renderTrainingBox(active) {
+// todo3.md INTERFACE 2.4.2 — renamed "Street-Dojo" on screen; function/
+// mechanic names unchanged (same cosmetic-rename idiom as Amigue/Compi, §20.6).
+function renderTrainingBox() {
   const c = G.character;
   const box = document.createElement("div");
-  box.className = `downtime-box${active ? "" : " disabled"}`;
-  box.innerHTML = `<h3>Lessons From the Street</h3>`;
-  if (!active) {
-    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
-    return box;
-  }
+  box.className = "downtime-box";
+  box.innerHTML = `<h3>Street-Dojo</h3>`;
   Object.entries(c.attrs).forEach(([attr, rank]) => {
     const cost = rank; // rank 1→2 costs 1 BOND, 2→3 costs 2, … (todo3.md BOND scale)
     const btn = document.createElement("button");
@@ -402,16 +408,11 @@ function renderTrainingBox(active) {
 // "EUROSTOXX" (§20.5) — park BONDS in any current Corpo faction's stock;
 // it moves with their Wealth via settleStockGains() (state.js, hooked into
 // adjustFactionParam). Sell converts the whole held amount back 1:1, any time.
-function renderStocksBox(active) {
+function renderStocksBox() {
   const c = G.character;
   const box = document.createElement("div");
-  box.className = `downtime-box${active ? "" : " disabled"}`;
-  box.innerHTML = `<h3>EuroStoxx</h3>`;
-  if (!active) {
-    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
-    return box;
-  }
-  box.innerHTML += `<p class="muted">Park BONDS in a Corpo faction's stock — it moves with their Wealth.</p>`;
+  box.className = "downtime-box";
+  box.innerHTML = `<h3>EuroStoxx</h3><p class="muted">Park BONDS in a Corpo faction's stock — it moves with their Wealth.</p>`;
 
   DATA.factions.filter(f => {
     const s = c.factionStandings[f.name];
@@ -591,6 +592,7 @@ function renderSheet() {
 
 function renderMain() {
   els.main.innerHTML = "";
+  els.main.appendChild(renderJournalBox()); // INTERFACE 2.4.2 — journal now leads, not trails
   const fn = {
     create: renderCreate,
     hub: renderHub,
@@ -606,7 +608,6 @@ function renderMain() {
     death: renderDeath
   }[G.phase];
   if (fn) fn();
-  els.main.appendChild(renderJournal());
 }
 
 // ---------- CREATE ----------
@@ -640,17 +641,19 @@ function renderCreate() {
   });
 }
 
-// ---------- HUB ----------
+// ---------- HUB / DOWNTIME (restructured — todo3.md INTERFACE 2.4.2) ------
+// The pre-job view: Medical/Permanent-Injury care and the Lay-Low window
+// (Rest options + Find a Job) in one card, then the Shop/Workshop/Apartment/
+// Street-Dojo/EuroStoxx columns underneath. All of it — Lay-Low and the
+// columns alike — disappears the instant "Find a Job" is pressed, replaced
+// by the Mission Board's two cards (renderBriefing); "Return to Street"
+// brings it back without touching G.board, so the same two jobs are still
+// there (todo3.md: "keep the same missions still available").
 function renderHub() {
   const c = G.character;
   const wrap = document.createElement("div");
   wrap.className = "card";
   wrap.innerHTML = `<h2>Downtime</h2><p class="muted">Between jobs. Gear up, patch up, or find work.</p>`;
-
-  const jobBtn = document.createElement("button");
-  jobBtn.textContent = "Find a Job";
-  jobBtn.addEventListener("click", () => startJobSearch());
-  wrap.appendChild(jobBtn);
 
   const medBtn = document.createElement("button");
   const openWounds = c.health.filter(h => h).length;
@@ -701,7 +704,42 @@ function renderHub() {
     wrap.appendChild(repairSection);
   }
 
+  // Lay Low (todo3.md INTERFACE 2.4.2: Coffin Hotel/Street/Apartment/Amigue —
+  // always visible here now, no longer gated on a Board already existing,
+  // since resting builds one regardless). Find a Job sits below it, in the
+  // same window.
+  const laylowHeading = document.createElement("h3");
+  laylowHeading.textContent = "Lay Low";
+  wrap.appendChild(laylowHeading);
+  const laylowContent = document.createElement("div");
+  laylowContent.className = "section";
+  wrap.appendChild(laylowContent);
+  if (G.restFlow) renderRestSubflow(laylowContent);
+  else renderRestOptions(laylowContent);
+
+  if (!G.restFlow) {
+    const jobBtn = document.createElement("button");
+    jobBtn.textContent = "Find a Job";
+    jobBtn.addEventListener("click", () => goFindJob());
+    wrap.appendChild(jobBtn);
+  }
+
   els.main.appendChild(wrap);
+  els.main.appendChild(renderDowntimeColumns());
+}
+
+// todo3.md INTERFACE 2.4.2 — Find a Job re-opens the existing Mission Board
+// (G.board) if there already is one, instead of rerolling it; the Board only
+// ever changes from a Lay-Low action (processRestTick -> startJobSearch(true))
+// or once a job is accepted and a fresh search is needed next time.
+function goFindJob() {
+  if (G.board) {
+    G.phase = "briefing";
+    persist();
+    render();
+    return;
+  }
+  startJobSearch();
 }
 
 function sellGearItem(idx) {
@@ -774,28 +812,50 @@ function buildJobFromCandidate(candidate) {
     // resolution handler knows where to route once it's done.
     checkpoint: { pre: { done: false }, post: { done: false }, stage: null, agency: null, activeStage: null },
     outcome: null,
-    sideObjective: null // "more BONDS" side job (todo3.md ADD) — see takeSideJob
+    sideObjective: null, // "more BONDS" side job (todo3.md ADD) — see takeSideJob
+    abortFlow: null // todo3.md INTERFACE 2.4.2 — "Abort Mission" Evasion roll, see renderAbortBox
   };
 }
 
+// todo3.md INTERFACE 2.4.2 — two trading-card-style offers side by side
+// (renderBriefingCard), plus a "Return to Street" card below them. Choosing
+// a mission (renderBriefingCard's Accept button) moves G.phase off
+// "briefing" entirely, which drops this whole screen — the other card and
+// the Return to Street box go with it, with nothing extra to discard by hand.
 function renderBriefing() {
   const header = document.createElement("div");
   header.className = "card";
-  // BATCH 2.2 — Lay Low options moved to the Downtime column (renderLayLowBox)
-  // instead of a card here.
-  header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or lay low in Downtime till morning.</p>`;
+  header.innerHTML = `<h2>Mission Board</h2><p class="muted">Two jobs on the wire tonight. Take one, or return to the street.</p>`;
   els.main.appendChild(header);
 
-  G.board.forEach((job, idx) => renderBriefingCard(job, idx));
-  // Accept/side-job buttons on both cards above are suppressed mid-roll on a
-  // Rest sub-flow (see renderBriefingCard) — that roll itself now renders in
-  // the Downtime column's Lay Low box, not here.
+  const row = document.createElement("div");
+  row.className = "mission-row";
+  els.main.appendChild(row);
+  G.board.forEach((job, idx) => renderBriefingCard(row, job, idx));
+
+  const returnBox = document.createElement("div");
+  returnBox.className = "card return-street-box";
+  returnBox.innerHTML = `<h3>Not Tonight</h3><p>Head back to the street — the same two jobs will still be waiting.</p>`;
+  const returnBtn = document.createElement("button");
+  returnBtn.textContent = "Return to Street";
+  returnBtn.addEventListener("click", () => {
+    G.phase = "hub"; // G.board is left untouched — see goFindJob()
+    persist();
+    render();
+  });
+  returnBox.appendChild(returnBtn);
+  els.main.appendChild(returnBox);
 }
 
-function renderBriefingCard(job, idx) {
+// todo3.md INTERFACE 2.4.2 — one trading-card-style mission offer, appended
+// into the shared `row` (a .mission-row flex container) instead of straight
+// into #main. Deliberately just two font sizes throughout (.mission-card's
+// CSS): an 18px headline (the title, and the Job/Payout line) and one 14px
+// body size for everything else — no muted/grey text on the card.
+function renderBriefingCard(row, job, idx) {
   const { employer, mission, location } = job;
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "mission-card" + (mission.special ? " special" : "");
   const adversaryList = mission.adversaries.map(a => `<li>${a.name} — ${a.profession} (${a.tier})</li>`).join("");
   const fieldRows = missionFieldRows(mission);
   const payout = estimatePayout(job);
@@ -806,7 +866,7 @@ function renderBriefingCard(job, idx) {
   // every roll, +2 BONDS, amplified relationship/standing swings, and real
   // risk to an Amigue riding along as a Helper.
   const specialBadge = mission.special
-    ? `<p class="special-badge">⚠ SPECIAL MISSION — extra -1 to every roll, +2 BONDS, bigger relationship swings. An Amigue riding along can be wounded or killed.</p>`
+    ? `<p><strong>⚠ SPECIAL MISSION</strong> — extra -1 to every roll, +2 BONDS, bigger relationship swings. An Amigue riding along can be wounded or killed.</p>`
     : "";
   wrap.innerHTML = `
     <h3>${mission.special ? mission.specialName : `Job ${idx + 1}`}</h3>
@@ -819,9 +879,7 @@ function renderBriefingCard(job, idx) {
     <p><strong>Location:</strong> ${location.name} (${location.area}${location.faction ? `, ${location.faction} turf` : ""}) — Heat ${location.heat} ${heatBarHtml(location.heat)}</p>
     <p><strong>Opposition:</strong></p><ul>${adversaryList}</ul>
   `;
-  els.main.appendChild(wrap);
-
-  if (G.restFlow) return; // mid Rest roll — don't offer Accept/side-job until it resolves
+  row.appendChild(wrap);
 
   const acceptBtn = document.createElement("button");
   acceptBtn.textContent = "Accept the Job";
@@ -1513,6 +1571,7 @@ function renderEncounter() {
   wrap.className = "card";
   wrap.innerHTML = `<h2>Encounter</h2>${jobContextHtml(job)}<p class="step-desc">${job.encounter.step.desc}</p>`;
   els.main.appendChild(wrap);
+  if (job.abortFlow) { renderAbortBox(wrap); return; } // todo3.md INTERFACE 2.4.2
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
     if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
@@ -1529,6 +1588,7 @@ function renderEncounter() {
     persist();
     render();
   });
+  if (!job.pendingResult) renderAbortBox(wrap); // hidden while a roll result awaits Continue
 }
 
 // ---------- CHECKPOINT (§20.7) ----------
@@ -1703,7 +1763,76 @@ function renderSteps() {
   wrap.className = "card";
   wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2>${jobContextHtml(job)}<p class="step-desc">${step.desc}</p>`;
   els.main.appendChild(wrap);
+  if (job.abortFlow) { renderAbortBox(wrap); return; } // todo3.md INTERFACE 2.4.2
   renderChallenge(wrap, step, () => finalizeStep(step));
+  if (!job.pendingResult) renderAbortBox(wrap); // hidden while a roll result awaits Continue
+}
+
+// todo3.md INTERFACE 2.4.2 — "ABORT MISSION": a bail-out box shown once a
+// job is under way (Steps/Encounter). Rolls Evasion (Stealth or Driving,
+// player's choice) through the normal Challenge UI (reusing every existing
+// modifier — gear, Helpers, Wounded, BOOST, one-shots) and always ends the
+// job as a forced Failure — see finishAbortMission/runDebrief's forceFailure.
+function renderAbortBox(container) {
+  const job = G.job;
+  const box = document.createElement("div");
+  box.className = "section abort-box";
+  if (!job.abortFlow) {
+    box.innerHTML = `<h3>Abort Mission</h3><p class="muted">Cut and run — the job ends here, one way or another.</p>`;
+    const btn = document.createElement("button");
+    btn.className = "danger";
+    btn.textContent = "Abort Mission";
+    btn.addEventListener("click", () => {
+      job.abortFlow = { pendingResult: null, lastResult: null };
+      persist(); render();
+    });
+    box.appendChild(btn);
+    container.appendChild(box);
+    return;
+  }
+  box.innerHTML = `<h3>Abort Mission</h3>`;
+  container.appendChild(box);
+  renderChallenge(box, { attr: "Stealth", alt: "Driving", desc: "Evasion — break contact and get clear." }, finishAbortMission, { job, holder: job.abortFlow });
+}
+
+// A Partial takes one of {1 Harm box, a carried item damaged, an active
+// Helper wounded}; a Fail takes two draws from that same list — todo3.md:
+// "you can take same twice so it can result to two damage, dead help..."
+function applyAbortConsequence(c, job) {
+  const carried = c.gear.filter(g => g.carried);
+  const activeHelpers = job.helpers.filter(h => !h.benched);
+  const options = ["harm"];
+  if (carried.length) options.push("item");
+  if (activeHelpers.length) options.push("helper");
+  const choice = pick(options);
+  if (choice === "item") { degradeGearItem(c, pick(carried)); return false; }
+  if (choice === "helper") { woundJobHelper(c, job); return false; }
+  return applyMissionHarm(c, job); // "harm" — true only if the run just ended for good (permadeath)
+}
+
+function finishAbortMission() {
+  const c = G.character;
+  const job = G.job;
+  const res = job.abortFlow.lastResult;
+  let ended = false;
+  if (res.tier === "full") {
+    addLog(c, "Clean break — you're gone before anyone clocks it.");
+  } else if (res.tier === "partial") {
+    addLog(c, "You get clear, but not for free.");
+    ended = applyAbortConsequence(c, job);
+  } else {
+    addLog(c, "It's a mess getting out.");
+    for (let i = 0; i < 2 && !ended && !isDown(c); i++) {
+      ended = applyAbortConsequence(c, job);
+    }
+  }
+  job.abortFlow = null;
+  if (ended || G.phase === "death") { persist(); render(); return; }
+  addLog(c, `${c.name} pulls the plug on the job. Any hired backup stands down — they'd need hiring again next time.`);
+  G.phase = "debrief";
+  runDebrief(true); // forced Failure — todo3.md: "Mission failed, normal penalty to your rep"
+  persist();
+  render();
 }
 
 // Applies a resolved roll's effects (Harm/Heat/etc. per gamedesc.md §7) and
@@ -2225,7 +2354,10 @@ function renderResultBlock(container, result, onContinue) {
 }
 
 // ---------- DEBRIEF ----------
-function runDebrief() {
+// forceFailure (todo3.md INTERFACE 2.4.2 — Abort Mission): skips the step-
+// ratio calculation entirely and always lands on Failure, same as isDown(c),
+// regardless of how many steps already succeeded before the player bailed.
+function runDebrief(forceFailure) {
   const c = G.character, job = G.job;
   const score = job.stepResults.reduce((a, r) => a + (r.tier === "full" ? 2 : r.tier === "partial" ? 1 : 0), 0);
   const max = Math.max(1, job.stepResults.length * 2);
@@ -2234,7 +2366,7 @@ function runDebrief() {
   // A Failure pays nothing (todo3.md ADD: "Failed mission should not give
   // you any payment") — both Failure branches below get mult 0.
   let outcome, mult;
-  if (isDown(c)) { outcome = "Failure"; mult = 0; }
+  if (isDown(c) || forceFailure) { outcome = "Failure"; mult = 0; }
   else if (ratio >= 0.85) { outcome = "Full Success"; mult = 1; }
   else if (ratio >= 0.4) { outcome = "Partial Success"; mult = 0.6; }
   else { outcome = "Failure"; mult = 0; }

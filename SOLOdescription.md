@@ -1916,6 +1916,88 @@ wired up.
 
 ---
 
+### 20.16 INTERFACE UPDATE 2.4.2: the middle column rebuilt — Journal-first, Downtime folded into #main, Mission Board cards, and Abort Mission
+
+todo3.md's "INTERFACE UPDATE 2.4.2" section (rows 316-335) — a full rebuild
+of the middle column (`#main`) and the retirement of the dedicated 4th
+sidebar column that used to hold Shop/Training/EuroStoxx. `#layout` is a
+3-column grid now (`260px 1fr 320px` — sheet / main / factions); every
+Downtime panel lives inside `#main` alongside the Journal and the Mission
+Board.
+
+**The Journal moves to the top of `#main`**, a fixed-height scrollable box
+(`renderJournalBox()`, game.js) instead of a footer under the phase card —
+rendered first, on every phase, by `renderMain()`. 10 rows tall by default
+(`#journal { max-height: calc(1.6em * 10); }`), font-size 13px to match a
+button's own size (per the todo); an Expand/Shrink toggle button
+(`G.logExpanded`, ephemeral UI state) doubles it to 20 rows and back.
+
+**Downtime folds into `#main`.** `renderHub()` (the Hub/"Downtime" phase)
+now builds two things in sequence: a Downtime window/card — Medical,
+Permanent Injury repair, a "Lay Low" section (Coffin Hotel / Night on the
+Street / Spend the Night with an Amigue / Rest at your Apartment, via the
+unchanged `renderRestOptions()` — no longer gated on a Board already
+existing, since resting builds one regardless) — and, at the bottom of that
+same window, "Find a Job"; then `renderDowntimeColumns()` appends a
+`flex-wrap` row of five panels underneath: **Shop** ("Gear, Guns & General
+Goodness" — buy offers + Sell Gear), **Workshop** (Repair Gear, split out of
+the old combined Shop panel), **Apartment** (buy/upgrade/Security, also
+split out — `renderApartmentSection()` itself is unchanged, just re-homed),
+**Street-Dojo** (renamed on screen from "Lessons From the Street" — same
+cosmetic-only rename idiom as Amigue/Compi, §20.6; function/mechanic names
+unchanged), and **EuroStoxx**. None of the five carry a "closed for the
+job" grey state any more (superseding §20.5's `active`/`.disabled`
+handling) — they're only ever rendered at the Hub in the first place, so
+they simply aren't in the DOM once a job is under way.
+
+**Shop and Workshop are tabbed by gear category + "All"**
+(`GEAR_TABS`/`tabBarHtml()`, reused from §20.15's sheet tabs), via their own
+ephemeral `G.shopTab`/`G.workshopTab`, filtering both the Shop's Buy offers
+and Sell list, and the Workshop's repairable-items list.
+
+**Find a Job no longer always rerolls.** `goFindJob()` shows the existing
+`G.board` (switches to the `"briefing"` phase) if one exists instead of
+calling `startJobSearch()` fresh — the Board only ever changes from a
+Lay-Low action (`processRestTick()` → `startJobSearch(true)`) or once a job
+is accepted and a new search is needed, matching the todo's "change the
+missions only if player chooses some other option than Find a Job."
+
+**The Mission Board is two trading-card-style offers side by side, plus a
+"Return to Street" card.** `renderBriefing()` lays both candidates out in a
+`.mission-row` flex container (`renderBriefingCard()`, each a
+`.mission-card`, with a `.special` modifier for a Special Mission's border/
+title color) and appends a "Not Tonight" / "Return to Street" card below
+them. Deliberately only two font sizes anywhere on a mission card — an 18px
+headline (the title, and the Job/Payout line, reusing `.step-desc`
+rescaled) and one 14px body size for everything else, with `strong` labels
+in `--warn` instead of the sitewide muted grey (`.mission-card p`'s higher
+CSS specificity overrides `.faction-summary`'s own grey/13px styling
+wherever it's nested inside a card) — per the todo: "only two font sizes...
+no grey text on black background." Accepting a job moves `G.phase` off
+`"briefing"` entirely, which drops the whole screen — the other card and
+the Return-to-Street box go with it, nothing to discard by hand. Return to
+Street sets `G.phase` back to `"hub"` without touching `G.board`, so the
+same two jobs are still there next time.
+
+**Abort Mission.** A new box (`renderAbortBox()`, game.js) appended under
+the Steps and Encounter screens once no roll result is pending review — a
+button that, once clicked, opens an Evasion roll (Stealth or Driving,
+player's choice, `job.abortFlow` — the same shared Challenge UI as any other
+roll, so every existing modifier — gear, Helpers, Wounded, BOOST, one-shots
+— applies). `finishAbortMission()` resolves it: **10+** — a clean break, no
+cost; **7-9** — one of {1 Harm box, a carried item damaged, an active Helper
+wounded} (`applyAbortConsequence()`, picked at random from whichever are
+actually available); **6-** — two draws from that same list, which can
+repeat (two Harm boxes, an item destroyed via a second downgrade, a Helper
+killed via a second wound) — per the todo: "you can take same twice." Every
+path then forces the job to end as a Failure regardless of any steps
+already completed: `runDebrief()` gained a `forceFailure` parameter that
+skips the step-ratio calculation and lands straight on the same branch
+`isDown(c)` already used, so the normal Reputation-loss/no-payout Failure
+path (§20.9.2) applies unchanged.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
