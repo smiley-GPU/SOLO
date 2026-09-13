@@ -415,14 +415,17 @@ const DATA = {
     "is one more name for the wall."
   ],
 
-  // §20.5 — Apartments (Downtime "GEAR, GUNS AND GENERAL GOODNESS" panel).
-  // Tier 1 has nothing to buy. Price is computed at purchase time
-  // (2×tier, +1 if the chosen Location's faction is Corpo-category) since
-  // it depends on where you're buying, not just the tier.
+  // §20.5 — Apartments (Downtime "APARTMENT" panel). Tier 1 has nothing to
+  // buy. Price is computed at purchase time (2×tier, +1 if the chosen
+  // Location's faction is Corpo-category) since it depends on where you're
+  // buying, not just the tier. INTERFACE UPDATE 2.5 — each Tier is a named
+  // "stage" (STRIP/CITY/CORE) with several place-type choices instead of one
+  // fixed name; renderApartmentSection() (game.js) pairs each place with a
+  // distinct known Location instead of a dropdown.
   apartments: {
-    2: { name: "Rented Cubicle", securitySlots: 0, flavor: "Old digi-lock — you get what you pay for." },
-    3: { name: "Garage, Office, or Attic", securitySlots: 2, flavor: "Room to breathe, and a door that actually locks." },
-    4: { name: "Penthouse, Office, or Nightclub Backroom", securitySlots: 4, flavor: "The kind of address that does half your talking for you." }
+    2: { stage: "STRIP", places: ["The Room Above the Bar", "Backroom of a Noodle Shop"], securitySlots: 0, flavor: "Old digi-lock — you get what you pay for." },
+    3: { stage: "CITY", places: ["Garage", "Empty Warehouse", "Seedy Office"], securitySlots: 2, flavor: "Room to breathe, and a door that actually locks." },
+    4: { stage: "CORE", places: ["Glass Office", "Penthouse", "Nightclub Backroom"], securitySlots: 4, flavor: "The kind of address that does half your talking for you." }
   },
   // BATCH 2.1 (item 14) — 2-entry pool, picked in renderApartmentSection() (game.js).
   apartmentTier1Flavor: [

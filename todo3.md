@@ -349,10 +349,32 @@ Let's move to middle section of our interface.
 * Place the Job Description below the "JOB 1/2: x BONDS" text.
 * Align Mission board to center of the middle "column".
 
-## ## INTERFACE UPDATE 2.4.4
+## INTERFACE UPDATE 2.4.4
 * GEAR UP phase, make the gear and the box close to each other
 * Align windows after GEAR UP phase to the middle of the center column. All mission windows.
 * Align all GEAR UP boxes horizontally
 * in missions make the BOOST +2 as another box next to BOOST, so that player can check as many boxes as he wants boost.
 * make the ABORT window slightly separated from mission window.
 * If you spend a night with Friend successfully, it will mode directly to Find A Job phase. Return instead to Downtime screen.
+
+## INTERFACE UPDATE 2.5.
+
+## APARTMENTS
+remove the pull down menu from Apartments.
+add tabs STRIP / CITY / CORE when these apartments come available. If nothing is available, just keep the Street Rat apartment description.
+First apartment tier is STRIP: the room above a bar, backroom of a noodleshop  
+Second is CITY: garage, empty warehouse, Seedy Office
+Third is CORE: choices are Glass Office, Penthouse, Nightclub backroom 
+Make each tier have all these places as choices. Choices should be from different LOCATIONs.
+
+* In the log, write all Archenemy actions with a red font.
+* If you spend a night in your own apartment, game will move directly to Find A Job phase, Return instead to Downtime screen.
+* Add to the text: "SOLO a job runner's log — Europunk, European SuperState" "Your try to get off this dirt ball. Get 20 BONDS for the ticket."
+* For each vehicle mark where it is stocked. Default is street. make a button next to vehicle where you can change this. If vehicle is used on a mission then it's not in any apartment, instead "moving". When mission is over, return it to the apartment it where before mission started or to the street.
+* Mark Apartment: Street/ or type and LOCATION under the BONDS value. MArk also security that is present. If more than one Apartment then make there and arrow triangel where you can open the details of apartment, eg show the security and vehicles stocked in this apartment.
+
+## UPDATE 2.6.
+* GEAR UP phase: put Helper name on one row and the game effect on the row below. Align costs, and align buttons horizontally from the middle of the buttons.
+* GEAR UP: align all gear buttons. If there is uneven number of gear categories in each row, make them still align 1st colum to 1st column, 2nd column to 2nd column and 3rd as alone for example.
+* After each mission click always scroll the screen to top, so that the log, and changes in there are visible.
+* MArk lates changes to the log always with yellow color, Archenemy actions always come with red and stay red. Whe new log text comes as a yellow color, old text goes gray.

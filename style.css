@@ -74,6 +74,10 @@ header h1 {
 /* BATCH 2.1 (item 6) — the newest line(s) added by the most recent action,
    overriding the muted/first-child defaults above regardless of position. */
 .log-line.log-new { color: var(--warn); font-weight: 600; }
+/* INTERFACE UPDATE 2.5 — Archenemy actions in red, winning over log-new
+   (declared after it, same specificity) since danger-red is the more
+   specific signal when a line is both. */
+.log-line.log-archenemy { color: var(--danger); }
 
 /* INTERFACE 2.4.2 — Downtime moved into #main: a Lay-Low window (rest
    options + Find a Job) followed by a row of Shop/Workshop/Apartment/
@@ -224,8 +228,16 @@ header h1 {
    category blocks (Weapons/Clothing/Decks/Vehicles/Social/Heal) sit side by
    side in a wrapping row instead of stacked, the same idiom as the Downtime
    columns. */
-.loadout-grid { display: flex; flex-wrap: wrap; gap: 14px; }
-.loadout-grid > div { flex: 1 1 180px; min-width: 160px; }
+/* todo3.md UPDATE 2.6 — a true grid, not flex-wrap: flex items only align
+   within their own row (each row sizes independently), so a category box
+   in row 2 could drift out from under its row-1 counterpart. A fixed
+   3-column grid keeps every column aligned across rows regardless of how
+   many boxes the last row actually has ("1st column to 1st column, 2nd to
+   2nd, and 3rd as alone"). */
+.loadout-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 640px) {
+  .loadout-grid { grid-template-columns: repeat(2, 1fr); }
+}
 .muted { color: var(--muted); font-size: 13px; }
 
 button {
@@ -259,6 +271,17 @@ button.danger { background: var(--danger); color: #2a0000; }
   padding: 8px 0; border-bottom: 1px solid var(--border);
   font-size: 14px;
 }
+/* todo3.md UPDATE 2.6 — Gear Up's Helper/Hire/Call-in-a-Favor rows: name on
+   top, the game effect below it, cost and button on the right — .offer's
+   own align-items:center keeps the button vertically centered against the
+   (now two-line-tall) text block ("align buttons... from the middle"), and
+   a shared min-width on .helper-cost lines costs up in a column. */
+.helper-row { align-items: center; }
+.helper-info { display: flex; flex-direction: column; gap: 2px; }
+.helper-name { font-weight: 600; }
+.helper-effect { font-size: 12px; }
+.helper-actions { display: flex; align-items: center; gap: 10px; }
+.helper-cost { font-size: 12px; min-width: 80px; text-align: right; }
 
 .challenge {
   border: 1px solid var(--border);

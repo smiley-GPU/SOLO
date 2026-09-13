@@ -2140,9 +2140,140 @@ Board (`startJobSearch(true)` sets `G.phase = "briefing"`). `processRestTick()`
 gained an optional `returnToHub` parameter: still ticks the clock and
 rerolls the Board exactly as before, but then overrides `G.phase` back to
 `"hub"` and re-renders. `finishBrotherNight()`'s clean-success ("10+")
-branch is the only caller that passes it — every other Rest option
-(Coffin Hotel, Night on the Street, Rest at your Apartment, and Spend the
-Night's own Partial/Fail branches) is unchanged.
+branch is the only caller that passes it here — §20.20 adds `restAtApartment()`
+as a second caller; Coffin Hotel, Night on the Street, and Spend the
+Night's own Partial/Fail branches are unchanged.
+
+---
+
+### 20.20 INTERFACE UPDATE 2.5: Apartments rebuilt (STRIP/CITY/CORE), Archenemy actions in red, per-vehicle stocking, and an Apartment summary on the sheet
+
+todo3.md's "INTERFACE UPDATE 2.5" section (rows 360-374) — the Apartments
+system rebuilt around named stages and distinct Locations, red Archenemy
+log lines, per-vehicle location tracking, an Apartment-Rest navigation fix
+matching §20.19's Spend-the-Night one, and a new subtitle line.
+
+**Apartments: STRIP/CITY/CORE tabs replace the dropdown.**
+`DATA.apartments[tier]` (data.js) now carries a `stage` name and a `places`
+array (several place-type choices) instead of one fixed `name` — Tier 2
+STRIP ("The Room Above the Bar," "Backroom of a Noodle Shop"), Tier 3 CITY
+("Garage," "Empty Warehouse," "Seedy Office"), Tier 4 CORE ("Glass Office,"
+"Penthouse," "Nightclub Backroom"). `renderApartmentSection()` (game.js) is
+rebuilt around a tab bar for every Tier the player's Reputation Tier has
+actually unlocked (`G.apartmentTab`, ephemeral UI state, defaulting to the
+highest one) — Tier 1 still shows only the unchanged Street Rat flavor
+text, no tabs, "if nothing is available." Each place in the selected tab's
+`places` list is paired with a distinct known Location by index
+(`def.places.slice(0, known.length)` zipped against `Object.keys(c.locations)`)
+— "choices should be from different LOCATIONs" — capped to however many
+Locations are actually known, so a row is never offered for a place with no
+Location left to put it in. Buying stores the chosen `place` name on
+`character.apartment` (a new field, additive — old saves without it just
+display the stage name instead) alongside the existing `location`/`tier`/
+`security`. A tab below the player's own apartment Tier is marked "Already
+have better" instead of offering a downgrade; the exact place+Location
+already owned reads "Home" instead of a price.
+
+**Archenemy actions log in red.** `addLog()` (state.js) now accepts an
+optional third `tag` argument — the common case still just pushes a plain
+string, but a tagged line pushes `{text, tag}` instead (`renderJournalBox()`,
+game.js, reads either shape, adding a `log-<tag>` class). Every explicit
+Archenemy call site passes `"archenemy"` by hand — `lockInArchenemy()`, the
+Archenemy-clock friend-hit and Apartment-invasion events
+(`resolveArchenemyClockEvent()`/`resolveApartmentInvasion()`), and a
+relationship hitting -5 or a Bloodbrother turning hostile
+(`nudgeRelationship()`, state.js) — but the entire Hunt narration flow
+(~20 `addLog()` call sites across `startHunt()` through
+`applyHuntKillReward()`) needed none of that: `addLog()` auto-tags a line
+`"archenemy"` whenever `G.hunt` is truthy, which covers every Hunt line for
+free since a Hunt is the only context those calls ever fire in. This one
+`G.hunt` check is state.js's sole reach into game.js's UI-state global —
+documented in the function's own comment as a deliberate, narrow exception
+to the usual layering, safe because `G` always exists by the time `addLog()`
+is actually called. `.log-line.log-archenemy { color: var(--danger); }` is
+declared after `.log-new` in the stylesheet so red always wins the tie for
+a line that's both new and Archenemy-tagged (confirmed as the intended
+behavior by §20.21's "Archenemy actions always come with red and stay red").
+
+**Spend the Night at your own Apartment gets the same navigation fix as
+Spend the Night with an Amigue (§20.19).** `restAtApartment()`'s call to
+`processRestTick()` now passes `returnToHub: true` unconditionally (it has
+no distinct success/fail tiers to gate on, unlike the Amigue roll) — still
+ticks the clock and rerolls the Board, but lands back on Downtime instead
+of the Mission Board.
+
+**A new subtitle line.** `index.html`'s header `<span class="subtitle">`
+gained a second sentence: "Your try to get off this dirt ball. Get 20
+BONDS for the ticket." — appended verbatim after the existing "a job
+runner's log — Europunk, European SuperState."
+
+**Per-vehicle stocking.** Every Driving-attr gear item gets a lazy
+`location` field (`vehicleLocation(item)`, state.js: `item.location ||
+"Street"` — no backfill needed for old saves, same idiom as `item.tier ||
+"Street"` elsewhere). The sheet's Gear list shows `[Street]` / `[<Apartment
+Location>]` / `[Moving]` next to every vehicle, Driving-attr items only,
+with a "Move to `<the other place>`" button (`data-move-vehicle`, only
+rendered when an Apartment exists — otherwise there's nowhere else to move
+it) that toggles the vehicle between Street and the Apartment's Location.
+Heading out on a job (`renderGearUp()`'s "Head Out" button) stashes the
+carried Vehicle's current location on `preMissionLocation` and sets
+`location = "Moving"`; `runDebrief()` restores it (and deletes the stash
+field) right after the Apartment raid check, regardless of whether the job
+succeeded, failed, or ended via Abort Mission (`finishAbortMission()`
+routes to `runDebrief()` too, so this one restore point covers every path
+out of a job).
+
+**An Apartment summary on the sheet, under Bonds.** A new section
+(`renderSheet()`) shows "Street" when no Apartment is owned, or
+`"<place> — <Location>"` with a ▼/▲ toggle (`G.apartmentSheetExpanded`,
+ephemeral) that expands to show installed Security and which vehicles
+(matched by `vehicleLocation(g) === c.apartment.location`) are currently
+stocked there. Only one Apartment can exist at a time in the data model
+(buying again replaces it, unchanged from §20.5), so this always
+summarizes that one rather than branching on "more than one."
+
+---
+
+### 20.21 UPDATE 2.6: a two-line Helper layout, a true 3-column Loadout grid, and scroll-to-top after every mission click
+
+todo3.md's "UPDATE 2.6" section (rows 376-379) — three layout fixes plus a
+line confirming the Archenemy-red behavior §20.20 already delivered.
+
+**Gear Up's Helper rows are name-on-top, effect-below.** Every Helper-ish
+row — already-brought, the "Hire backup" offer, and each "Call in a Favor"
+candidate — now shares one `.helper-row` layout (`.helper-info`: a
+`.helper-name`/`.helper-effect` two-line stack on the left; `.helper-actions`:
+a `.helper-cost` + button on the right, `.offer`'s own `align-items: center`
+keeping the button vertically centered against the now-two-line-tall text
+block — "align buttons... from the middle"). `.helper-cost` shares a
+`min-width`, so "1 BOND" / "Free" / "pays 1 BOND" line up in a column
+regardless of which row they're on.
+
+**The Loadout is a true CSS grid now, not flex-wrap.** `.loadout-grid`
+switched from `display: flex; flex-wrap: wrap` (§20.19) to `display: grid;
+grid-template-columns: repeat(3, 1fr)` (2 columns under 640px) — flex items
+only ever aligned within their own row, so a category box on row 2 could
+drift out from under its row-1 counterpart depending on each row's own
+content widths; a fixed grid keeps every column aligned across rows no
+matter how many boxes the last row actually has ("1st column to 1st
+column, 2nd to 2nd, and 3rd as alone").
+
+**Every render during a job scrolls back to the top.** `renderMain()`
+resets both `els.main.scrollTop` and `window.scrollTo(0, 0)` whenever
+`G.phase` is one of Gear Up/Steps/Encounter/Checkpoint/Debrief — since a
+render in those phases only ever follows a real player action there (Roll,
+Continue, Head Out, install Security, Abort, ...), this reliably fires
+"after each mission click" without needing to touch every individual
+handler, and keeps the Journal (top of `#main`) in view for whatever it
+just logged.
+
+**Archenemy red confirmed to persist, not just win new-line ties.** The
+todo's wording ("always come with red and stay red... old text goes gray")
+describes exactly what §20.20's CSS already does: `.log-line.log-archenemy`
+applies unconditionally (not gated on `.log-new`), so a tagged line stays
+red forever, long after it stops being the newest line and would otherwise
+have faded to the default muted gray. No code changed for this bullet —
+it's confirmation, not a new requirement.
 
 ---
 

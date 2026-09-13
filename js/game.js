@@ -113,9 +113,13 @@ function renderJournalBox() {
     const newCount = Math.max(0, log.length - (G.lastLogCount || 0));
     G.lastLogCount = log.length;
     log.slice().reverse().forEach((line, idx) => {
+      // todo3.md INTERFACE UPDATE 2.5 — a tagged entry is {text, tag}
+      // instead of a plain string (see addLog(), state.js); "archenemy"
+      // renders in red regardless of how new the line is.
+      const tagged = typeof line === "object" && line !== null;
       const p = document.createElement("div");
-      p.className = "log-line" + (idx < newCount ? " log-new" : "");
-      p.textContent = line;
+      p.className = "log-line" + (idx < newCount ? " log-new" : "") + (tagged ? ` log-${line.tag}` : "");
+      p.textContent = tagged ? line.text : line;
       journal.appendChild(p);
     });
   }
@@ -298,18 +302,27 @@ function renderApartmentBox() {
 // replaces it (an upgrade); Security options install free, capped at the
 // apartment's slot count — their defensive payoff belongs to the
 // Archenemy home-invasion/EurCop raid mechanics (§20, later phases).
+// todo3.md INTERFACE UPDATE 2.5 (APARTMENTS) — tabs for each unlocked
+// Tier's "stage" (STRIP/CITY/CORE) instead of one fixed name per Tier and a
+// location dropdown. Each stage's several place-type choices are paired
+// with a distinct known Location ("choices should be from different
+// LOCATIONs") — the player picks a place+location combo directly.
 function renderApartmentSection(c) {
   const wrap = document.createElement("div");
   wrap.className = "section";
-  wrap.innerHTML = ""; // INTERFACE 2.4.2 — heading now lives one level up, on the Apartment column itself
   const repTier = reputationTier(c);
 
+  // Owned apartment: summary + Security install options (unchanged mechanic).
   if (c.apartment) {
-    const def = DATA.apartments[c.apartment.tier];
+    const ownedDef = DATA.apartments[c.apartment.tier];
     const secList = c.apartment.security.length ? c.apartment.security.join(", ") : "none installed";
-    wrap.innerHTML += `<p class="muted">${def.name} at ${c.apartment.location} (Tier ${c.apartment.tier}). Security: ${secList}.</p>`;
+    const placeLabel = c.apartment.place || ownedDef.stage; // old saves predate the `place` field
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    summary.textContent = `${placeLabel} at ${c.apartment.location} (${ownedDef.stage}, Tier ${c.apartment.tier}). Security: ${secList}.`;
+    wrap.appendChild(summary);
     const options = (DATA.securityOptions[c.apartment.tier] || []).filter(o => !c.apartment.security.includes(o));
-    if (c.apartment.security.length < def.securitySlots) {
+    if (c.apartment.security.length < ownedDef.securitySlots) {
       // BATCH 2.0 — Security items cost BONDS to install now: 1 BOND for a
       // Tier 3 option, 2 BONDS for a Tier 4 one (Tier 4 ones also grant an
       // armor-charge pool in a home-invasion Hunt — see startHunt/applyHuntHarm).
@@ -327,58 +340,80 @@ function renderApartmentSection(c) {
         wrap.appendChild(btn);
       });
     }
-    if (repTier <= c.apartment.tier) return wrap; // nothing better available yet
   }
 
   if (repTier < 2) {
-    wrap.innerHTML += `<p class="muted">${pick(DATA.apartmentTier1Flavor)}</p>`;
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = pick(DATA.apartmentTier1Flavor);
+    wrap.appendChild(p);
     return wrap;
   }
 
-  const def = DATA.apartments[repTier];
   const known = Object.keys(c.locations);
   if (!known.length) {
-    wrap.innerHTML += `<p class="muted">You need to know a location before you can put down roots there.</p>`;
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "You need to know a location before you can put down roots there.";
+    wrap.appendChild(p);
     return wrap;
   }
+
+  // Tabs for every unlocked Tier (2..repTier) — "add tabs STRIP/CITY/CORE
+  // when these apartments come available." Defaults to the highest one
+  // unlocked, matching the old behavior of always showing your current best.
+  const availableTiers = [2, 3, 4].filter(t => t <= repTier);
+  if (!G.apartmentTab || !availableTiers.includes(G.apartmentTab)) {
+    G.apartmentTab = availableTiers[availableTiers.length - 1];
+  }
+  wrap.appendChild(document.createRange().createContextualFragment(
+    tabBarHtml(availableTiers.map(t => DATA.apartments[t].stage), DATA.apartments[G.apartmentTab].stage, "apartment-tab")
+  ));
+
+  const tabTier = G.apartmentTab;
+  const def = DATA.apartments[tabTier];
+  const label = document.createElement("p");
+  label.className = "muted";
+  label.textContent = def.flavor;
+  wrap.appendChild(label);
 
   const priceFor = locName => {
     const loc = c.locations[locName];
     const category = loc.faction ? (c.factionStandings[loc.faction] || {}).category : (loc.area === "Corpo" ? "Corpo" : null);
-    return repTier * 2 + (category === "Corpo" ? 1 : 0);
+    return tabTier * 2 + (category === "Corpo" ? 1 : 0);
   };
-  const label = document.createElement("p");
-  label.className = "muted";
-  label.textContent = `${c.apartment ? "Upgrade to" : "Buy"} a ${def.name} (Tier ${repTier}): ${def.flavor}`;
-  wrap.appendChild(label);
+  const worseThanOwned = c.apartment && tabTier < c.apartment.tier;
 
-  const select = document.createElement("select");
-  known.forEach(name => {
-    const opt = document.createElement("option");
-    opt.value = name;
-    const price = priceFor(name);
-    opt.textContent = `${name} — ${price} BOND${price === 1 ? "" : "S"}`;
-    select.appendChild(opt);
+  // Pair each place-type with a distinct known Location, capped to however
+  // many are actually known — never repeat a Location across the choices.
+  def.places.slice(0, known.length).forEach((place, i) => {
+    const locName = known[i];
+    const price = priceFor(locName);
+    const isHome = c.apartment && c.apartment.tier === tabTier && c.apartment.place === place && c.apartment.location === locName;
+    const row = document.createElement("div");
+    row.className = "offer";
+    row.innerHTML = `<span>${place} <em>at ${locName}</em></span>`;
+    const btn = document.createElement("button");
+    btn.textContent = isHome ? "Home" : worseThanOwned ? "Already have better" : `${c.apartment ? "Move to" : "Buy"} — ${price} BOND${price === 1 ? "" : "S"}`;
+    btn.disabled = isHome || worseThanOwned || c.bonds < price;
+    btn.addEventListener("click", () => {
+      c.bonds -= price;
+      const hadApartment = !!c.apartment;
+      c.apartment = { location: locName, tier: tabTier, place, security: [] };
+      addLog(c, `You ${hadApartment ? "move up to" : "put down roots at"} ${place} in ${locName}.`);
+      persist(); render();
+    });
+    row.appendChild(btn);
+    wrap.appendChild(row);
   });
-  wrap.appendChild(select);
 
-  const btn = document.createElement("button");
-  const refresh = () => {
-    const price = priceFor(select.value);
-    btn.textContent = `${c.apartment ? "Upgrade" : "Buy"} — ${price} BOND${price === 1 ? "" : "S"}`;
-    btn.disabled = c.bonds < price;
-  };
-  select.addEventListener("change", refresh);
-  refresh();
-  btn.addEventListener("click", () => {
-    const price = priceFor(select.value);
-    const hadApartment = !!c.apartment;
-    c.bonds -= price;
-    c.apartment = { location: select.value, tier: repTier, security: [] };
-    addLog(c, `You ${hadApartment ? "move up to" : "put down roots at"} ${select.value} — ${def.name}.`);
-    persist(); render();
+  wrap.querySelectorAll("[data-apartment-tab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const stage = btn.dataset.apartmentTab;
+      G.apartmentTab = availableTiers.find(t => DATA.apartments[t].stage === stage);
+      render();
+    });
   });
-  wrap.appendChild(btn);
   return wrap;
 }
 
@@ -520,7 +555,18 @@ function renderSheet() {
     ? gearShown.map(g => {
         const kind = g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : "";
         const stowed = gearCategory(g) && !g.carried ? ", stowed" : ""; // §20.8 — only carried gear does anything
-        return `<li>${g.name} <em>(${g.tier || "Street"}${kind}${stowed})</em></li>`;
+        // todo3.md INTERFACE UPDATE 2.5 — "mark where each vehicle is
+        // stocked," with a button to move it (only meaningful once there's
+        // an Apartment to move it to or from; hidden mid-job while "Moving").
+        let vehicleHtml = "";
+        if (g.attr === "Driving") {
+          const loc = vehicleLocation(g);
+          const moveBtn = loc !== "Moving" && c.apartment
+            ? `<button type="button" class="btn-small" data-move-vehicle="${c.gear.indexOf(g)}">Move to ${loc === c.apartment.location ? "Street" : c.apartment.location}</button>`
+            : "";
+          vehicleHtml = ` <span class="muted" style="font-size:11px">[${loc}]</span>${moveBtn}`;
+        }
+        return `<li>${g.name} <em>(${g.tier || "Street"}${kind}${stowed})</em>${vehicleHtml}</li>`;
       }).join("")
     : "<li><em>none</em></li>";
 
@@ -571,6 +617,31 @@ function renderSheet() {
   const titlesList = c.titles.length
     ? `<ul class="titles-list">${c.titles.slice().reverse().map(t => `<li>${t}</li>`).join("")}</ul>`
     : "";
+  // todo3.md INTERFACE UPDATE 2.5 — "mark Apartment: Street/ or type and
+  // LOCATION under the BONDS value... an arrow triangle to open the details
+  // (security, vehicles stocked here)." Only one Apartment can exist at a
+  // time in the data model, so this always summarizes that one (or "Street"
+  // if none owned).
+  let apartmentSectionHtml;
+  if (!c.apartment) {
+    apartmentSectionHtml = `<div class="section"><h3>Apartment</h3><div class="cred" style="font-size:14px">Street</div></div>`;
+  } else {
+    const apartmentExpanded = !!G.apartmentSheetExpanded;
+    const ownedDef = DATA.apartments[c.apartment.tier];
+    const placeLabel = c.apartment.place || ownedDef.stage;
+    const secList = c.apartment.security.length ? c.apartment.security.join(", ") : "none installed";
+    const vehiclesHere = c.gear.filter(g => g.attr === "Driving" && vehicleLocation(g) === c.apartment.location);
+    const details = apartmentExpanded
+      ? `<p class="muted">Security: ${secList}</p><p class="muted">Vehicles here: ${vehiclesHere.length ? vehiclesHere.map(v => v.name).join(", ") : "none"}</p>`
+      : "";
+    apartmentSectionHtml = `<div class="section"><h3>Apartment</h3>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:6px">
+        <span class="cred" style="font-size:14px">${placeLabel} — ${c.apartment.location}</span>
+        <button type="button" id="apartment-toggle" class="btn-small">${apartmentExpanded ? "▲" : "▼"}</button>
+      </div>
+      ${details}
+    </div>`;
+  }
 
   els.sheet.innerHTML = `
     <div class="sheet-header"><h2>${c.name}</h2><button id="retire-btn" class="danger btn-small">Retire</button></div>
@@ -578,6 +649,7 @@ function renderSheet() {
     ${armorSection}
     <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${cyberBadges}${injuryBadge}</div>
     <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
+    ${apartmentSectionHtml}
     <div class="section"><h3>Attributes</h3>${attrRows}</div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
     <div class="section"><h3>Reputation</h3><div class="cred">${c.reputation} <span class="tag" style="margin:0;display:inline">${reputationTitle(c)} (T${reputationTier(c)})</span></div>${titlesList}</div>
@@ -606,6 +678,25 @@ function renderSheet() {
   els.sheet.querySelectorAll("[data-people-tab]").forEach(btn => {
     btn.addEventListener("click", () => { G.peopleTab = btn.dataset.peopleTab; renderSheet(); });
   });
+  const apartmentToggle = els.sheet.querySelector("#apartment-toggle");
+  if (apartmentToggle) {
+    apartmentToggle.addEventListener("click", () => {
+      G.apartmentSheetExpanded = !G.apartmentSheetExpanded; // ephemeral UI state
+      renderSheet();
+    });
+  }
+  // todo3.md INTERFACE UPDATE 2.5 — toggle a vehicle between Street and the
+  // owned Apartment's location (only shown when there's somewhere to move
+  // it to/from, and never while it's "Moving" mid-job).
+  els.sheet.querySelectorAll("[data-move-vehicle]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const item = c.gear[Number(btn.dataset.moveVehicle)];
+      if (!item || !c.apartment) return;
+      item.location = vehicleLocation(item) === c.apartment.location ? "Street" : c.apartment.location;
+      addLog(c, `You move the ${item.name} to ${item.location}.`);
+      persist(); render();
+    });
+  });
 }
 
 function renderMain() {
@@ -626,6 +717,16 @@ function renderMain() {
     death: renderDeath
   }[G.phase];
   if (fn) fn();
+  // todo3.md UPDATE 2.6 — "after each mission click always scroll the
+  // screen to top, so that the log... [is] visible": every render while a
+  // job is under way (Gear Up through Debrief) resets scroll, since a
+  // render in those phases only ever follows a real player action there
+  // (Roll, Continue, Head Out, Abort, ...), not idle browsing.
+  const missionPhases = ["gearup", "steps", "encounter", "checkpoint", "debrief"];
+  if (missionPhases.includes(G.phase)) {
+    els.main.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
 }
 
 // ---------- CREATE ----------
@@ -1002,7 +1103,10 @@ function restAtApartment() {
   } else {
     addLog(c, "You crash at home for a while. Quiet, at least.");
   }
-  processRestTick(true);
+  // todo3.md INTERFACE UPDATE 2.5 — resting at home still ticks the clock
+  // and rerolls the Board, but returns to Downtime instead of dropping
+  // straight into the Mission Board (same fix as Spend the Night, §20.19).
+  processRestTick(true, true);
 }
 
 // Dispatches the three Rest sub-flows against G.restFlow (a standalone
@@ -1234,7 +1338,7 @@ function lockInArchenemy(c) {
   const worst = c.contacts.reduce((min, p) => p.relationship < min.relationship ? p : min, c.contacts[0]);
   c.archenemyId = worst.id; // who the Rest clock is counting down to — see tagArchenemy() for the general tag
   tagArchenemy(c, worst);
-  addLog(c, `Word's out that ${worst.name} has a real problem with you. Someone's asking around about where you sleep.`);
+  addLog(c, `Word's out that ${worst.name} has a real problem with you. Someone's asking around about where you sleep.`, "archenemy");
 }
 
 function findBloodbrother(c) {
@@ -1261,10 +1365,10 @@ function resolveArchenemyClockEvent(c) {
     resolveApartmentInvasion(c, archenemy);
   } else {
     const target = pick(friends);
-    addLog(c, `While you're out on the job, ${archenemy.name} ${pick(DATA.archenemyInvasion.friendHit)} ${target.name}.`);
+    addLog(c, `While you're out on the job, ${archenemy.name} ${pick(DATA.archenemyInvasion.friendHit)} ${target.name}.`, "archenemy");
     woundPerson(c, target);
     gainReputation(c, -1); // BATCH 2.0 — a landed hit costs Reputation
-    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
+    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`, "archenemy");
   }
 }
 
@@ -1287,26 +1391,26 @@ function resolveApartmentInvasion(c, archenemy) {
       if (pool.length) {
         const item = pick(pool);
         c.gear = c.gear.filter(g => g !== item);
-        addLog(c, `${pick(DATA.archenemyInvasion.steal)} (lost: ${item.name})`);
+        addLog(c, `${pick(DATA.archenemyInvasion.steal)} (lost: ${item.name})`, "archenemy");
       } else {
-        addLog(c, `${archenemy.name}'s people break in but find nothing worth taking.`);
+        addLog(c, `${archenemy.name}'s people break in but find nothing worth taking.`, "archenemy");
       }
     } else if (evil <= 5) {
-      addLog(c, pick(DATA.archenemyInvasion.torch));
+      addLog(c, pick(DATA.archenemyInvasion.torch), "archenemy");
       c.apartment = null;
     } else {
       c.apartment.trapped = true; // §20.6 — 2 Harm boxes next time you Rest at home
-      addLog(c, pick(DATA.archenemyInvasion.trap));
+      addLog(c, pick(DATA.archenemyInvasion.trap), "archenemy");
     }
     // BATCH 2.0 — a landed hit costs Reputation; being spooked off or
     // burned (below) are player wins, not losses.
     gainReputation(c, -1);
-    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`);
+    addLog(c, `Reputation -1 (now ${c.reputation}, ${reputationTitle(c)}).`, "archenemy");
   } else if (roll >= 7) {
-    addLog(c, pick(DATA.archenemyInvasion.spooked));
+    addLog(c, pick(DATA.archenemyInvasion.spooked), "archenemy");
   } else {
     archenemy.factionTier = Math.max(1, (archenemy.factionTier || 1) - 1);
-    addLog(c, `${archenemy.name} ${pick(DATA.archenemyInvasion.burned)}`);
+    addLog(c, `${archenemy.name} ${pick(DATA.archenemyInvasion.burned)}`, "archenemy");
   }
 }
 
@@ -1429,21 +1533,27 @@ function renderGearUp() {
   helperSection.className = "section";
   helperSection.innerHTML = `<h3>Helpers (${job.helpers.length}/3)</h3>`;
 
+  // todo3.md UPDATE 2.6 — "put Helper name on one row and the game effect
+  // on the row below. Align costs, and align buttons horizontally from the
+  // middle of the buttons": every Helper-ish row (already brought, Hire, or
+  // Call in a Favor) is now a name/effect two-line stack on the left, the
+  // cost and any button on the right, all sharing the same .helper-row
+  // layout so their costs and buttons line up down the list.
   job.helpers.forEach(h => {
-    const row = document.createElement("div");
-    row.className = "offer";
     const perk = h.source === "hire" ? `+1 ${h.attr}` : "+2 to one test of your choice";
     // BATCH 2.0 — show if this Helper is wounded/benched for the rest of the job.
     const woundedBadge = h.benched ? ` <span class="archenemy-badge">wounded — out</span>` : "";
-    row.innerHTML = `<span>${h.person.name} (${perk})${woundedBadge}</span>`;
+    const row = document.createElement("div");
+    row.className = "offer helper-row";
+    row.innerHTML = `<div class="helper-info"><div class="helper-name">${h.person.name}${woundedBadge}</div><div class="helper-effect muted">${perk}</div></div>`;
     helperSection.appendChild(row);
   });
   wrap.appendChild(helperSection);
 
   if (job.helpers.length < 3) {
     const hireRow = document.createElement("div");
-    hireRow.className = "offer";
-    hireRow.innerHTML = `<span>Hire backup for this job</span><span>1 BOND</span>`;
+    hireRow.className = "offer helper-row";
+    hireRow.innerHTML = `<div class="helper-info"><div class="helper-name">Hire backup for this job</div><div class="helper-effect muted">+1 to a random specialty attribute</div></div><div class="helper-actions"><span class="helper-cost muted">1 BOND</span></div>`;
     const hireBtn = document.createElement("button");
     hireBtn.textContent = "Hire";
     hireBtn.disabled = c.bonds < 1;
@@ -1458,7 +1568,7 @@ function renderGearUp() {
       addLog(c, `${person.name} signs on for the job, backing you up on ${attr}.`);
       persist(); render();
     });
-    hireRow.appendChild(hireBtn);
+    hireRow.querySelector(".helper-actions").appendChild(hireBtn);
     wrap.appendChild(hireRow);
 
     // Call in a Favor — a contact you're square with (relationship ≥3)
@@ -1471,12 +1581,12 @@ function renderGearUp() {
       allySection.innerHTML = "<h3>Call in a Favor</h3>";
       eligible.forEach(person => {
         const free = person.relationship >= 5;
-        const row = document.createElement("div");
-        row.className = "offer";
         // BATCH 2.0 — the free "+2 to one test" perk stays as-is, but hint at
         // what this Amigue is actually good at via their profession specialty.
         const specialty = (DATA.npcSpecialty[person.profession] || ["Social"]).join("/");
-        row.innerHTML = `<span>${person.name} <em>(${person.profession}, good with ${specialty})</em> (+2 to one test)</span><span>${free ? "Free" : "pays 1 BOND from payout"}</span>`;
+        const row = document.createElement("div");
+        row.className = "offer helper-row";
+        row.innerHTML = `<div class="helper-info"><div class="helper-name">${person.name} <em>(${person.profession}, good with ${specialty})</em></div><div class="helper-effect muted">+2 to one test of your choice</div></div><div class="helper-actions"><span class="helper-cost muted">${free ? "Free" : "pays 1 BOND"}</span></div>`;
         const btn = document.createElement("button");
         btn.textContent = "Bring along";
         btn.addEventListener("click", () => {
@@ -1484,7 +1594,7 @@ function renderGearUp() {
           addLog(c, `${person.name} agrees to back you up${free ? "" : ", expecting a cut of the payout"}.`);
           persist(); render();
         });
-        row.appendChild(btn);
+        row.querySelector(".helper-actions").appendChild(btn);
         allySection.appendChild(row);
       });
       wrap.appendChild(allySection);
@@ -1496,6 +1606,15 @@ function renderGearUp() {
   const goBtn = document.createElement("button");
   goBtn.textContent = "Head Out";
   goBtn.addEventListener("click", () => {
+    // todo3.md INTERFACE UPDATE 2.5 — a carried Vehicle is "Moving" for the
+    // duration of the job; stash wherever it actually was so Debrief can
+    // put it back (runDebrief()) — even if the job ends via Abort Mission
+    // (finishAbortMission() routes there too).
+    const vehicle = c.gear.find(g => g.attr === "Driving" && g.carried);
+    if (vehicle) {
+      vehicle.preMissionLocation = vehicleLocation(vehicle);
+      vehicle.location = "Moving";
+    }
     G.phase = advanceFromGearUp();
     persist(); render();
   });
@@ -2592,6 +2711,15 @@ function runDebrief(forceFailure) {
   // has a 20% chance of the same agency that would've manned a checkpoint
   // showing up at the player's door instead, if they own one.
   resolveApartmentRaid(c, job);
+
+  // todo3.md INTERFACE UPDATE 2.5 — any Vehicle that went "Moving" for this
+  // job (GearUp's "Head Out") returns to wherever it was stocked before.
+  c.gear.forEach(item => {
+    if (item.preMissionLocation !== undefined) {
+      item.location = item.preMissionLocation;
+      delete item.preMissionLocation;
+    }
+  });
 
   job.outcome = outcome;
   job.payout = totalPayout;

@@ -517,14 +517,14 @@ function nudgeRelationship(character, personId, delta) {
   // the drop (Debrief, a Hunt, an Ally-favor failure, ...).
   if (person.bloodbrother && person.relationship < 0) {
     tagArchenemy(character, person);
-    addLog(character, `${person.name} turns on you. What you had is gone.`);
+    addLog(character, `${person.name} turns on you. What you had is gone.`, "archenemy");
   } else if (!person.archenemy && person.relationship === -5 && before > -5) {
     // BATCH 2.0 — more than one Archenemy can exist now: hitting the
     // relationship floor tags them regardless of the Rest clock, which
     // still separately locks in its own single worst-relationship target
     // (lockInArchenemy, game.js) — that assignment is untouched.
     tagArchenemy(character, person);
-    addLog(character, `${person.name} will never forgive this. You've made an Archenemy.`);
+    addLog(character, `${person.name} will never forgive this. You've made an Archenemy.`, "archenemy");
   }
 }
 
@@ -592,8 +592,20 @@ function recoverWoundedContacts(character) {
   });
 }
 
-function addLog(character, text) {
-  character.log.push(text);
+// todo3.md INTERFACE UPDATE 2.5 — "write all Archenemy actions with a red
+// font": a log entry stays a plain string (the common case) unless it needs
+// a tag, in which case it's pushed as {text, tag} instead — renderJournalBox()
+// (game.js) reads either shape. `tag` is normally passed explicitly (the
+// Archenemy-clock event, an Apartment invasion, a relationship hitting -5,
+// ...); when omitted, a Hunt actively in progress (G.hunt, game.js's UI-state
+// global) auto-tags it "archenemy" instead, so the whole Hunt narration flow
+// (~20 call sites, all firing while G.hunt is truthy) doesn't need tagging
+// one by one. G is defined well before addLog is ever actually called
+// (every script has loaded and init() has run by then), so this is safe
+// despite state.js not otherwise reaching into game.js's UI state.
+function addLog(character, text, tag) {
+  const finalTag = tag || (typeof G !== "undefined" && G.hunt ? "archenemy" : undefined);
+  character.log.push(finalTag ? { text, tag: finalTag } : text);
   if (character.log.length > 300) character.log.shift();
 }
 
@@ -872,6 +884,14 @@ function gearCategory(item) {
   if (item.heal) return null;
   if (item.armor) return "Clothing";
   return { Stealth: "Clothing", Combat: "Weapons", Hacking: "Decks", Driving: "Vehicles", Social: "Social" }[item.attr] || null;
+}
+
+// todo3.md INTERFACE UPDATE 2.5 — "for each vehicle mark where it is
+// stocked. Default is street." A lazy default (like `item.tier || "Street"`
+// elsewhere) rather than backfilling every gear-creation call site: a
+// vehicle with no `location` field yet just reads as "Street".
+function vehicleLocation(item) {
+  return item.location || "Street";
 }
 
 // Spare slots beyond the one free slot each of the five categories gets:
