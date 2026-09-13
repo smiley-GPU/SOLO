@@ -2347,6 +2347,54 @@ whichever of the two call sites triggered it.
 
 ---
 
+### 20.23 UPDATE 2.8: wounded contacts locked out of jobs and Hunts, a Repair/Mod ceiling tied to Hacking, and Shop/EuroStoxx/alignment polish
+
+todo3.md's "UPDATE 2.8" section (rows 389-397) — two wounded-exclusion
+fixes, a UI alignment fix, two Shop/EuroStoxx additions, and a rebuilt
+Repair mechanic gated by Hacking.
+
+**A wounded Compi/Amigue can't be brought on a job or called into a
+Hunt.** Neither of the two places that list them checked `.wounded`
+before: `renderGearUp()`'s "Call in a Favor" eligibility filter gained
+`&& !p.wounded`, and `renderHuntRoll()`'s Bloodbrother-assist row
+(`amigues = c.contacts.filter(...)`) gained the same check — both already
+had every other exclusion (archenemy, already brought, already used this
+Hunt) but let a sidelined contact slip through.
+
+**EuroStoxx gained a "Sell 1" button** next to the existing "Sell All,"
+selling exactly one held share back for 1 BOND and leaving the rest.
+
+**The Ally-Assist checkbox in a mission Challenge is aligned with the
+helper's name**, reusing Gear Up's `.helper-row`/`.helper-info` layout
+(§20.21) instead of a plain inline "Name: +2 to this roll" label — a
+name/effect two-line stack on the left, the checkbox on the right, the
+same treatment Gear Up's own Helper rows already got.
+
+**The Shop always stocks 2 items from every Tier below the player's
+own**, on top of the existing 2-at-your-own-Tier plus the 50%/20% chance
+of one/two Tiers higher — `genShopOffers()` (engine.js) loops every Tier
+from 1 up to (not including) the player's Reputation Tier and adds 2 offers
+each, so cheaper gear never disappears from the shelves once a player has
+outgrown it. A no-op for Tier 1 (nothing below Street Rat).
+
+**Repair is capped at an item's original Tier — Hacking unlocks going
+further as a Mod.** A new `ensureOriginalTier(item)` (state.js) lazily
+locks in an item's Tier the first time either `degradeGearItem()` or the
+Workshop looks at it — for anything untouched by both so far, its current
+Tier already *is* the original one, so this is equivalent to stamping it
+at purchase without needing to touch every gear-creation call site (old
+saves get the same best-effort treatment: whatever Tier an already-damaged
+item happens to be at the first time this runs is the only "original" the
+game can still recover). `renderWorkshopBox()` computes each item's ceiling
+as `original Tier + (Hacking ≥5 ? 2 : Hacking ≥3 ? 1 : 0)`, capped at
+Legendary, and only offers a row while there's room under that ceiling — an
+undamaged item with Hacking <3 gets no row at all (already at its cap).
+The button reads "Repair" while restoring at or below the original Tier,
+"Mod" once it would push past it; pricing is unchanged either way (the
+next Tier's normal fresh-purchase price — "always pay the change").
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,

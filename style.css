@@ -282,6 +282,10 @@ button.danger { background: var(--danger); color: #2a0000; }
 .helper-effect { font-size: 12px; }
 .helper-actions { display: flex; align-items: center; gap: 10px; }
 .helper-cost { font-size: 12px; min-width: 80px; text-align: right; }
+/* todo3.md UPDATE 2.8 — the Ally-Assist checkbox in a mission Challenge
+   reuses the .helper-row layout above; just needs the label itself to read
+   as clickable, like every other checkbox toggle. */
+.assist-toggle { cursor: pointer; }
 
 .challenge {
   border: 1px solid var(--border);

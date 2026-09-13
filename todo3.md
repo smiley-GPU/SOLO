@@ -385,3 +385,13 @@ Make each tier have all these places as choices. Choices should be from differen
 * Fix adversary game effect - that should be character Tier compared to target faction Tier. If character is higher, then he get Tier bonus, if it's lower character gets Tier penalty. This replaces adversary modifier.
 * Armor should always protect you from damage. AS many damage can be blocked as you have armor points.
 * Check corporate war possibility after mission and after faction attribute changes has been counted.
+
+## UPDATE 2.8
+* check that wounded Compi or Amigue cannot be taken to a job
+* Compi or Amigue should not be available in HUNT scenarios
+* add a "sell 1" function to EUROSTOXX
+* make sure that Amigue and Compi bonus boxes are aligned with helper name in mission challenges
+* always have two items per tier from lower tiers (if any) in the shop
+* Repair is only possible to items original level
+* If you have Hacking 3+, make Repair as Repair/Mod, and then you can raise the item tier by 1. Always pay the change.
+* If you have Hacking 5, then you can raise the item tier up to 2. Always pay the change.

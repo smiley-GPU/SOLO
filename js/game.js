@@ -246,32 +246,47 @@ function renderShopBox() {
 // "WORKSHOP" (todo3.md INTERFACE 2.4.2) — repairing a degraded (downgraded-
 // a-tier) item back up one Tier, priced the same as buying that next Tier
 // fresh; split out of the old combined Shop panel. Tabbed like the Shop.
+// todo3.md UPDATE 2.8 — "Repair is only possible to items['] original
+// level. If you have Hacking 3+, make Repair as Repair/Mod, and then you
+// can raise the item tier by 1... If you have Hacking 5, raise up to 2."
+// Base case (Hacking <3): Repair can only ever climb back to the item's
+// own `originalTier` (ensureOriginalTier(), state.js) — an undamaged item
+// already at its ceiling gets no row at all. Hacking 3-4 opens one Tier
+// past original ("Mod"); Hacking 5 opens two.
 function renderWorkshopBox() {
   const c = G.character;
   const box = document.createElement("div");
   box.className = "downtime-box";
-  box.innerHTML = `<h3>Workshop</h3><p class="muted">Pay an item up one Tier.</p>`;
+  box.innerHTML = `<h3>Workshop</h3><p class="muted">Repair up to an item's original Tier — Hacking 3+ mods it further, always at the going price.</p>`;
   if (!G.workshopTab) G.workshopTab = "All";
   box.innerHTML += tabBarHtml(GEAR_TABS, G.workshopTab, "workshop-tab");
 
+  const modBonus = c.attrs.Hacking >= 5 ? 2 : c.attrs.Hacking >= 3 ? 1 : 0;
   const repairable = c.gear
-    .filter(item => DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.length - 1)
-    .filter(item => matchesGearTab(item, G.workshopTab));
+    .map(item => {
+      const curIdx = DATA.gearTierOrder.indexOf(item.tier || "Street");
+      const origIdx = DATA.gearTierOrder.indexOf(ensureOriginalTier(item));
+      const maxIdx = Math.min(DATA.gearTierOrder.length - 1, origIdx + modBonus);
+      return { item, curIdx, maxIdx };
+    })
+    .filter(({ curIdx, maxIdx }) => curIdx < maxIdx)
+    .filter(({ item }) => matchesGearTab(item, G.workshopTab));
   if (!repairable.length) box.innerHTML += `<p class="muted">Nothing to fix up in this category.</p>`;
-  repairable.forEach(item => {
-    const nextTier = DATA.gearTierOrder[DATA.gearTierOrder.indexOf(item.tier || "Street") + 1];
-    const cost = DATA.gear[nextTier][0].price; // same price as buying fresh at that Tier
+  repairable.forEach(({ item, curIdx, maxIdx }) => {
+    const nextTier = DATA.gearTierOrder[curIdx + 1];
+    const cost = DATA.gear[nextTier][0].price; // same price as buying fresh at that Tier — "always pay the change"
+    const isMod = curIdx + 1 > DATA.gearTierOrder.indexOf(ensureOriginalTier(item)); // past original Tier — needs the Hacking-based headroom above
     const row = document.createElement("div");
     row.className = "offer";
     row.innerHTML = `<span>${item.name} <em>(${item.tier} → ${nextTier})</em></span>`;
     const btn = document.createElement("button");
-    btn.textContent = `Repair — ${cost} BOND${cost === 1 ? "" : "S"}`;
+    btn.textContent = `${isMod ? "Mod" : "Repair"} — ${cost} BOND${cost === 1 ? "" : "S"}`;
     btn.disabled = c.bonds < cost;
     btn.addEventListener("click", () => {
       c.bonds -= cost;
       item.tier = nextTier;
       if (item.armor) item.armor = DATA.gearTierBonus[nextTier]; // full charges at the new tier
-      addLog(c, `You get the ${item.name} fixed up to ${nextTier} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
+      addLog(c, `You get the ${item.name} ${isMod ? "modded" : "fixed"} up to ${nextTier} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
       persist(); render();
     });
     row.appendChild(btn);
@@ -480,6 +495,19 @@ function renderStocksBox() {
     });
     row.appendChild(investBtn);
     if (held > 0) {
+      // todo3.md UPDATE 2.8 — "add a 'sell 1' function to EuroStoxx," next
+      // to the existing sell-everything option.
+      const sell1Btn = document.createElement("button");
+      sell1Btn.textContent = "Sell 1";
+      sell1Btn.addEventListener("click", () => {
+        c.bonds += 1;
+        c.stocks[f.name] -= 1;
+        if (c.stocks[f.name] <= 0) delete c.stocks[f.name];
+        addLog(c, `You cash out 1 share of ${f.name} stock for 1 BOND.`);
+        persist(); render();
+      });
+      row.appendChild(sell1Btn);
+
       const sellBtn = document.createElement("button");
       sellBtn.textContent = `Sell All (${held})`;
       sellBtn.addEventListener("click", () => {
@@ -1576,9 +1604,11 @@ function renderGearUp() {
     wrap.appendChild(hireRow);
 
     // Call in a Favor — a contact you're square with (relationship ≥3)
-    // instead of a stranger. Excludes anyone already brought along.
+    // instead of a stranger. Excludes anyone already brought along, and
+    // (todo3.md UPDATE 2.8) a wounded Compi/Amigue — they're sidelined,
+    // not fit for a job.
     const broughtIds = new Set(job.helpers.map(h => h.person.id));
-    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy && !broughtIds.has(p.id));
+    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy && !p.wounded && !broughtIds.has(p.id));
     if (eligible.length) {
       const allySection = document.createElement("div");
       allySection.className = "section";
@@ -2105,6 +2135,7 @@ function finalizeStep(step) {
 function degradeGearItem(c, item) {
   const idx = c.gear.indexOf(item);
   if (idx === -1) return;
+  ensureOriginalTier(item); // todo3.md UPDATE 2.8 — lock in the Repair/Mod ceiling before this item ever moves
   const tierIdx = DATA.gearTierOrder.indexOf(item.tier || "Street");
   if (tierIdx <= 0) {
     c.gear.splice(idx, 1);
@@ -2382,8 +2413,12 @@ function renderChallenge(container, step, onContinue, ctx) {
     // test, consumed on the roll it's checked for. Independent checkboxes —
     // bringing more helpers means being able to stack more than one.
     const assistHelpers = job ? job.helpers.filter(h => h.source === "ally" && !h.used && !h.benched) : [];
+    // todo3.md UPDATE 2.8 — "align Amigue/Compi bonus boxes with helper
+    // name": reuses Gear Up's .helper-row/.helper-info layout (§20.21) so
+    // the checkbox sits consistently next to a name/effect stack here too,
+    // instead of a plain inline "Name: +2 to this roll" label.
     const assistOptions = assistHelpers.map(h =>
-      `<label class="boost-toggle"><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /> ${h.person.name}: +2 to this roll</label>`
+      `<label class="offer helper-row assist-toggle"><div class="helper-info"><div class="helper-name">${h.person.name}</div><div class="helper-effect muted">+2 to this roll</div></div><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /></label>`
     ).join("");
     // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
     // roll now, not auto-applied/burned whenever it happened to be the best
@@ -3020,7 +3055,8 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   // a one-time +2, same shape as Ally Assist in renderChallenge(). BATCH 2.0
   // — more than one Amigue can exist now; offer a row per Amigue (mutually
   // exclusive, like a picker) instead of always grabbing the first one found.
-  const amigues = c.contacts.filter(p => p.bloodbrother);
+  // todo3.md UPDATE 2.8 — a wounded Compi/Amigue isn't available here either.
+  const amigues = c.contacts.filter(p => p.bloodbrother && !p.wounded);
   const brotherOption = amigues.length && !hunt.bloodbrotherUsed
     ? amigues.map(a => `<label class="boost-toggle"><input type="checkbox" class="brother-check" data-id="${a.id}" /> Call ${a.name}: +2 to this roll</label>`).join("")
     : "";

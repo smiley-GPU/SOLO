@@ -907,6 +907,20 @@ function vehicleLocation(item) {
   return item.location || "Street";
 }
 
+// todo3.md UPDATE 2.8 — "Repair is only possible to items original level":
+// Workshop Repair/Mod needs a stable ceiling to measure against, so the
+// first time anything actually changes an item's Tier (degrading it on a
+// Fail, or repairing/modding it in the Workshop), its Tier at that moment
+// gets locked in as `originalTier` — for any item that's never been
+// touched by either, its current Tier already *is* the original one, so
+// stamping it the first time either path looks at it is equivalent to
+// stamping it at purchase, without needing to touch every gear-creation
+// call site. Idempotent — safe to call from both places.
+function ensureOriginalTier(item) {
+  if (item.originalTier === undefined) item.originalTier = item.tier || "Street";
+  return item.originalTier;
+}
+
 // Spare slots beyond the one free slot each of the five categories gets:
 // 3 base, +1 if a Vehicle is carried, +2 more (so +3 total) if that
 // Vehicle also carries the CG (Cargo) tag.

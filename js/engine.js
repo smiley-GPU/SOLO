@@ -111,9 +111,19 @@ function genShopOffer(tier, idx) {
   return { ...item, tier: tierName, id: `${item.name}-${Date.now()}-${idx}` };
 }
 function genShopOffers(reputationTier) {
-  const offers = [genShopOffer(reputationTier, 0), genShopOffer(reputationTier, 1)];
-  if (randInt(1, 100) <= 50) offers.push(genShopOffer(Math.min(4, reputationTier + 1), 2));
-  if (randInt(1, 100) <= 20) offers.push(genShopOffer(Math.min(4, reputationTier + 2), 3));
+  let idx = 0;
+  const offers = [genShopOffer(reputationTier, idx++), genShopOffer(reputationTier, idx++)];
+  if (randInt(1, 100) <= 50) offers.push(genShopOffer(Math.min(4, reputationTier + 1), idx++));
+  if (randInt(1, 100) <= 20) offers.push(genShopOffer(Math.min(4, reputationTier + 2), idx++));
+  // todo3.md UPDATE 2.8 — "always have two items per tier from lower tiers
+  // (if any) in the shop": every Tier below the player's own reliably gets
+  // 2 offers too, so cheaper gear never disappears from the shelves once
+  // you've outgrown it (nothing below Street Rat's own Tier 1, so this is
+  // a no-op there).
+  for (let t = 1; t < reputationTier; t++) {
+    offers.push(genShopOffer(t, idx++));
+    offers.push(genShopOffer(t, idx++));
+  }
   // BATCH 2.1 (item 9) — one-shot gear: single-use, "1S"-tagged items
   // available a full Tier below what their own Tier would otherwise
   // require (a Rep Tier 1 "Street Rat" already sees Professional-tier
@@ -121,7 +131,7 @@ function genShopOffers(reputationTier) {
   // DATA.oneShotGear's own `price` fields, not recomputed here). 40% chance
   // per Shop refresh.
   if (randInt(1, 100) <= 40) {
-    const oneShot = genOneShotOffer(reputationTier, 4);
+    const oneShot = genOneShotOffer(reputationTier, idx++);
     if (oneShot) offers.push(oneShot);
   }
   return offers;
