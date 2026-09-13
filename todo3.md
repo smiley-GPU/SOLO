@@ -348,3 +348,11 @@ Let's move to middle section of our interface.
 * Mission / Job cars. Put Payout on the top next to Job 1/2, only put the BONDS, e.g. "JOB 1: 3 BONDS"
 * Place the Job Description below the "JOB 1/2: x BONDS" text.
 * Align Mission board to center of the middle "column".
+
+## ## INTERFACE UPDATE 2.4.4
+* GEAR UP phase, make the gear and the box close to each other
+* Align windows after GEAR UP phase to the middle of the center column. All mission windows.
+* Align all GEAR UP boxes horizontally
+* in missions make the BOOST +2 as another box next to BOOST, so that player can check as many boxes as he wants boost.
+* make the ABORT window slightly separated from mission window.
+* If you spend a night with Friend successfully, it will mode directly to Find A Job phase. Return instead to Downtime screen.

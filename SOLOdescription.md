@@ -2088,6 +2088,64 @@ above the Job/Payout line.
 
 ---
 
+### 20.19 INTERFACE UPDATE 2.4.4: a horizontal Loadout, every post-Gear-Up window centered, a separate Abort Mission card, stackable BOOST checkboxes, and a Spend-the-Night navigation fix
+
+todo3.md's "INTERFACE UPDATE 2.4.4" section (rows 352-358) — six more
+polish items, continuing straight on from §20.18's centering/compactness
+work. All cosmetic/layout except the BOOST checkbox change and the
+Spend-the-Night fix, which are small interaction/navigation tweaks with no
+new underlying game rule.
+
+**The checkbox and the item text sit close together now.** A genuine bug,
+not just a spacing preference: `.card label.offer`'s flex row (added in
+§20.18) never overrode `.offer`'s own `justify-content: space-between`, so
+every Loadout row's lone checkbox and item-name pair were being pushed to
+opposite ends of the row — the widest possible gap, not the closest. Adding
+`justify-content: flex-start` to that rule fixes it.
+
+**"Align all Gear Up boxes horizontally."** The Loadout's category blocks
+(Weapons/Clothing/Decks/Vehicles/Social, plus Heal) now sit in a wrapping
+flex row (`.loadout-grid`, the same idiom as the Downtime columns) instead
+of one long vertical stack — a further, larger cut to Gear Up's height on
+top of §20.18's row/margin tightening.
+
+**Every window from Gear Up onward is centered**, not just Gear Up and the
+Mission Board (§20.18): Steps, Encounter, Checkpoint, and Debrief's `.card`
+wraps all gained the `.centered` class. The Hub, Character creation, Win/
+Loss/Death, and the Hunt screens are unaffected — the todo scoped this to
+"windows after Gear Up phase... all mission windows."
+
+**Abort Mission is its own card now**, not a `.section` nested inside the
+mission's own card. `renderAbortBox()` builds a `.card.centered.abort-box`
+and Steps/Encounter append it as a sibling in `#main` (`renderAbortBox(els.
+main)`) instead of a child of the step's own wrap — same `margin-top: 14px`
+separation as before, but now with its own border/background, reading as a
+genuinely separate box ("slightly separated") rather than a subsection of
+the mission window.
+
+**BOOST spending is two independent, stackable checkboxes.** Superseding
+§20.10 (BATCH 2.1 item 13)'s mutually-exclusive "Spend 1 BOOST for +1" /
+"Spend 2 BOOST for +2" pair: `boostSpendOptionHtml()`/`wireBoostSpend()`
+(game.js, shared by both roll UIs — `renderChallenge()` and
+`renderHuntRoll()`) now render up to two identical, independent "+1 BOOST"
+checkboxes; checking one spends 1, checking both spends 2 — "check as many
+boxes as he wants boost" — instead of picking one fixed amount from a
+choice of two.
+
+**A successful Spend the Night returns to Downtime, not straight to the
+Mission Board.** Every Rest action funnels through `processRestTick()`,
+which ticks the clock, rerolls the Board, and — unless that tick triggers a
+Hunt or the MULTI-CORP loss — leaves the player looking at the Mission
+Board (`startJobSearch(true)` sets `G.phase = "briefing"`). `processRestTick()`
+gained an optional `returnToHub` parameter: still ticks the clock and
+rerolls the Board exactly as before, but then overrides `G.phase` back to
+`"hub"` and re-renders. `finishBrotherNight()`'s clean-success ("10+")
+branch is the only caller that passes it — every other Rest option
+(Coffin Hotel, Night on the Street, Rest at your Apartment, and Spend the
+Night's own Partial/Fail branches) is unchanged.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,

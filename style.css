@@ -215,8 +215,17 @@ header h1 {
    inside a .card; .card label's block display/12px margin (above) would
    otherwise win on specificity and break both the flex alignment between
    the checkbox and the item text, and the tighter row spacing the todo
-   asked for ("make sure the selection box is aligned with the item"). */
-.card label.offer { display: flex; margin-bottom: 0; align-items: center; gap: 8px; padding: 4px 0; }
+   asked for ("make sure the selection box is aligned with the item").
+   INTERFACE 2.4.4: also overrides .offer's own justify-content:
+   space-between, which was pushing the checkbox and the item name to
+   opposite ends of the row instead of sitting close together. */
+.card label.offer { display: flex; justify-content: flex-start; margin-bottom: 0; align-items: center; gap: 8px; padding: 4px 0; }
+/* INTERFACE 2.4.4 — "align all Gear Up boxes horizontally": the Loadout's
+   category blocks (Weapons/Clothing/Decks/Vehicles/Social/Heal) sit side by
+   side in a wrapping row instead of stacked, the same idiom as the Downtime
+   columns. */
+.loadout-grid { display: flex; flex-wrap: wrap; gap: 14px; }
+.loadout-grid > div { flex: 1 1 180px; min-width: 160px; }
 .muted { color: var(--muted); font-size: 13px; }
 
 button {

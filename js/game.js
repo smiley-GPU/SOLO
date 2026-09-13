@@ -1116,7 +1116,7 @@ function finishBrotherNight() {
     if (bb) nudgeRelationship(c, bb.id, 1);
     grantBloodbrotherGift(c);
     G.restFlow = null;
-    processRestTick();
+    processRestTick(false, true); // todo3.md INTERFACE 2.4.4 — a clean night in returns to Downtime, not straight to the Mission Board
   } else if (res.tier === "partial") {
     healBox(c);
     if (c.boost > 0) { c.boost -= 1; addLog(c, "Hungover — that BOOST is gone, but at least you're patched up."); }
@@ -1191,7 +1191,13 @@ function grantBloodbrotherGift(c) {
 // viaApartment (BATCH 2.0): true when this tick came from Rest at your
 // Apartment — if it's the tick that fills the clock, the resulting Hunt
 // happens at home (startHunt's atHome param) instead of out on the street.
-function processRestTick(viaApartment) {
+// returnToHub (todo3.md INTERFACE 2.4.4): a successful Spend the Night still
+// ticks the clock and rerolls the Board like any other Rest action, but
+// lands back on the Downtime screen instead of dropping the player straight
+// into the Mission Board — startJobSearch() already rendered "briefing" by
+// the time this runs, so it's a deliberate second render to override that,
+// not a race: JS won't paint the intermediate frame.
+function processRestTick(viaApartment, returnToHub) {
   const c = G.character;
   c.restCount++;
   if (c.restCount === 1) lockInArchenemy(c);
@@ -1216,6 +1222,11 @@ function processRestTick(viaApartment) {
     return;
   }
   startJobSearch(true);
+  if (returnToHub) {
+    G.phase = "hub";
+    persist();
+    render();
+  }
 }
 
 function lockInArchenemy(c) {
@@ -1512,6 +1523,12 @@ function renderLoadoutSection() {
   section.className = "section";
   section.innerHTML = `<h3>Loadout</h3><p class="muted">Only what you carry grants its bonus (or takes the hit) this job. One free slot per category, plus spares: <span id="spare-count">${usedSpares()}</span>/${spareCap}.</p>`;
 
+  // todo3.md INTERFACE 2.4.4 — "align all Gear Up boxes horizontally": the
+  // category blocks sit side by side in a wrapping row instead of stacked.
+  const grid = document.createElement("div");
+  grid.className = "loadout-grid";
+  section.appendChild(grid);
+
   categories.forEach(cat => {
     const items = c.gear.filter(g => gearCategory(g) === cat);
     if (!items.length) return;
@@ -1555,7 +1572,7 @@ function renderLoadoutSection() {
       row.append(` ${item.name} (${item.tier}${kind ? `, ${kind}` : ""}${tagsHtml})`);
       catBlock.appendChild(row);
     });
-    section.appendChild(catBlock);
+    grid.appendChild(catBlock);
   });
 
   const healItems = c.gear.filter(g => g.heal);
@@ -1563,7 +1580,7 @@ function renderLoadoutSection() {
     const healBlock = document.createElement("div");
     healBlock.innerHTML = `<h4>Heal (always available)</h4>`;
     healBlock.innerHTML += healItems.map(g => `<div class="offer"><span>${g.name} (${g.tier})</span></div>`).join("");
-    section.appendChild(healBlock);
+    grid.appendChild(healBlock);
   }
 
   return section;
@@ -1608,10 +1625,10 @@ function maybeTriggerEncounter(stage) {
 function renderEncounter() {
   const job = G.job;
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card centered"; // todo3.md INTERFACE 2.4.4 — every window after Gear Up is centered
   wrap.innerHTML = `<h2>Encounter</h2>${jobContextHtml(job)}<p class="step-desc">${job.encounter.step.desc}</p>`;
   els.main.appendChild(wrap);
-  if (job.abortFlow) { renderAbortBox(wrap); return; } // todo3.md INTERFACE 2.4.2
+  if (job.abortFlow) { renderAbortBox(els.main); return; } // todo3.md INTERFACE 2.4.2/2.4.4
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
     if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
@@ -1628,7 +1645,7 @@ function renderEncounter() {
     persist();
     render();
   });
-  if (!job.pendingResult) renderAbortBox(wrap); // hidden while a roll result awaits Continue
+  if (!job.pendingResult) renderAbortBox(els.main); // hidden while a roll result awaits Continue
 }
 
 // ---------- CHECKPOINT (§20.7) ----------
@@ -1657,7 +1674,7 @@ function renderCheckpoint() {
   const job = G.job;
   const cp = job.checkpoint;
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card centered"; // todo3.md INTERFACE 2.4.4
   wrap.innerHTML = `<h2>${cp.agency} Checkpoint</h2>${jobContextHtml(job)}`;
   els.main.appendChild(wrap);
 
@@ -1800,12 +1817,12 @@ function renderSteps() {
   const job = G.job;
   const step = job.steps[job.stepIndex];
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card centered"; // todo3.md INTERFACE 2.4.4
   wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2>${jobContextHtml(job)}<p class="step-desc">${step.desc}</p>`;
   els.main.appendChild(wrap);
-  if (job.abortFlow) { renderAbortBox(wrap); return; } // todo3.md INTERFACE 2.4.2
+  if (job.abortFlow) { renderAbortBox(els.main); return; } // todo3.md INTERFACE 2.4.2/2.4.4
   renderChallenge(wrap, step, () => finalizeStep(step));
-  if (!job.pendingResult) renderAbortBox(wrap); // hidden while a roll result awaits Continue
+  if (!job.pendingResult) renderAbortBox(els.main); // hidden while a roll result awaits Continue
 }
 
 // todo3.md INTERFACE 2.4.2 — "ABORT MISSION": a bail-out box shown once a
@@ -1813,10 +1830,13 @@ function renderSteps() {
 // player's choice) through the normal Challenge UI (reusing every existing
 // modifier — gear, Helpers, Wounded, BOOST, one-shots) and always ends the
 // job as a forced Failure — see finishAbortMission/runDebrief's forceFailure.
+// INTERFACE 2.4.4 — its own card (not nested in the mission card), appended
+// as a sibling in #main so it reads as a genuinely separate, "slightly
+// separated" box instead of just another section inside the mission window.
 function renderAbortBox(container) {
   const job = G.job;
   const box = document.createElement("div");
-  box.className = "section abort-box";
+  box.className = "card centered abort-box";
   if (!job.abortFlow) {
     box.innerHTML = `<h3>Abort Mission</h3><p class="muted">Cut and run — the job ends here, one way or another.</p>`;
     const btn = document.createElement("button");
@@ -2175,28 +2195,24 @@ function woundJobHelper(c, job) {
 // code paths.
 
 // Item 13 — "spend up to 2 BOOST," capped by what the character actually
-// has. Same manual-mutual-exclusivity idiom as the Hunt's Amigue-call
-// checkboxes, generalized into a helper instead of being written twice.
+// has. todo3.md INTERFACE 2.4.4 — was one mutually-exclusive choice between
+// "+1" and "+2"; now two independent, identical "+1 BOOST" boxes side by
+// side, so checking either (or both) stacks — "check as many boxes as he
+// wants boost" — instead of picking one fixed amount.
 function boostSpendOptionHtml(c) {
   const max = Math.min(2, c.boost);
   if (!max) return "";
-  return Array.from({ length: max }, (_, i) => i + 1)
-    .map(n => `<label class="boost-toggle"><input type="checkbox" class="boost-check" data-amount="${n}" /> Spend ${n} BOOST for +${n}</label>`)
-    .join("");
+  return Array.from({ length: max }).map(() =>
+    `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> +1 BOOST</label>`
+  ).join("");
 }
 // Wires up the checkboxes boostSpendOptionHtml() rendered into `block`:
-// checking one unchecks any other, firing onChange either way. Returns a
-// getter for however much BOOST is currently selected to spend (0 if none).
+// each one is independent now (no mutual exclusion) — returns a getter for
+// however many are checked, i.e. however much BOOST is spent (0 if none).
 function wireBoostSpend(block, onChange) {
   const checks = Array.from(block.querySelectorAll(".boost-check"));
-  checks.forEach(cb => cb.addEventListener("change", () => {
-    if (cb.checked) checks.forEach(other => { if (other !== cb) other.checked = false; });
-    onChange();
-  }));
-  return () => {
-    const hit = checks.find(cb => cb.checked);
-    return hit ? Number(hit.dataset.amount) : 0;
-  };
+  checks.forEach(cb => cb.addEventListener("change", onChange));
+  return () => checks.filter(cb => cb.checked).length;
 }
 
 // Item 8 — every generic Challenge roll (never Coffin Hotel's or the
@@ -2586,7 +2602,7 @@ function runDebrief(forceFailure) {
 function renderDebrief() {
   const job = G.job;
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card centered"; // todo3.md INTERFACE 2.4.4
   wrap.innerHTML = `
     <h2>Debrief — ${job.outcome}</h2>
     <p>Employer: ${job.employer.name}</p>
