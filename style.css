@@ -77,8 +77,12 @@ header h1 {
 
 /* INTERFACE 2.4.2 — Downtime moved into #main: a Lay-Low window (rest
    options + Find a Job) followed by a row of Shop/Workshop/Apartment/
-   Street-Dojo/EuroStoxx columns, both only ever shown at the Hub. */
-.downtime-columns { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+   Street-Dojo columns, both only ever shown at the Hub. INTERFACE 2.4.2.2:
+   the window is as wide as the Journal above it (no .card max-width cap),
+   and the columns stretch to match the tallest one in their row. */
+.card.downtime-window { max-width: none; }
+.laylow-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.downtime-columns { display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; }
 .downtime-columns .downtime-box { flex: 1 1 220px; min-width: 220px; margin-bottom: 0; }
 .downtime-box {
   border: 1px solid var(--border);

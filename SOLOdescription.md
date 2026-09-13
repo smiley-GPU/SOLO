@@ -1998,6 +1998,46 @@ path (§20.9.2) applies unchanged.
 
 ---
 
+### 20.17 INTERFACE UPDATE 2.4.2.2: Downtime polish — StreetDoc joins Lay Low, side-by-side rows, equal-height columns, EuroStoxx onto Factions
+
+todo3.md's "INTERFACE UPDATE 2.4.2.2" section (rows 336-341) — five small
+follow-up polish items on top of §20.16's rebuild, all cosmetic/layout, no
+new mechanics.
+
+**The Downtime window is as wide as the Journal above it.** `renderHub()`'s
+outer card now carries a second class, `.card.downtime-window`, whose
+`max-width: none` overrides `.card`'s own 640px cap (a same-specificity
+override needs the compound selector — `.card`'s plain rule would otherwise
+win on source order alone).
+
+**"Medical" is "StreetDoc," and it's a Lay Low option now**, not a
+standalone button above the Hub card. `renderRestOptions()` builds it as the
+first button in its own row, alongside Coffin Hotel and Night on the
+Street — same cost/healing logic as before (1 BOND/box, skipped by a
+Permanent Injury), just relocated and renamed.
+
+**Lay Low is two side-by-side rows** (`.laylow-row`, a `flex-wrap` div):
+StreetDoc / Coffin Hotel / Night on the Street first, then — on their own
+row underneath — one "Spend the Night with `<Amigue>`" button per Amigue and
+"Rest at your Apartment" if one is owned. Either row can be empty (no
+Amigue, no apartment) without leaving a visible gap.
+
+**Shop/Workshop/Apartment/Street-Dojo stretch to equal height.**
+`.downtime-columns` switched from `align-items: flex-start` to the flex
+default `stretch`, so every column in a row matches the tallest one even
+when its own content is much shorter (Apartment's one-line flavor text next
+to Shop's full offer list, say) — "it looks better this way."
+
+**EuroStoxx moves to the Factions panel**, rendered by `renderFactions()`
+directly below the faction list (`els.factions.appendChild(renderStocksBox())`)
+instead of sitting in the Downtime columns row. Unlike those columns —
+which simply aren't in the DOM outside the Hub — the Factions panel renders
+on every phase, so `renderStocksBox()` re-gains a small "closed for the
+duration of the job" check (`G.phase !== "hub"`) to keep it Hub-only like
+every other Downtime commerce panel.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,

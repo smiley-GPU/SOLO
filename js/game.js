@@ -151,15 +151,19 @@ function renderFactions() {
     return `<div class="section"><h3>${type}</h3><ul>${rows}</ul></div>`;
   }).join("");
   els.factions.innerHTML = `<h2>Factions</h2>${html}`;
+  els.factions.appendChild(renderStocksBox()); // todo3.md INTERFACE 2.4.2.2 — EuroStoxx moved below Factions
 }
 
 // ---------- DOWNTIME (§20.5, restructured — todo3.md INTERFACE 2.4.2) ------
-// Shop/Workshop/Apartment/Street-Dojo/EuroStoxx used to live in their own
-// permanent 4th sidebar column, always visible-but-greyed outside the Hub;
-// INTERFACE 2.4.2 moves them into #main as a row of columns under the
+// Shop/Workshop/Apartment/Street-Dojo used to live (with EuroStoxx) in their
+// own permanent 4th sidebar column, always visible-but-greyed outside the
+// Hub; INTERFACE 2.4.2 moves them into #main as a row of columns under the
 // Lay-Low/Find-a-Job window (renderHub, below) — both are now rendered only
 // at the Hub, so there's no more "closed for the job" grey state to track:
-// they simply aren't in the DOM once a job is under way.
+// they simply aren't in the DOM once a job is under way. INTERFACE 2.4.2.2
+// moved EuroStoxx again, out of this row and down onto the Factions panel
+// (renderFactions) — see renderStocksBox, which re-gains its own "closed for
+// the job" check now that it's rendered on every phase, not just the Hub.
 function renderDowntimeColumns() {
   const wrap = document.createElement("div");
   wrap.className = "downtime-columns";
@@ -167,7 +171,6 @@ function renderDowntimeColumns() {
   wrap.appendChild(renderWorkshopBox());
   wrap.appendChild(renderApartmentBox());
   wrap.appendChild(renderTrainingBox());
-  wrap.appendChild(renderStocksBox());
   return wrap;
 }
 
@@ -407,12 +410,21 @@ function renderTrainingBox() {
 
 // "EUROSTOXX" (§20.5) — park BONDS in any current Corpo faction's stock;
 // it moves with their Wealth via settleStockGains() (state.js, hooked into
-// adjustFactionParam). Sell converts the whole held amount back 1:1, any time.
+// adjustFactionParam). Sell converts the whole held amount back 1:1, any
+// time. todo3.md INTERFACE 2.4.2.2 — rendered on the Factions panel now
+// (renderFactions), below the faction list, which unlike the Downtime
+// columns is on-screen every phase — so this is the one panel that still
+// needs its own "closed for the duration of the job" check.
 function renderStocksBox() {
   const c = G.character;
   const box = document.createElement("div");
   box.className = "downtime-box";
-  box.innerHTML = `<h3>EuroStoxx</h3><p class="muted">Park BONDS in a Corpo faction's stock — it moves with their Wealth.</p>`;
+  box.innerHTML = `<h3>EuroStoxx</h3>`;
+  if (G.phase !== "hub") {
+    box.innerHTML += `<p class="muted">Closed for the duration of the job.</p>`;
+    return box;
+  }
+  box.innerHTML += `<p class="muted">Park BONDS in a Corpo faction's stock — it moves with their Wealth.</p>`;
 
   DATA.factions.filter(f => {
     const s = c.factionStandings[f.name];
@@ -641,32 +653,22 @@ function renderCreate() {
   });
 }
 
-// ---------- HUB / DOWNTIME (restructured — todo3.md INTERFACE 2.4.2) ------
-// The pre-job view: Medical/Permanent-Injury care and the Lay-Low window
-// (Rest options + Find a Job) in one card, then the Shop/Workshop/Apartment/
-// Street-Dojo/EuroStoxx columns underneath. All of it — Lay-Low and the
-// columns alike — disappears the instant "Find a Job" is pressed, replaced
-// by the Mission Board's two cards (renderBriefing); "Return to Street"
-// brings it back without touching G.board, so the same two jobs are still
-// there (todo3.md: "keep the same missions still available").
+// ---------- HUB / DOWNTIME (restructured — todo3.md INTERFACE 2.4.2/2.4.2.2) --
+// The pre-job view: Permanent-Injury care, then the Lay-Low window (rest
+// options, including StreetDoc — was a standalone "Medical" button, now one
+// of the Lay Low options — plus Find a Job), then the Shop/Workshop/
+// Apartment/Street-Dojo columns underneath (EuroStoxx moved to the Factions
+// panel, renderStocksBox). All of it — Lay-Low and the columns alike —
+// disappears the instant "Find a Job" is pressed, replaced by the Mission
+// Board's two cards (renderBriefing); "Return to Street" brings it back
+// without touching G.board, so the same two jobs are still there (todo3.md:
+// "keep the same missions still available"). The window itself is as wide
+// as the Journal above it (.card.downtime-window drops the .card max-width).
 function renderHub() {
   const c = G.character;
   const wrap = document.createElement("div");
-  wrap.className = "card";
+  wrap.className = "card downtime-window";
   wrap.innerHTML = `<h2>Downtime</h2><p class="muted">Between jobs. Gear up, patch up, or find work.</p>`;
-
-  const medBtn = document.createElement("button");
-  const openWounds = c.health.filter(h => h).length;
-  medBtn.textContent = `Medical (1 BOND / box) — ${openWounds} wound(s)`;
-  // Band-aids don't touch a Permanent Injury — that needs a real repair below.
-  medBtn.disabled = openWounds === 0 || c.bonds < 1 || c.permanentInjury;
-  medBtn.addEventListener("click", () => {
-    c.bonds -= 1;
-    healBox(c);
-    addLog(c, "You get patched up at a ripperdoc's clinic.");
-    persist(); render();
-  });
-  wrap.appendChild(medBtn);
 
   if (c.permanentInjury) {
     const repairSection = document.createElement("div");
@@ -903,21 +905,45 @@ function renderBriefingCard(row, job, idx) {
 // once-per-search gate Pass used (now gated on the whole Board, G.boardRerolled);
 // Night on the Street (and Spend the Night, with a BLOODBROTHER) are always
 // available (todo3.md ADD). Shared by both jobs on the Board — resting
-// rerolls the whole Board, not just one candidate.
+// rerolls the whole Board, not just one candidate. todo3.md INTERFACE
+// 2.4.2.2 — laid out as two side-by-side rows: StreetDoc (was the Hub's
+// standalone "Medical" button)/Coffin Hotel/Night on the Street first, then
+// Spend the Night (Amigue)/Rest at your Apartment below them.
 function renderRestOptions(wrap) {
   const c = G.character;
   wrap.innerHTML = ""; // BATCH 2.2 — the box's own header ("Lay Low") lives one level up now
+
+  const row1 = document.createElement("div");
+  row1.className = "laylow-row";
+  wrap.appendChild(row1);
+
+  const docBtn = document.createElement("button");
+  const openWounds = c.health.filter(h => h).length;
+  docBtn.textContent = `StreetDoc (1 BOND / box) — ${openWounds} wound(s)`;
+  // Band-aids don't touch a Permanent Injury — that needs a real repair above.
+  docBtn.disabled = openWounds === 0 || c.bonds < 1 || c.permanentInjury;
+  docBtn.addEventListener("click", () => {
+    c.bonds -= 1;
+    healBox(c);
+    addLog(c, "You get patched up at a ripperdoc's clinic.");
+    persist(); render();
+  });
+  row1.appendChild(docBtn);
 
   const restBtn = document.createElement("button");
   restBtn.textContent = "Rest in Comfy Coffin Hotel (1 BOND)";
   restBtn.disabled = c.bonds < 1; // BATCH 2.0 — repeatable now, BONDS are the only limiter
   restBtn.addEventListener("click", () => restCoffinHotel());
-  wrap.appendChild(restBtn);
+  row1.appendChild(restBtn);
 
   const nightBtn = document.createElement("button");
   nightBtn.textContent = "Night on the Street (Free)";
   nightBtn.addEventListener("click", () => { G.restFlow = { stage: "night", pendingResult: null, lastResult: null }; persist(); render(); });
-  wrap.appendChild(nightBtn);
+  row1.appendChild(nightBtn);
+
+  const row2 = document.createElement("div");
+  row2.className = "laylow-row";
+  wrap.appendChild(row2);
 
   // BATCH 2.0 — more than one Amigue can exist now; offer a row per Amigue
   // instead of always grabbing the first one found.
@@ -925,7 +951,7 @@ function renderRestOptions(wrap) {
     const brotherBtn = document.createElement("button");
     brotherBtn.textContent = `Spend the Night with ${bb.name} (Free)`;
     brotherBtn.addEventListener("click", () => { G.restFlow = { stage: "brothernight", withId: bb.id, pendingResult: null, lastResult: null }; persist(); render(); });
-    wrap.appendChild(brotherBtn);
+    row2.appendChild(brotherBtn);
   });
 
   // BATCH 2.0 — relocated from the Hub, and now ticks the Rest clock like
@@ -934,7 +960,7 @@ function renderRestOptions(wrap) {
     const homeBtn = document.createElement("button");
     homeBtn.textContent = "Rest at your Apartment (Free)";
     homeBtn.addEventListener("click", () => restAtApartment());
-    wrap.appendChild(homeBtn);
+    row2.appendChild(homeBtn);
   }
 
   const restNote = document.createElement("p");

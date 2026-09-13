@@ -333,3 +333,9 @@ Let's move to middle section of our interface.
  * When the mission is resolved:succeeded or failed, the window is closed.
 * Mission cards make the layout look like a trading card game cards. Make sure that you only use two font sizes (text and headline) and the contrast between background and font is good. No grey text on black background.
 
+## INTERFACE UPDATE 2.4.2.2
+* make DOWNTIME window as wide as LOG.
+* Make Medical (change the name to StreetDoc) as one of the Lay Low options.
+* put LAY LOW options side by side. Stay at Friends and Stay at own appartmen can be put below the initial three options.
+* make SHOP/WORKSHOP/APARTMENT/ STREET-DOJO as high as the tallest of them even if there is no content. It looks better this way.
+* Move EUROSTOXX below Factions on the right hand side column/Window.
