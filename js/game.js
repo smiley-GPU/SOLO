@@ -2314,16 +2314,16 @@ function woundJobHelper(c, job) {
 // code paths.
 
 // Item 13 — "spend up to 2 BOOST," capped by what the character actually
-// has. todo3.md INTERFACE 2.4.4 — was one mutually-exclusive choice between
-// "+1" and "+2"; now two independent, identical "+1 BOOST" boxes side by
-// side, so checking either (or both) stacks — "check as many boxes as he
-// wants boost" — instead of picking one fixed amount.
+// has. todo3.md INTERFACE 2.4.4 gave this two independent, identical "+1
+// BOOST"-labeled boxes side by side so checking either (or both) stacks;
+// todo3.md UPDATE 2.6 (row 381) trims that to a single "BOOST" label with
+// its 1-2 checkboxes stacked vertically beside it, instead of repeating the
+// label on every box.
 function boostSpendOptionHtml(c) {
   const max = Math.min(2, c.boost);
   if (!max) return "";
-  return Array.from({ length: max }).map(() =>
-    `<label class="boost-toggle"><input type="checkbox" class="boost-check" /> +1 BOOST</label>`
-  ).join("");
+  const boxes = Array.from({ length: max }, () => `<input type="checkbox" class="boost-check" />`).join("");
+  return `<div class="boost-spend"><span class="boost-spend-label">BOOST</span><div class="boost-check-stack">${boxes}</div></div>`;
 }
 // Wires up the checkboxes boostSpendOptionHtml() rendered into `block`:
 // each one is independent now (no mutual exclusion) — returns a getter for

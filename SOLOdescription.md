@@ -2234,10 +2234,11 @@ summarizes that one rather than branching on "more than one."
 
 ---
 
-### 20.21 UPDATE 2.6: a two-line Helper layout, a true 3-column Loadout grid, and scroll-to-top after every mission click
+### 20.21 UPDATE 2.6: a two-line Helper layout, a true 3-column Loadout grid, scroll-to-top after every mission click, and a single BOOST label
 
-todo3.md's "UPDATE 2.6" section (rows 376-379) — three layout fixes plus a
-line confirming the Archenemy-red behavior §20.20 already delivered.
+todo3.md's "UPDATE 2.6" section (rows 376-381) — three layout fixes, a
+line confirming the Archenemy-red behavior §20.20 already delivered, and a
+follow-up trim to the BOOST-spend checkboxes.
 
 **Gear Up's Helper rows are name-on-top, effect-below.** Every Helper-ish
 row — already-brought, the "Hire backup" offer, and each "Call in a Favor"
@@ -2274,6 +2275,16 @@ applies unconditionally (not gated on `.log-new`), so a tagged line stays
 red forever, long after it stops being the newest line and would otherwise
 have faded to the default muted gray. No code changed for this bullet —
 it's confirmation, not a new requirement.
+
+**One "BOOST" label, not one per checkbox.** todo3.md row 381, a follow-up
+to §20.19's stacking BOOST checkboxes: `boostSpendOptionHtml()` (game.js,
+shared by `renderChallenge()` and `renderHuntRoll()`) used to repeat a
+"+1 BOOST" label on each of its up-to-2 checkboxes; now it renders a single
+`.boost-spend` block — one "BOOST" text label, with its 1-2 plain
+checkboxes stacked vertically beside it (`.boost-check-stack`) instead of
+alongside each one. `wireBoostSpend()` is unchanged — it already just
+counts however many `.boost-check` inputs are checked, regardless of what
+markup wraps them.
 
 ---
 

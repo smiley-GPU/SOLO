@@ -378,3 +378,4 @@ Make each tier have all these places as choices. Choices should be from differen
 * GEAR UP: align all gear buttons. If there is uneven number of gear categories in each row, make them still align 1st colum to 1st column, 2nd column to 2nd column and 3rd as alone for example.
 * After each mission click always scroll the screen to top, so that the log, and changes in there are visible.
 * MArk lates changes to the log always with yellow color, Archenemy actions always come with red and stay red. Whe new log text comes as a yellow color, old text goes gray.
+* in challenges have only one BOOST text and after that, aligned vertically, one or two check boxes to mark up spent BOOST.
