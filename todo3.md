@@ -379,3 +379,9 @@ Make each tier have all these places as choices. Choices should be from differen
 * After each mission click always scroll the screen to top, so that the log, and changes in there are visible.
 * MArk lates changes to the log always with yellow color, Archenemy actions always come with red and stay red. Whe new log text comes as a yellow color, old text goes gray.
 * in challenges have only one BOOST text and after that, aligned vertically, one or two check boxes to mark up spent BOOST.
+
+## UPDATE 2.7
+* Fix that Night on street ending doesn't jump directly to mission, but to downtown screen instead.
+* Fix adversary game effect - that should be character Tier compared to target faction Tier. If character is higher, then he get Tier bonus, if it's lower character gets Tier penalty. This replaces adversary modifier.
+* Armor should always protect you from damage. AS many damage can be blocked as you have armor points.
+* Check corporate war possibility after mission and after faction attribute changes has been counted.

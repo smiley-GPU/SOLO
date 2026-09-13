@@ -202,8 +202,11 @@ function checkMultiCorpLoss(character) {
   return nonDestroyedFactionsIn(character, "Corpo").length === 1;
 }
 
-// §19.7 — checked once per Rest tick. Any non-destroyed Corpo/Crime/Nomad
-// faction with Power ≥10 rolls against a random rival in its own category.
+// §19.7 — checked once per Rest tick (processRestTick, game.js) and, since
+// todo3.md UPDATE 2.7, once per Debrief too (runDebrief, game.js), right
+// after that job's own faction-standing effects are counted. Any
+// non-destroyed Corpo/Crime/Nomad faction with Power ≥10 rolls against a
+// random rival in its own category.
 function runFactionPowerStruggles(character) {
   ["Corpo", "Crime", "Nomad"].forEach(category => {
     nonDestroyedFactionsIn(character, category).forEach(attackerName => {
@@ -630,13 +633,19 @@ function healBox(character) {
   }
 }
 
-// Armor (Corrections.md): a flat chance to fully absorb a Harm mark
+// Armor (Corrections.md, revised by todo3.md UPDATE 2.7 — "armor should
+// always protect you from damage. As many damage can be blocked as you
+// have armor points"): carried gear armor now *always* absorbs a Harm mark
 // instead of taking it, at the cost of one durability point off the armor
 // (`item.armor`, set to the tier's charge count at purchase — see
-// DATA.gear in data.js); broken (0 durability) armor is removed. Tier only
-// sets how many hits an armor item can take, not the odds. This is the one
-// path anything should use in place of a bare markHarm() call.
-const ARMOR_ABSORB_CHANCE = 0.5;
+// DATA.gear in data.js); broken (0 durability) armor is removed. Tier sets
+// how many hits an armor item can take — once those points are spent,
+// there's nothing left to block with. Cybernetic (chrome) armor is a
+// separate, non-depleting layer underneath it and keeps its own flat
+// chance instead — it has no finite "points" to exhaust the way gear armor
+// does. This is the one path anything should use in place of a bare
+// markHarm() call.
+const CYBER_ARMOR_ABSORB_CHANCE = 0.5;
 
 // BATCH 2.0 (todo3.md) — "count cybernetic replacements — getting to borg".
 // hasCyberPart/cyberArmorCount/cyberAttrModifier are the three read-only
@@ -670,7 +679,9 @@ function carriedArmorItem(character) {
 
 function applyHarm(character) {
   const armor = carriedArmorItem(character);
-  if (armor && Math.random() < ARMOR_ABSORB_CHANCE) {
+  if (armor) {
+    // todo3.md UPDATE 2.7 — deterministic now: any remaining armor point
+    // always blocks the hit, no roll involved.
     armor.armor -= 1;
     addLog(character, `${armor.name} takes the hit for you.`);
     if (armor.armor <= 0) {
@@ -680,8 +691,10 @@ function applyHarm(character) {
     return false; // absorbed clean — no Health box marked, so never "wentDown" here
   }
   // BATCH 2.0 — a Faceplate/Cyberlung/arm+leg pair gives a second, permanent
-  // (non-depleting) absorb chance once carried gear armor doesn't apply.
-  if (cyberArmorCount(character) > 0 && Math.random() < ARMOR_ABSORB_CHANCE) {
+  // (non-depleting) absorb chance once carried gear armor doesn't apply —
+  // still a flat roll, not points, since it never runs out (todo3.md
+  // UPDATE 2.7 only made finite-points gear armor deterministic).
+  if (cyberArmorCount(character) > 0 && Math.random() < CYBER_ARMOR_ABSORB_CHANCE) {
     addLog(character, "Your chrome takes the hit for you.");
     return false;
   }

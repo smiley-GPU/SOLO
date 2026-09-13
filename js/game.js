@@ -1205,7 +1205,11 @@ function finishNightOnStreet() {
     addLog(c, `It's ${flavor}. You get by, nothing more.`);
   }
   G.restFlow = null;
-  processRestTick();
+  // todo3.md UPDATE 2.7 — Night on the Street gets the same fix as Spend
+  // the Night (§20.19) and Rest at your Apartment (§20.20): still ticks
+  // the clock and rerolls the Board, but returns to Downtime instead of
+  // dropping straight into the Mission Board.
+  processRestTick(false, true);
 }
 
 // BLOODBROTHER "Spend the Night" (todo3.md Persons) — its own three-tier
@@ -2464,14 +2468,20 @@ function computeModifiers(attr, spendBoost, assistIds, job, chosenOneShots) {
   const cyberMod = cyberAttrModifier(c, attr);
   if (cyberMod) mods.push({ label: "Cyberware", value: cyberMod });
   if (job && (attr === "Combat" || attr === "Stealth") && job.location.heat >= 4) mods.push({ label: "Heat", value: -1 });
-  // BATCH 2.2 — this Adversary penalty is now itself faction-derived
-  // (genAdversaryTier folds in the adversary's own factionTier), so the old
-  // separate "Target's faction Tier" modifier that used to also apply here
-  // (§19.6's factionChallengeModifier) is gone — todo3.md: "make sure that
-  // NPC Tier and Faction tier is not counted twice."
-  if (job && (attr === "Combat" || attr === "Stealth") && job.mission.worstTier) {
-    const p = tierPenalty(job.mission.worstTier);
-    if (p) mods.push({ label: `Adversary (${job.mission.worstTier})`, value: p });
+  // todo3.md UPDATE 2.7 — "the adversary game effect... should be
+  // character Tier compared to target faction Tier. If character is
+  // higher, then he gets Tier bonus, if it's lower character gets Tier
+  // penalty." Replaces the old flat worstTier-derived penalty (BATCH 2.2)
+  // entirely — a Reputation Tier ahead of the mission Target's faction
+  // Tier is now a real edge, not just a smaller penalty. Freelance/
+  // destroyed targets have no tracked Tier to compare against, so they
+  // skip this like every other faction-Tier check in the game.
+  if (job && (attr === "Combat" || attr === "Stealth") && job.mission.target) {
+    const targetStanding = c.factionStandings[job.mission.target.faction];
+    if (targetStanding && !targetStanding.destroyed) {
+      const delta = reputationTier(c) - targetStanding.tier;
+      if (delta) mods.push({ label: `Adversary (T${targetStanding.tier})`, value: delta });
+    }
   }
   // §19.5 — every Challenge on a Special Mission carries an extra -1.
   if (job && job.mission && job.mission.special) mods.push({ label: "Special Mission", value: -1 });
@@ -2697,9 +2707,18 @@ function runDebrief(forceFailure) {
   c.shopOffers = genShopOffers(reputationTier(c));
 
   // §20.1 — one background faction-vs-faction mission per category, every
-  // Debrief (distinct from §19.7's Rest-tick-only Power-struggle destroy
-  // attempts, which only fire for Power ≥10 attackers).
+  // Debrief.
   runFactionBackgroundMissions(c);
+
+  // todo3.md UPDATE 2.7 — §19.7's Power-struggle/war-destroy check used to
+  // only fire on a Rest tick; now it also runs here, at Debrief, right
+  // after every faction-attribute change this job could have caused (its
+  // own standing effects above, and the background missions just above)
+  // has actually been counted — "check corporate war possibility after
+  // mission and after faction attribute changes has been counted." Any
+  // faction it destroys is still caught by the usual MULTI-CORP check the
+  // "Return to the Street" button already runs via nextHubPhase().
+  runFactionPowerStruggles(c);
 
   // §20.6 — while the Rest clock sits one tick short of a forced Hunt, the
   // Archenemy might move on a friend or the player's home instead of
@@ -3085,11 +3104,12 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
 
 // BATCH 2.0 — the one path a Hunt should use to apply Harm to the player:
 // when hunted at home, a Tier-4 Security item's leftover charge pool gets
-// first crack at absorbing the hit (same 50% chance as carried Armor),
-// before falling through to the normal applyHarm().
+// first crack at absorbing the hit, before falling through to the normal
+// applyHarm(). todo3.md UPDATE 2.7 — deterministic now, same as carried
+// Armor (state.js): any remaining charge always blocks, no roll.
 function applyHuntHarm(c) {
   const hunt = G.hunt;
-  if (hunt.atHome && hunt.homeArmorCharges > 0 && Math.random() < ARMOR_ABSORB_CHANCE) {
+  if (hunt.atHome && hunt.homeArmorCharges > 0) {
     hunt.homeArmorCharges--;
     addLog(c, `Your security tech takes the hit for you (${hunt.homeArmorCharges} charge${hunt.homeArmorCharges === 1 ? "" : "s"} left).`);
     return false;

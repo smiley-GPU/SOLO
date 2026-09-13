@@ -2288,6 +2288,65 @@ markup wraps them.
 
 ---
 
+### 20.22 UPDATE 2.7: a Night-on-the-Street navigation fix, Tier-vs-Tier Adversary modifier, deterministic armor, and Debrief-time faction wars
+
+todo3.md's "UPDATE 2.7" section (rows 383-387) — a fourth Rest-navigation
+fix, a from-scratch replacement for the mission Challenge's Adversary
+modifier, a rules change to armor, and the Power-struggle/faction-war check
+running one more place.
+
+**Night on the Street gets the same navigation fix as the other three Rest
+options** (§20.19's Spend the Night, §20.20's Rest at your Apartment).
+`finishNightOnStreet()`'s call to `processRestTick()` now passes
+`returnToHub: true` — still ticks the clock and rerolls the Board, but
+returns to the Downtime screen instead of dropping straight into the
+Mission Board. All four Rest options now behave identically on this point;
+only Coffin Hotel never had the problem (it was never phase-switching to
+begin with).
+
+**The Adversary Challenge modifier is now the character's own Reputation
+Tier against the mission Target's faction Tier**, not a flat penalty
+derived from the toughest Adversary rolled. `computeModifiers()` (game.js)
+replaces the old `tierPenalty(job.mission.worstTier)` lookup with
+`reputationTier(c) - factionStandings[job.mission.target.faction].tier` —
+ahead of the Target's faction, a real bonus; behind it, a penalty; dead
+even, no modifier at all. A Freelance or already-destroyed Target faction
+has no tracked Tier to compare against and is skipped, same as every other
+faction-Tier check in the game. This is scoped to Combat/Stealth rolls
+only, matching what it replaces; it doesn't touch the Hunt's own separate
+`tierPenalty(hunt.archenemy.tier)` modifier (a different system — the
+Archenemy's fixed personal combat tier, not a faction comparison) or
+`mission.worstTier`'s other job (mission difficulty scaling, engine.js,
+untouched).
+
+**Armor absorption is deterministic now: "as many damage can be blocked as
+you have armor points."** `applyHarm()` (state.js) used to give carried
+gear armor a 50% chance to fully absorb each hit; now a carried armor item
+with any charge remaining *always* blocks — one point of "armor points"
+per hit, exactly as many hits as it has charges for, then it breaks and
+Harm marks normally again. The renamed `CYBER_ARMOR_ABSORB_CHANCE` constant
+(was `ARMOR_ABSORB_CHANCE`) makes clear this determinism is gear-armor-only:
+cybernetic (chrome) armor keeps its own flat 50% chance, since it's a
+non-depleting resource with no finite "points" to make deterministic the
+same way. Fixing the constant's rename surfaced a live bug in
+`applyHuntHarm()` (the at-home Hunt's Tier-4-security charge pool) — it
+still referenced the old `ARMOR_ABSORB_CHANCE` name, which no longer
+existed anywhere and would have thrown on the very next at-home Hunt hit;
+it's now deterministic too (the same "armor points" reasoning applies to
+that charge pool as much as to carried gear).
+
+**Faction Power struggles are checked at Debrief too, not just on a Rest
+tick.** `runFactionPowerStruggles()` (§19.7, state.js) used to only run
+from `processRestTick()`; `runDebrief()` now calls it as well, placed right
+after the mission's own faction-standing effects and
+`runFactionBackgroundMissions()` have both already landed — "check
+corporate war possibility after mission and after faction attribute
+changes has been counted." Any faction it destroys is still caught by the
+existing MULTI-CORP check ("Return to the Street" → `nextHubPhase()`),
+whichever of the two call sites triggered it.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
