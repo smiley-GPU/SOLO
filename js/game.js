@@ -1340,7 +1340,7 @@ function processRestTick(viaApartment, returnToHub) {
   c.shopOffers = genShopOffers(reputationTier(c)); // §20.5 — new stock on the shelves each tick
   runFactionPowerStruggles(c);
   applyFactionPassiveRecovery(c); // BATCH 2.0 — counters the downward trend
-  recoverWoundedContacts(c); // INTERFACE 2.4.1 / UPDATE 2.9 — wounded contacts sit out 1 round, then clear
+  recoverWoundedContacts(c); // INTERFACE 2.4.1 — wounded contacts sit out 2 ticks (Rest or job), then clear
   if (checkMultiCorpLoss(c)) {
     G.job = null;
     G.board = null;
@@ -2744,6 +2744,11 @@ function runDebrief(forceFailure) {
   // §20.1 — one background faction-vs-faction mission per category, every
   // Debrief.
   runFactionBackgroundMissions(c);
+
+  // A completed job counts as a tick for wounded-Helper recovery too, not
+  // just a Rest — so grinding missions back-to-back still heals a sidelined
+  // Compi/Amigue eventually, even without ever resting.
+  recoverWoundedContacts(c);
 
   // todo3.md UPDATE 2.7 — §19.7's Power-struggle/war-destroy check used to
   // only fire on a Rest tick; now it also runs here, at Debrief, right

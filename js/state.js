@@ -573,9 +573,10 @@ function woundPerson(character, person) {
     addLog(character, `${person.name} doesn't survive this one.`);
   } else {
     person.wounded = true;
-    // todo3.md UPDATE 2.9 — was 2 rounds (BATCH 2.0); heals after a single
-    // tick/night/turn now, see recoverWoundedContacts() below.
-    person.woundedRounds = 1;
+    // Back to 2 ticks (was 1 per UPDATE 2.9) — but a "tick" now counts both
+    // a Rest and a completed job (runDebrief, game.js), not just Rest, so
+    // this isn't strictly slower than UPDATE 2.9 in practice.
+    person.woundedRounds = 2;
     addLog(character, `${person.name} is wounded and won't be much use for a while.`);
   }
 }
@@ -583,11 +584,13 @@ function woundPerson(character, person) {
 // INTERFACE 2.4.1 — the sheet shows a red mark on any `wounded` contact
 // ("remove it when they are healed, available again to work"); this is what
 // clears it. Ticks once per Rest (processRestTick, game.js) — the same
-// "round/night" cadence the faction Power struggles use.
+// "round/night" cadence the faction Power struggles use — and once per
+// completed job (runDebrief, game.js), so grinding missions back-to-back
+// without ever resting still heals a sidelined Helper eventually.
 function recoverWoundedContacts(character) {
   character.contacts.forEach(p => {
     if (!p.wounded) return;
-    if (typeof p.woundedRounds !== "number") p.woundedRounds = 1; // backfill for anyone wounded before this field existed
+    if (typeof p.woundedRounds !== "number") p.woundedRounds = 2; // backfill for anyone wounded before this field existed
     p.woundedRounds -= 1;
     if (p.woundedRounds <= 0) {
       p.wounded = false;

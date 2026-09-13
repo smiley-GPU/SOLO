@@ -2395,7 +2395,7 @@ next Tier's normal fresh-purchase price — "always pay the change").
 
 ---
 
-### 20.24 UPDATE 2.9: wounded contacts recover in one tick
+### 20.24 UPDATE 2.9: wounded contacts recover in one tick — then back to two, counting jobs as ticks too
 
 todo3.md's "UPDATE 2.9" section (row 400) — a single balance tweak.
 `woundPerson()`'s `woundedRounds` (state.js, §20.15/§20.23) drops from 2 to
@@ -2404,6 +2404,17 @@ back to available after a single Rest tick instead of two.
 `recoverWoundedContacts()`'s backfill default for any contact already
 wounded before this change (`typeof p.woundedRounds !== "number"`) moved
 from 2 to 1 to match.
+
+**Follow-up (same-session chat request, not from todo3.md): back to 2
+ticks, but a completed job now counts as one too.** `woundedRounds` (and
+the backfill default) moved back to 2; `runDebrief()` (game.js) gained its
+own call to `recoverWoundedContacts()`, right after
+`runFactionBackgroundMissions()` — the same function `processRestTick()`
+already called, now ticking down once per completed job as well as once
+per Rest. A wounded Helper still clears in exactly 2 ticks, but those ticks
+no longer have to be Rests specifically — two jobs run back-to-back with no
+Rest in between heals them just as well as a Rest-then-job or job-then-Rest
+pair does.
 
 ---
 
