@@ -573,7 +573,9 @@ function woundPerson(character, person) {
     addLog(character, `${person.name} doesn't survive this one.`);
   } else {
     person.wounded = true;
-    person.woundedRounds = 2; // todo3.md Persons/NPCs — sidelined for 2 rounds/nights, see recoverWoundedContacts()
+    // todo3.md UPDATE 2.9 — was 2 rounds (BATCH 2.0); heals after a single
+    // tick/night/turn now, see recoverWoundedContacts() below.
+    person.woundedRounds = 1;
     addLog(character, `${person.name} is wounded and won't be much use for a while.`);
   }
 }
@@ -585,7 +587,7 @@ function woundPerson(character, person) {
 function recoverWoundedContacts(character) {
   character.contacts.forEach(p => {
     if (!p.wounded) return;
-    if (typeof p.woundedRounds !== "number") p.woundedRounds = 2; // backfill for anyone wounded before this field existed
+    if (typeof p.woundedRounds !== "number") p.woundedRounds = 1; // backfill for anyone wounded before this field existed
     p.woundedRounds -= 1;
     if (p.woundedRounds <= 0) {
       p.wounded = false;

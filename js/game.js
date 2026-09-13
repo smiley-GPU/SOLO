@@ -1340,7 +1340,7 @@ function processRestTick(viaApartment, returnToHub) {
   c.shopOffers = genShopOffers(reputationTier(c)); // §20.5 — new stock on the shelves each tick
   runFactionPowerStruggles(c);
   applyFactionPassiveRecovery(c); // BATCH 2.0 — counters the downward trend
-  recoverWoundedContacts(c); // INTERFACE 2.4.1 — wounded contacts sit out 2 rounds, then clear
+  recoverWoundedContacts(c); // INTERFACE 2.4.1 / UPDATE 2.9 — wounded contacts sit out 1 round, then clear
   if (checkMultiCorpLoss(c)) {
     G.job = null;
     G.board = null;

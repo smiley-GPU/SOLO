@@ -395,3 +395,6 @@ Make each tier have all these places as choices. Choices should be from differen
 * Repair is only possible to items original level
 * If you have Hacking 3+, make Repair as Repair/Mod, and then you can raise the item tier by 1. Always pay the change.
 * If you have Hacking 5, then you can raise the item tier up to 2. Always pay the change.
+
+## UPDATE 2.9
+* make sure that wounded helpers Compi/AMigue heal after one tick/night/turn

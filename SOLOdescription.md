@@ -2395,6 +2395,18 @@ next Tier's normal fresh-purchase price — "always pay the change").
 
 ---
 
+### 20.24 UPDATE 2.9: wounded contacts recover in one tick
+
+todo3.md's "UPDATE 2.9" section (row 400) — a single balance tweak.
+`woundPerson()`'s `woundedRounds` (state.js, §20.15/§20.23) drops from 2 to
+1: a wounded Compi/Amigue (sidelined from jobs and Hunts, §20.23) now clears
+back to available after a single Rest tick instead of two.
+`recoverWoundedContacts()`'s backfill default for any contact already
+wounded before this change (`typeof p.woundedRounds !== "number"`) moved
+from 2 to 1 to match.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
