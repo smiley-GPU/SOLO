@@ -237,6 +237,11 @@ header h1 {
 .loadout-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 640px) {
   .loadout-grid { grid-template-columns: repeat(2, 1fr); }
+  /* UPDATE 3.1 (chat request) — a Class Ability swap (.swap-option) drops
+     back to stacked-below its roll option under 640px: side by side gets
+     cramped once each column has to fit under ~200px. */
+  .challenge.has-swap { flex-direction: column; }
+  .swap-option { border-left: none; padding-left: 0; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
 }
 .muted { color: var(--muted); font-size: 13px; }
 
@@ -297,9 +302,16 @@ button.danger { background: var(--danger); color: #2a0000; }
 .challenge h4 { margin: 0 0 8px; color: var(--accent); font-size: 14px; }
 /* UPDATE 3.1 (chat request) — a Class Ability swap (GEARHEAD/NETRUNNER)
    renders as a second roll option inside the same .challenge box as the
-   roll it replaces, set off by a dashed divider and a warn-colored heading
-   so it reads as "instead of the roll above," not a 3rd independent choice. */
-.swap-option { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+   roll it replaces (game.js: renderRollOption/renderChallenge), set off by
+   a dashed divider and a warn-colored heading so it reads as "instead of
+   the roll above," not a 3rd independent choice. Side by side (a
+   left-hand divider) above 640px — "place this on the right-hand side of
+   the box, not below" — dropping back to stacked (a top divider) below
+   that, same breakpoint the rest of the layout collapses at. */
+.challenge.has-swap { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.challenge.has-swap > .roll-option,
+.challenge.has-swap > .swap-option { flex: 1 1 220px; min-width: 200px; }
+.swap-option { border-left: 1px dashed var(--border); padding-left: 16px; }
 .swap-option h4 { color: var(--warn); }
 .mods { margin: 8px 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {

@@ -2592,7 +2592,13 @@ function renderChallenge(container, step, onContinue, ctx) {
 // attrs.forEach above for where each is invoked.
 function renderRollOption(parent, attr, step, job, holder, c, swapMeta) {
   const wrap = document.createElement("div");
-  if (swapMeta) wrap.className = "swap-option";
+  // UPDATE 3.1 (chat request) — "place this on the right-hand side of the
+  // box, not below": .roll-option/.swap-option (rather than swap-option
+  // alone) so the box can lay both side by side via CSS (.challenge.has-swap
+  // in style.css) once a swap is present — see the has-swap class added
+  // below, right after this option renders.
+  wrap.className = swapMeta ? "swap-option" : "roll-option";
+  if (swapMeta) parent.classList.add("has-swap");
   const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
   // Ally Assist (todo3.md Persons, §20.1: now up to 3 possible) — each
   // not-yet-used, not-benched "ally" Helper's one-time +2 to a single

@@ -2606,20 +2606,27 @@ else's second item.
     (chat request) — placement**: originally rendered as its own separate
     top-level box next to "Roll Combat" (reusing `renderChallenge()`'s
     per-attr loop via an injected extra entry); moved into a nested
-    `.swap-option` sub-section *inside* the Combat box it substitutes for,
-    right under "Roll Combat" — "so the mechanic is evident to the player."
-    `renderRollOption(parent, attr, step, job, holder, c, swapMeta)` (game.js)
-    is the shared block-builder both the step's own real roll and this
-    substitute now go through: called once per box with `swapMeta: null`
-    for the real attr, then again with `swapMeta: {label, onUse}` to append
-    the swap as a second sub-section in the same box, headed `"GEARHEAD —
-    Roll Driving instead (rank N)"` in `--warn` (amber) and set off by a
-    dashed top divider (`.swap-option` in style.css). Same full roll-block
-    UI either way (mods, BOOST, Ally Assist, one-shot checkboxes). Clicking
-    the swap's Roll button calls `swapMeta.onUse()` — which sets
-    `job.classAbility.gearheadUsed = true` and logs it — right before
-    resolving; picking the box's real "Roll Combat" option instead never
-    touches the flag.
+    `.swap-option` sub-section *inside* the Combat box it substitutes for
+    — "so the mechanic is evident to the player." `renderRollOption(parent,
+    attr, step, job, holder, c, swapMeta)` (game.js) is the shared
+    block-builder both the step's own real roll and this substitute now go
+    through: called once per box with `swapMeta: null` for the real attr
+    (its wrapper gets class `.roll-option`) and, if eligible, again with
+    `swapMeta: {label, onUse}` to append the swap as a `.swap-option`
+    sub-section in the same box, headed `"GEARHEAD — Roll Driving instead
+    (rank N)"` in `--warn` (amber); the parent box also picks up a
+    `has-swap` class. **Revision (further chat request) — side by side**:
+    `.challenge.has-swap` (style.css) lays `.roll-option`/`.swap-option`
+    out as two flex columns divided by a vertical dashed line, rather than
+    stacked with a horizontal one, above 640px — "place this on the
+    right-hand side of the box, not below" — dropping back to stacked
+    (`flex-direction: column`, the divider flipping to horizontal) under
+    640px, the same breakpoint the rest of the layout already collapses at.
+    Same full roll-block UI either way (mods, BOOST, Ally Assist, one-shot
+    checkboxes). Clicking the swap's Roll button calls `swapMeta.onUse()`
+    — which sets `job.classAbility.gearheadUsed = true` and logs it —
+    right before resolving; picking the box's real "Roll Combat" option
+    instead never touches the flag.
 - **Hacker — NETRUNNER** (chat request, same session): the same
   never-lose-it/limited-swap shape as Jockey's GEARHEAD, mirrored onto
   Hacking instead of Driving.
@@ -2633,12 +2640,12 @@ else's second item.
   - *"Change one stealth or combat check to hacking"* — once per job,
     while `!job.classAbility.hackerSwapUsed` and the character carries a
     deck (`ownsGearForAttr(c, "Hacking")`). **Revision (chat request) —
-    placement**: same `renderRollOption()` nested-`.swap-option` treatment
-    as Jockey's GEARHEAD swap above, headed `"NETRUNNER — Roll Hacking
-    instead (rank N)"`. Since NETRUNNER can substitute for *either* Combat
-    or Stealth, a step offering both (e.g. Hold: `Combat alt Stealth`)
-    embeds it in **both** boxes — clicking either resolves the same
-    underlying Hacking roll and spends the same once-per-job flag, so
+    placement**: same `renderRollOption()` nested-`.swap-option` side-by-side
+    treatment as Jockey's GEARHEAD swap above, headed `"NETRUNNER — Roll
+    Hacking instead (rank N)"`. Since NETRUNNER can substitute for *either*
+    Combat or Stealth, a step offering both (e.g. Hold: `Combat alt
+    Stealth`) embeds it in **both** boxes — clicking either resolves the
+    same underlying Hacking roll and spends the same once-per-job flag, so
     whichever the player clicks first is the one that counts.
 - **Rocker — NATURAL LEADER**: *"they get a one free Hire for a mission."*
   `renderGearUp()`'s "Hire backup for this job" row costs 0 BONDS instead
