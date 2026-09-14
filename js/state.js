@@ -1010,30 +1010,50 @@ function ensureOriginalTier(item) {
   return item.originalTier;
 }
 
-// Spare slots beyond the one free slot each of the five categories gets:
-// 3 base, +1 if a Vehicle is carried, +2 more (so +3 total) if that
-// Vehicle also carries the CG (Cargo) tag.
+// UPDATE 3.1 (chat request) — "limit gear to three items + any from
+// vehicle. Vehicle has its own extra slot": replaces the old "1 free slot
+// per category (Weapons/Clothing/Decks/Vehicles/Social) + a shared spare
+// pool" model entirely. A carried Vehicle is now its own always-available
+// slot (still exclusive — only one at a time) that never counts against
+// this cap; every other category (Weapons/Clothing/Decks/Social) shares
+// one flat pool instead of getting a guaranteed slot each, capped at 3 —
+// +2 more (5 total) if that Vehicle carries the CG (Cargo) tag, "any from
+// vehicle."
 function computeCarrySlots(character) {
-  let spares = 3;
+  let cap = 3;
   const vehicle = character.gear.find(item => item.carried && item.attr === "Driving");
-  if (vehicle) {
-    spares += 1;
-    if (vehicle.tags && vehicle.tags.includes("CG")) spares += 2;
-  }
-  return spares;
+  if (vehicle && vehicle.tags && vehicle.tags.includes("CG")) cap += 2;
+  return cap;
 }
 
-// One-time default: the single best item in each category is carried, the
-// rest aren't — matches todo3.md's "default is that you take the best tier
-// you have in each category." Run once, whenever an item is missing the
+// Counts everything currently carried that isn't a Vehicle and isn't
+// exempt (heal-gear) — the number computeCarrySlots()'s cap applies to.
+function carriedNonVehicleCount(character) {
+  return character.gear.filter(g => g.carried && gearCategory(g) && gearCategory(g) !== "Vehicles").length;
+}
+
+// One-time default: the single best Vehicle is carried (exclusive,
+// unchanged), then the single best item in each of the other categories is
+// offered a spot in the shared pool, highest-bonus first, up to whatever
+// computeCarrySlots() allows — matches todo3.md's "default is that you take
+// the best tier you have," now capped at 3 (+2 with a CG Vehicle) instead
+// of guaranteed one per category. Run once, whenever an item is missing the
 // `carried` field entirely (new character, or an old save migrating in) —
 // never re-run after that, so it doesn't clobber the player's own choices.
 function computeDefaultCarry(character) {
-  ["Weapons", "Clothing", "Decks", "Vehicles", "Social"].forEach(category => {
+  const vehicles = character.gear.filter(item => gearCategory(item) === "Vehicles");
+  if (vehicles.length) {
+    const bestVehicle = vehicles.reduce((a, b) => (DATA.gearTierBonus[b.tier] || 0) > (DATA.gearTierBonus[a.tier] || 0) ? b : a);
+    vehicles.forEach(item => { item.carried = item === bestVehicle; });
+  }
+  const bestPerCategory = ["Weapons", "Clothing", "Decks", "Social"].map(category => {
     const items = character.gear.filter(item => gearCategory(item) === category);
-    if (!items.length) return;
-    const best = items.reduce((a, b) => (DATA.gearTierBonus[b.tier] || 0) > (DATA.gearTierBonus[a.tier] || 0) ? b : a);
-    items.forEach(item => { item.carried = item === best; });
+    return items.length ? items.reduce((a, b) => (DATA.gearTierBonus[b.tier] || 0) > (DATA.gearTierBonus[a.tier] || 0) ? b : a) : null;
+  }).filter(Boolean);
+  const toCarry = new Set(bestPerCategory.slice(0, computeCarrySlots(character)));
+  character.gear.forEach(item => {
+    const category = gearCategory(item);
+    if (category && category !== "Vehicles") item.carried = toCarry.has(item);
   });
   character.gear.forEach(item => {
     if (gearCategory(item) === null) item.carried = true; // heal-gear — the flag is just unused
@@ -1041,14 +1061,20 @@ function computeDefaultCarry(character) {
 }
 
 // Called whenever a new item enters character.gear (Shop buy, a Hunt kill
-// reward, a Bloodbrother gift, starting gear): fills an empty category's
-// free slot automatically, but never dethrones something the player is
-// already carrying in that category — that's a manual Loadout choice.
+// reward, a Bloodbrother gift, starting gear): a Vehicle auto-carries only
+// if none is carried yet (still exclusive, never dethrones one the player
+// already picked); anything else auto-carries if the shared pool has room
+// — "carry [it] when you buy it if you have slots" (chat request), true of
+// any gear type now, armor included, not just a special case for armor.
 function autoCarryNewItem(character, item) {
   const category = gearCategory(item);
   if (category === null) { item.carried = true; return; }
-  const alreadyCarried = character.gear.some(g => g !== item && g.carried && gearCategory(g) === category);
-  item.carried = !alreadyCarried;
+  if (category === "Vehicles") {
+    const alreadyCarried = character.gear.some(g => g !== item && g.carried && gearCategory(g) === "Vehicles");
+    item.carried = !alreadyCarried;
+    return;
+  }
+  item.carried = carriedNonVehicleCount(character) < computeCarrySlots(character);
 }
 
 function rememberLocation(character, location) {

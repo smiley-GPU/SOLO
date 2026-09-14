@@ -1409,22 +1409,49 @@ Vehicles (Driving), Social. Heal-gear fits none of these and is exempt
 from the whole system — always available regardless of `carried`
 (`bestHealBonus()` is unchanged).
 
-**Slots**: each of the five categories gets one free carry slot, plus a
-shared spare pool (`computeCarrySlots()`) — 3 base, +1 if a Vehicle is
-carried, +2 more (3 total) if that Vehicle also carries the `CG` tag
-(§20.5). A second (or third...) item in the same category draws from the
-spares; the Loadout checkbox for it is rejected client-side once the pool
-is empty.
+**Slots (superseded — see the Revision below)**: each of the five
+categories used to get one free carry slot, plus a shared spare pool
+(`computeCarrySlots()`) — 3 base, +1 if a Vehicle was carried, +2 more (3
+total) if that Vehicle also carried the `CG` tag (§20.5). A second (or
+third...) item in the same category drew from the spares; the Loadout
+checkbox for it was rejected client-side once the pool was empty.
 
-**Defaults**: `computeDefaultCarry()` runs once — on a new character, and
-on migrating any save from before this system — and carries only the
-single best (highest `DATA.gearTierBonus`) item per category, leaving
-every spare slot empty ("default is that you take the best tier you have
-in each category"). After that it's never re-run, so it can't clobber the
-player's own choices; instead `autoCarryNewItem()` runs once whenever a
-*new* item is added (Shop buy, a Hunt kill reward, a Bloodbrother gift,
-starting gear) — it fills an empty category's free slot automatically but
-never dethrones whatever's already carried there.
+**Defaults (superseded — see the Revision below)**: `computeDefaultCarry()`
+ran once — on a new character, and on migrating any save from before this
+system — and carried only the single best (highest `DATA.gearTierBonus`)
+item per category, leaving every spare slot empty ("default is that you
+take the best tier you have in each category"). After that it was never
+re-run, so it couldn't clobber the player's own choices; instead
+`autoCarryNewItem()` ran once whenever a *new* item was added (Shop buy, a
+Hunt kill reward, a Bloodbrother gift, starting gear) — it filled an empty
+category's free slot automatically but never dethroned whatever was
+already carried there.
+
+**Revision (chat request) — a flat 3-item cap, Vehicle exempt**: "Limit
+gear to three items + any from vehicle. Vehicle has its own extra slot."
+Replaces the whole "1 free slot per category + a shared spare pool" model.
+`computeCarrySlots()` (state.js) now returns a single number — the total
+Weapons/Clothing/Decks/Social items that may be carried at once, sharing
+one flat pool instead of a guaranteed slot each: **3**, **+2 more (5)** if
+a carried Vehicle has the `CG` tag ("any from vehicle" — cargo capacity,
+unchanged trigger from before). A carried **Vehicle itself is exempt** —
+its own always-available slot, never counted against that cap, still
+exclusive (only one at a time; checking a 2nd auto-uncarries the 1st,
+unchanged). `carriedNonVehicleCount(character)` is the new helper counting
+what's currently spent against the cap. `computeDefaultCarry()` now picks
+the single best item in each of Weapons/Clothing/Decks/Social as before,
+but only offers as many of those picks a carry slot as the cap allows
+(`.slice(0, computeCarrySlots(character))`) rather than guaranteeing one
+per category regardless of the cap; the single best Vehicle is still
+always carried, unaffected. `autoCarryNewItem()` auto-carries a new
+Vehicle only if none is carried yet (unchanged), and auto-carries anything
+else if `carriedNonVehicleCount() < computeCarrySlots()` — true of *any*
+gear type now the pool isn't segmented by category, which is also what
+satisfies the separate "carry armor when you buy it if you have slots"
+request: armor (filed under Clothing) was previously blocked from
+auto-carrying whenever Clothing's own single free slot was already taken,
+even with spare capacity sitting open elsewhere: under the flat pool, it
+competes for room exactly like everything else.
 
 **Everywhere carried is checked**: `bestGearBonus()`, `ownsGearForAttr()`,
 `applyHarm()`'s armor lookup (all state.js), and every gear-picking pool in
@@ -2832,6 +2859,21 @@ spent (the ability itself, not its per-job availability). Each chip's
 plain `title="..."` attribute (`CLASS_FEATURE_DESC`) gives a one-line
 description on hover via the browser's native tooltip — no JS needed for
 the hover itself, just the attribute.
+
+**Resets when you move away from the window (chat request)**: an expanded
+swap-picker panel (GEARHEAD/NETRUNNER/WRAITH/WICKED alike) used to carry
+`G.expandedSwap` forward across a step/Encounter/Checkpoint change — a
+label could stay "expanded" onto a box it no longer belonged to, or an
+unrelated ability sharing the same key could render pre-expanded on the
+next box by coincidence. `G.expandedSwap = null` now runs at every point a
+Challenge roll's result gets finalized and control is about to move
+on — `finalizeChallengeCommon()` (Steps/Encounters), `finishCheckpointRoll()`
+and `finishCheckpointCombat()` (Checkpoint) — plus a broader safety net in
+`render()` itself: whenever `G.phase` differs from the last render
+(`G.lastRenderedPhase`, ephemeral), it resets too, catching anything those
+three didn't (Abort Mission, a Hunt/Debrief "Return to the Street" button,
+Win/Loss). Never reset merely by re-rendering the *same* box (checking a
+BOOST box, for instance) — only an actual move to a new context clears it.
 
 ---
 

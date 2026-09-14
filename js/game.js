@@ -80,6 +80,15 @@ function persist() {
 }
 
 function render() {
+  // UPDATE 3.1 (chat request) — safety net alongside finalizeChallengeCommon/
+  // finishCheckpointRoll/finishCheckpointCombat's explicit resets: catches
+  // any other way of leaving a Challenge screen those don't cover (Abort
+  // Mission, a Hunt/Debrief "Return to the Street" button, Win/Loss, ...) —
+  // a swap-picker panel left expanded should never survive a phase change.
+  if (G.lastRenderedPhase !== G.phase) {
+    G.expandedSwap = null;
+    G.lastRenderedPhase = G.phase;
+  }
   renderSheet();
   renderMain();
   renderFactions();
@@ -209,7 +218,7 @@ function renderShopBox() {
       c.bonds -= price;
       const bought = { name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier, tags: item.tags };
       c.gear.push(bought);
-      autoCarryNewItem(c, bought); // §20.8
+      autoCarryNewItem(c, bought); // §20.8 — also covers "carry armor when you buy it if you have slots" (UPDATE 3.1, chat request)
       item.bought = true;
       addLog(c, `You pick up a ${item.name} — yours to keep.`);
       persist(); render();
@@ -1782,21 +1791,20 @@ function renderGearUp() {
 // §20.8 — the Loadout: pick which owned gear actually comes on this job.
 // Only carried gear grants its bonus or takes the hit (bestGearBonus,
 // applyHarm, degradeGearItem call sites, state.js/game.js) — anything left
-// at home is inert for the whole job. Each of the five named categories
-// gets one free carry slot; anything beyond that (a 2nd item in the same
-// category) draws from the shared spare pool (computeCarrySlots, state.js).
+// at home is inert for the whole job.
+// UPDATE 3.1 (chat request) — "limit gear to three items + any from
+// vehicle. Vehicle has its own extra slot": Vehicles keep their own
+// exclusive single-carried slot (unchanged); Weapons/Clothing/Decks/Social
+// now share one flat pool capped at computeCarrySlots() (state.js) instead
+// of each getting a guaranteed slot plus a separate spare pool.
 function renderLoadoutSection() {
   const c = G.character;
   const categories = ["Weapons", "Clothing", "Decks", "Vehicles", "Social"];
-  const spareCap = computeCarrySlots(c);
-  const usedSpares = () => categories.reduce((sum, cat) => {
-    const carriedInCat = c.gear.filter(g => gearCategory(g) === cat && g.carried).length;
-    return sum + Math.max(0, carriedInCat - 1);
-  }, 0);
+  const cap = computeCarrySlots(c);
 
   const section = document.createElement("div");
   section.className = "section";
-  section.innerHTML = `<h3>Loadout</h3><p class="muted">Only what you carry grants its bonus (or takes the hit) this job. One free slot per category, plus spares: <span id="spare-count">${usedSpares()}</span>/${spareCap}.</p>`;
+  section.innerHTML = `<h3>Loadout</h3><p class="muted">Only what you carry grants its bonus (or takes the hit) this job. Carry up to <span id="spare-count">${carriedNonVehicleCount(c)}</span>/${cap} items (Weapons/Clothing/Decks/Social) — your Vehicle has its own slot, on top.</p>`;
 
   // todo3.md INTERFACE 2.4.4 — "align all Gear Up boxes horizontally": the
   // category blocks sit side by side in a wrapping row instead of stacked.
@@ -1818,7 +1826,7 @@ function renderLoadoutSection() {
       checkbox.checked = !!item.carried;
       checkbox.addEventListener("change", () => {
         // BATCH 2.1 (item 1) — only one Vehicle can be in use at a time, no
-        // matter how many spare slots exist (you can't drive two cars).
+        // matter how much pool room exists (you can't drive two cars).
         // Radio-style swap — checking one auto-uncarries any other carried
         // Vehicle — rather than a hard block, matching the same mutual-
         // exclusivity idiom used for the Hunt's Amigue-call checkboxes.
@@ -1828,15 +1836,9 @@ function renderLoadoutSection() {
           persist(); render();
           return;
         }
-        if (checkbox.checked) {
-          // The category's own item is already accounted for above (it's
-          // this checkbox going from off to on) — anything beyond the
-          // first carried item in the category costs a spare slot.
-          const carriedInCat = c.gear.filter(g => gearCategory(g) === cat && g.carried).length;
-          if (carriedInCat >= 1 && usedSpares() >= spareCap) {
-            checkbox.checked = false;
-            return;
-          }
+        if (cat !== "Vehicles" && checkbox.checked && carriedNonVehicleCount(c) >= cap) {
+          checkbox.checked = false;
+          return;
         }
         item.carried = checkbox.checked;
         persist(); render();
@@ -1963,6 +1965,7 @@ function finishCheckpointRoll() {
   const c = G.character, job = G.job, cp = job.checkpoint;
   const res = job.lastResult;
   job.pendingResult = null;
+  G.expandedSwap = null; // UPDATE 3.1 (chat request) — see finalizeChallengeCommon's note
   if (res.tier === "full") {
     addLog(c, `You pass the ${cp.agency} line clean.`);
     finishCheckpoint();
@@ -2029,6 +2032,7 @@ function finishCheckpointCombat() {
   const c = G.character, job = G.job, cp = job.checkpoint;
   const res = job.lastResult;
   job.pendingResult = null;
+  G.expandedSwap = null; // UPDATE 3.1 (chat request) — see finalizeChallengeCommon's note
   let died = false;
   if (res.tier === "full") {
     addLog(c, `You get clear of the ${cp.agency} line without a scratch.`);
@@ -2178,6 +2182,14 @@ function finalizeChallengeCommon() {
   const job = G.job;
   const c = G.character;
   const res = job.lastResult;
+
+  // UPDATE 3.1 (chat request) — "reset the WRAITH/GEARHEAD/similar buttons
+  // after moving away from the window": this roll is done and we're about
+  // to move on to whatever comes next (the next step, the post-Encounter
+  // check, Debrief, ...) — collapse any expanded swap-picker panel now
+  // rather than carrying it (or its label matching an unrelated ability on
+  // the next box) into a context it no longer belongs to.
+  G.expandedSwap = null;
 
   applyOutcome(c, job, res.usedAttr, res.tier);
 
