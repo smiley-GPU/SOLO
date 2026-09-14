@@ -3656,7 +3656,7 @@ function startHunt(atHome) {
   const homeArmorCharges = homeApartment
     ? homeApartment.security.filter(name => DATA.securityOptions[4].includes(name)).length * 2
     : 0;
-  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false, atHome: !!atHome, homeApartment, homeArmorCharges };
+  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, atHome: !!atHome, homeApartment, homeArmorCharges };
   addLog(c, atHome ? `${archenemy.name} comes for you at your own front door.` : `${archenemy.name} finally catches up with you.`);
   G.phase = "hunt";
   persist();
@@ -3671,7 +3671,7 @@ function startHuntManual(personId) {
   const c = G.character;
   const archenemy = c.contacts.find(p => p.id === personId && p.archenemy);
   if (!archenemy) return;
-  G.hunt = { archenemy, stage: "track", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false };
+  G.hunt = { archenemy, stage: "track", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null };
   addLog(c, `You go looking for ${archenemy.name}.`);
   G.phase = "hunt";
   persist();
@@ -3715,7 +3715,7 @@ function startHuntAmbush(origin) {
   const c = G.character;
   const archenemy = c.contacts.find(p => p.id === c.archenemyId);
   if (!archenemy) { G.phase = "hub"; persist(); render(); return; }
-  G.hunt = { archenemy, stage: "combat", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false };
+  G.hunt = { archenemy, stage: "combat", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null };
   addLog(c, `Gunfire in the ${origin} — everyone else scatters. It's just you and ${archenemy.name} now.`, "archenemy");
   G.phase = "hunt";
 }
@@ -3782,28 +3782,26 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
   const block = document.createElement("div");
   block.className = "challenge";
   const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
-  // A BLOODBROTHER can be called in to help on a Hunt (todo3.md Persons) —
-  // a one-time +2, same shape as Ally Assist in renderChallenge(). BATCH 2.0
-  // — more than one Amigue can exist now; offer a row per Amigue (mutually
-  // exclusive, like a picker) instead of always grabbing the first one found.
-  // todo3.md UPDATE 2.8 — a wounded Compi/Amigue isn't available here either.
-  const amigues = c.contacts.filter(p => p.bloodbrother && !p.wounded);
-  const brotherOption = amigues.length && !hunt.bloodbrotherUsed
-    ? amigues.map(a => `<label class="boost-toggle"><input type="checkbox" class="brother-check" data-id="${a.id}" /> Call ${a.name}: +2 to this roll</label>`).join("")
-    : "";
+  // UPDATE 3.1 (chat request) — "take away Amigues from HUNT attacks, they
+  // don't have effect but are visible now": the Bloodbrother "Call <name>:
+  // +2" option used to live here (todo3.md Persons/BATCH 2.0), but its
+  // checked id (`dataset.id`, a string) was never compared correctly
+  // against `amigues`' actual numeric `id` field — the +2 silently never
+  // applied while still consuming the once-per-Hunt call (hunt.bloodbrotherUsed
+  // got set regardless). Rather than fix the id-type mismatch, removed
+  // outright per the request — a Hunt roll no longer offers it at all.
   // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
   // roll now, same as in renderChallenge().
   const oneShotItems = oneShotOptionsForAttr(c, attr);
   const oneShotOption = oneShotItems.map((item, i) =>
     `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
   ).join("");
-  block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${brotherOption}${oneShotOption}<div class="mods"></div>`;
+  block.innerHTML = `<p class="step-desc">${desc}</p><h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${oneShotOption}<div class="mods"></div>`;
   const modsEl = block.querySelector(".mods");
-  const brotherChecks = Array.from(block.querySelectorAll(".brother-check"));
   const oneShotChecks = Array.from(block.querySelectorAll(".oneshot-check"));
   const checkedOneShots = () => oneShotChecks.filter(el => el.checked).map(el => oneShotItems[Number(el.dataset.idx)]);
 
-  const buildMods = (spendBoost, callBrotherId, chosenOneShots) => {
+  const buildMods = (spendBoost, chosenOneShots) => {
     const mods = [];
     const gearBonus = bestPermanentGearBonus(c, attr);
     if (gearBonus) mods.push({ label: gearBonus.name, value: gearBonus.bonus });
@@ -3823,41 +3821,28 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
       mods.push({ label: "Security", value: hunt.homeApartment.security.length });
     }
     if (spendBoost) mods.push({ label: "Boost", value: spendBoost }); // BATCH 2.1 (item 13) — integer amount, not a boolean
-    const calledBrother = callBrotherId && amigues.find(a => a.id === callBrotherId);
-    if (calledBrother) mods.push({ label: calledBrother.name, value: 2 });
     const injuryMod = injuryPenaltyMod(c);
     if (injuryMod) mods.push(injuryMod);
     return mods;
   };
 
-  const checkedBrotherId = () => {
-    const checked = brotherChecks.find(cb => cb.checked);
-    return checked ? checked.dataset.id : null;
-  };
-
   const refreshMods = () => {
-    const mods = buildMods(getBoostSpend(), checkedBrotherId(), checkedOneShots());
+    const mods = buildMods(getBoostSpend(), checkedOneShots());
     modsEl.innerHTML = mods.length
       ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
       : `<span class="chip">no modifiers</span>`;
   };
   const getBoostSpend = wireBoostSpend(block, refreshMods); // BATCH 2.1 (item 13)
   refreshMods();
-  brotherChecks.forEach(cb => cb.addEventListener("change", () => {
-    if (cb.checked) brotherChecks.forEach(other => { if (other !== cb) other.checked = false; });
-    refreshMods();
-  }));
   oneShotChecks.forEach(el => el.addEventListener("change", refreshMods));
 
   const rollBtn = document.createElement("button");
   rollBtn.textContent = `Roll ${attr}`;
   rollBtn.addEventListener("click", () => {
     const spendAmount = getBoostSpend();
-    const callBrotherId = checkedBrotherId();
     const chosenOneShots = checkedOneShots();
-    const mods = buildMods(spendAmount, callBrotherId, chosenOneShots);
+    const mods = buildMods(spendAmount, chosenOneShots);
     if (spendAmount) c.boost -= spendAmount;
-    if (callBrotherId) hunt.bloodbrotherUsed = true;
     consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
     const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
     result.usedAttr = attr;
@@ -3993,10 +3978,16 @@ function renderHuntCombat(container) {
         addLog(c, pick(DATA.complications.Combat.fail));
         applyHuntCombatFailFallout(c);
       } else {
-        hunt.wounds++;
-        addLog(c, `You land a hit on ${hunt.archenemy.name} (${hunt.wounds}/3).`);
+        // UPDATE 3.1 (chat request) — "if you roll 12+ in HUNT combat you
+        // make 2 wounds to enemy": an exceptional Attack roll lands twice
+        // as hard. Clamped to the 3-wound cap so it can never overshoot the
+        // "X/3" display below or the >= 3 kill check just after.
+        const woundsDealt = res.total >= 12 ? 2 : 1;
+        hunt.wounds = Math.min(3, hunt.wounds + woundsDealt);
+        if (woundsDealt >= 2) addLog(c, `A brutal hit — you land it twice over on ${hunt.archenemy.name} (${hunt.wounds}/3).`);
+        else addLog(c, `You land a hit on ${hunt.archenemy.name} (${hunt.wounds}/3).`);
         if (hunt.wounds >= 3) applyHuntKillReward(c);
-        else if (hunt.wounds === 2) { addLog(c, `${hunt.archenemy.name} breaks and runs for it.`); hunt.stage = "chase"; }
+        else if (hunt.wounds >= 2) { addLog(c, `${hunt.archenemy.name} breaks and runs for it.`); hunt.stage = "chase"; }
       }
       persist(); render();
     });

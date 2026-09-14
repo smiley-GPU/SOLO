@@ -931,6 +931,48 @@ exact text per outcome) + a **"Return to the Street"** button, which clears
 the moment the Hunt was triggered (§12.4); only kill/evade/escape *state*
 differs, not clock accounting.
 
+**Revision (chat request) — "take away Amigues from HUNT attacks, they
+don't have effect but are visible now."** The Bloodbrother "Call `<name>`:
++2 to this roll" option described above (and in `G.hunt`'s `bloodbrotherUsed`
+field) was a genuine bug, not working-as-intended flavor: its checkbox read
+`dataset.id` (a string, e.g. `"5"`) and compared it against `amigues`'
+actual `id` field (a plain number) with `===` — a string never strictly
+equals a number in JS, so `amigues.find(a => a.id === callBrotherId)` was
+always `undefined` and the +2 never made it into `mods`, while
+`hunt.bloodbrotherUsed = true` still fired unconditionally whenever
+anything was checked — the once-per-Hunt call got silently spent for
+nothing. (The equivalent Ally-Assist checkbox on ordinary mission
+Challenges, `renderChallenge`/`computeModifiers`, has always wrapped the
+same read in `Number(...)` and works correctly — this was Hunt's own
+parallel implementation drifting out of sync with it.) Asked whether to fix
+the type mismatch (restoring a working +2) or remove the option outright,
+the answer was to remove it — `renderHuntRoll()` no longer builds or offers
+a Bloodbrother checkbox at all, on any stage (`notice`/`track`/`avoid`/
+`combat`/`run`/`chase` all share the one function), and `G.hunt` no longer
+carries a `bloodbrotherUsed` field. A Hunt's modifier set above is now: best
+owned gear bonus, a Cyberware modifier, the archenemy's tier penalty, any
+per-stage `extraBonus`, installed home Security (Combat only, hunted at
+home), BOOST spent, and the Wounded/Permanent-Injury penalty
+(`injuryPenaltyMod`, §4.4's own revision) — no Bloodbrother term. A
+Bloodbrother can still die *for* the player outright, unrelated to this —
+see `handleGoingDown()`'s Amigue-savior branch (§20.9) on a 2nd Permanent
+Injury — that mechanic is untouched.
+
+**Revision (chat request) — "if you roll 12+ in HUNT combat you make 2
+wounds to enemy."** §13.5's Attack roll: a Partial/Full with `res.total >=
+12` now deals 2 wounds in one hit instead of 1 (`Math.min(3, hunt.wounds +
+(res.total >= 12 ? 2 : 1))` — clamped to the same 3-wound cap so a 12+ roll
+can never overshoot the "X/3" display or the kill check that follows it in
+the same breath: a hit that reaches or passes 3 still always kills outright
+(§13.8) before the "breaks and runs" → `chase` transition is even checked,
+regardless of whether it got there via one wound or two). A 12+ hit landed
+while already at 1 wound is therefore a same-swing kill; landed at 0 wounds
+it's a same-swing "breaks and runs." Live-tested: a forced-high total of 17
+from 0 wounds logged *"A brutal hit — you land it twice over..."* and
+correctly landed at 2/3 with the chase transition; an ordinary total of 11
+still dealt exactly 1 wound; a forced 15 from 1 wound went straight to the
+kill-reward/`resolved-kill` path.
+
 ---
 
 ## 14. Ally Recruitment & Bloodbrother
