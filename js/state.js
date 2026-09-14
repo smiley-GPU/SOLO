@@ -1032,6 +1032,35 @@ function carriedNonVehicleCount(character) {
   return character.gear.filter(g => g.carried && gearCategory(g) && gearCategory(g) !== "Vehicles").length;
 }
 
+// UPDATE 3.1 (chat request) — "if you change CG vehicle to normal remember
+// to take one item out. Preferably from category that has many - take off
+// the lowest tier": swapping away from (or simply un-carrying) a CG-tagged
+// Vehicle drops computeCarrySlots()'s cap by 2, which can leave more
+// non-Vehicle items carried than the new, smaller cap allows — nothing
+// else in the game re-validates that on its own. Called after every
+// Loadout carry-state change (renderLoadoutSection, game.js); a no-op
+// whenever the count is already within the current cap. Repeats (in case
+// the cap dropped by more than one item's worth) — each pass drops one
+// item from whichever category currently holds the *most* carried items
+// (spreading the loss instead of emptying one category to nothing), the
+// lowest-`DATA.gearTierBonus` one in that category (least loss).
+function enforceCarryCap(character) {
+  const nonVehicleCats = ["Weapons", "Clothing", "Decks", "Social"];
+  const cap = computeCarrySlots(character);
+  while (carriedNonVehicleCount(character) > cap) {
+    let targetCat = null, targetCount = -1;
+    nonVehicleCats.forEach(cat => {
+      const count = character.gear.filter(g => g.carried && gearCategory(g) === cat).length;
+      if (count > targetCount) { targetCount = count; targetCat = cat; }
+    });
+    const candidates = character.gear.filter(g => g.carried && gearCategory(g) === targetCat);
+    if (!candidates.length) break; // safety net — should never trigger
+    const drop = candidates.reduce((a, b) => (DATA.gearTierBonus[b.tier] || 0) < (DATA.gearTierBonus[a.tier] || 0) ? b : a);
+    drop.carried = false;
+    addLog(character, `${drop.name} won't fit anymore without the cargo room — you leave it stowed at home.`);
+  }
+}
+
 // One-time default: the single best Vehicle is carried (exclusive,
 // unchanged), then the single best item in each of the other categories is
 // offered a spot in the shared pool, highest-bonus first, up to whatever

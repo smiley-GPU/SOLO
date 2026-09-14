@@ -1833,6 +1833,10 @@ function renderLoadoutSection() {
         if (cat === "Vehicles" && checkbox.checked) {
           c.gear.forEach(g => { if (gearCategory(g) === "Vehicles" && g !== item) g.carried = false; });
           item.carried = true;
+          // UPDATE 3.1 (chat request) — switching away from a CG Vehicle
+          // can drop the cap below what's already carried; trim back down
+          // to fit if so.
+          enforceCarryCap(c);
           persist(); render();
           return;
         }
@@ -1841,6 +1845,9 @@ function renderLoadoutSection() {
           return;
         }
         item.carried = checkbox.checked;
+        // Unchecking a CG Vehicle outright (no replacement checked) hits
+        // the same cap drop as the branch above — cheap no-op otherwise.
+        enforceCarryCap(c);
         persist(); render();
       });
       const kind = item.attr || (item.armor ? `armor x${item.armor}` : "");

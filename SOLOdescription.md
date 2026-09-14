@@ -1453,6 +1453,25 @@ auto-carrying whenever Clothing's own single free slot was already taken,
 even with spare capacity sitting open elsewhere: under the flat pool, it
 competes for room exactly like everything else.
 
+**Further revision (chat request) — shrinking the cap trims back down.**
+"If you change CG vehicle to normal remember to take one item out.
+Preferably from category that has many - take off the lowest tier."
+Swapping away from (or un-carrying) a CG Vehicle in the Loadout screen
+drops the cap by 2, which can leave more non-Vehicle items carried than
+the new cap allows — nothing else re-validates that on its own. New
+`enforceCarryCap(character)` (state.js), called after every carry-state
+change in `renderLoadoutSection()` (both the Vehicle-swap branch and the
+general checkbox-change path, so unchecking a CG Vehicle outright is
+covered too): while `carriedNonVehicleCount()` exceeds the (now smaller)
+cap, repeatedly finds whichever of Weapons/Clothing/Decks/Social currently
+holds the *most* carried items (re-evaluated fresh each pass, so a
+category that started well ahead of the others gets brought down toward
+parity with them rather than any one category being singled out
+regardless of size) and un-carries the lowest-`DATA.gearTierBonus` item in
+it, logging `"<name> won't fit anymore without the cargo room — you leave
+it stowed at home."` each time. A no-op whenever nothing's over the
+current cap.
+
 **Everywhere carried is checked**: `bestGearBonus()`, `ownsGearForAttr()`,
 `applyHarm()`'s armor lookup (all state.js), and every gear-picking pool in
 `applyFalloutConsequence` (§19.9), the Checkpoint's bribe/Fight-Run tables
