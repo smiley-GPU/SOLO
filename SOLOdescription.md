@@ -2638,11 +2638,21 @@ else's second item.
   combat challenge. Once a mission."* A dedicated "STREET SAMURAI:
   Auto-Success" button appears alongside the normal "Roll Combat" button on
   any Combat challenge block, for a Solo with `!job.classAbility
-  .samuraiUsed`. Clicking it sets the flag and synthesizes a Full result
-  (`{tier: "full", total: 12, ...}`, `usedAttr: "Combat"`) without calling
-  `resolve()` at all — no dice, no modifiers, feeds straight into the same
-  `renderResultBlock()`/Continue flow (and the same §19.9 "Full success, no
-  further consequence" handling) a genuinely rolled Full would.
+  .samuraiUsed`. Clicking it sets the flag and synthesizes a result
+  without calling `resolve()` at all — no dice, no modifiers — feeding
+  straight into the same `renderResultBlock()`/Continue flow any genuinely
+  rolled result would.
+  **Balance pass (chat request)**: originally synthesized a guaranteed Full
+  (`{tier: "full", total: 12, ...}`) — the strongest of the four Class
+  Abilities, since it was a *free*, *unconditional*, *downside-free*
+  guarantee, usable on any Combat roll including a mission's key challenge
+  (§21.2). Softened to a guaranteed **Partial** instead (`{tier: "partial",
+  total: 8, ...}`): still an unconditional "success" (still wins a Combat
+  key challenge outright, §21.2), but now runs through `applyOutcome()`'s
+  normal Partial fallout too — a real chance of Harm, gear damage, or a
+  wounded Helper, same as an actually-rolled 7-9 — no BOOST-for-a-Full at
+  Debrief, and the mission's own payout multiplier lands at Partial Success
+  (0.6x) rather than Full (1x) if this was the deciding roll.
 
 ---
 

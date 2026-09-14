@@ -2594,15 +2594,26 @@ function renderChallenge(container, step, onContinue, ctx) {
     // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
     // "they can choose to have one auto success in combat challenge. Once
     // a mission." A separate no-roll button on the Combat block only —
-    // synthesizes a Full result (matches renderResultBlock's expected
-    // shape) instead of calling resolve() at all.
+    // synthesizes a result (matches renderResultBlock's expected shape)
+    // instead of calling resolve() at all.
+    // Balance pass (chat request): originally synthesized a guaranteed Full
+    // (total 12) — the strongest of the four Class Abilities, since it was
+    // a *free*, *unconditional*, *downside-free* guarantee, usable on any
+    // Combat roll including a mission's key challenge (§21.2). Softened to
+    // a guaranteed Partial (total 8) instead: still an unconditional
+    // "success" — still wins a Combat key challenge outright, §21.2 — but
+    // now runs through applyOutcome()'s normal Partial fallout too (a real
+    // chance of Harm, gear damage, or a wounded Helper, same as if the
+    // player had actually rolled a 7-9), no BOOST-for-a-Full-success at
+    // Debrief, and the mission's own payout multiplier lands at Partial
+    // Success (0.6x) rather than Full (1x) if this was the deciding roll.
     if (attr === "Combat" && job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed) {
       const samuraiBtn = document.createElement("button");
       samuraiBtn.textContent = "STREET SAMURAI: Auto-Success";
       samuraiBtn.addEventListener("click", () => {
         job.classAbility.samuraiUsed = true;
-        const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 12, tier: "full", usedAttr: "Combat" };
-        addLog(c, `${c.name} moves like nothing can touch them — STREET SAMURAI reflexes take over.`);
+        const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 8, tier: "partial", usedAttr: "Combat" };
+        addLog(c, `${c.name} muscles through on instinct — STREET SAMURAI reflexes take over, messy but effective.`);
         step.usedAttr = "Combat";
         holder.pendingResult = result;
         holder.lastResult = result;
