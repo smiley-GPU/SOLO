@@ -2756,6 +2756,16 @@ same idiom as `G.shopTab`/`G.gearTab`/`G.peopleTab`) tracks which ability's
 key, if any, is currently expanded; a full `render()` rebuild follows every
 click, same as any other action in this codebase (§1's rendering model).
 
+**Listed on the sheet (chat request)**: `renderSheet()` (game.js) shows
+every Class Ability the character currently has — the one Profession-gated
+one plus WRAITH/WICKED if earned, `classFeaturesFor(c)` — as small pill
+chips directly under the Attributes section, one job-scoped `used` flag
+each but shown regardless of whether this job's copy has already been
+spent (the ability itself, not its per-job availability). Each chip's
+plain `title="..."` attribute (`CLASS_FEATURE_DESC`) gives a one-line
+description on hover via the browser's native tooltip — no JS needed for
+the hover itself, just the attribute.
+
 ---
 
 ## Appendix A — Names

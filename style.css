@@ -124,6 +124,14 @@ header h1 {
   border: 1px solid var(--warn); border-radius: 10px; padding: 1px 6px;
 }
 .hunt-btn { padding: 2px 6px; font-size: 10px; margin: 0 0 0 4px; }
+/* UPDATE 3.1 (chat request) — Class Features listed under Attributes on the
+   sheet (game.js: renderSheet); each chip's title="" attribute is the hover
+   description — cursor:help signals that without needing any JS. */
+.class-features { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.class-feature {
+  font-size: 11px; color: var(--warn); cursor: help;
+  border: 1px solid var(--warn); border-radius: 10px; padding: 1px 6px;
+}
 #sheet .tag {
   display: inline-block;
   color: var(--muted);

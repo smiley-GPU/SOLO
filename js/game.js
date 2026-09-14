@@ -548,6 +548,25 @@ function personBucket(ct) {
   if (ct.bloodbrother || ct.relationship >= 3) return "Friends";
   return "Faces";
 }
+// UPDATE 3.1 (chat request) — "list class features under attributes, hover
+// for a short description": one profession-gated Class Ability per
+// Profession (§21.3), plus WRAITH/WICKED if earned. classFeaturesFor()
+// returns each unlocked feature's name in display order; CLASS_FEATURE_DESC
+// is the hover text for renderSheet()'s plain title="" tooltip (no JS
+// needed for the hover itself).
+const PROFESSION_FEATURE = { Jockey: "GEARHEAD", Hacker: "NETRUNNER", Rocker: "NATURAL LEADER", Solo: "STREET SAMURAI" };
+const CLASS_FEATURE_DESC = {
+  "GEARHEAD": "Your vehicle can't be lost to mission fallout — it always comes back. Once a job, swap a Combat check to Driving.",
+  "NETRUNNER": "Your deck can't be lost to mission fallout — it always comes back. Once a job, swap a Stealth or Combat check to Hacking.",
+  "NATURAL LEADER": "Your first Hire each job is free.",
+  "STREET SAMURAI": "Once a job, auto-resolve a Combat check as a guaranteed Partial — no roll, but still runs the normal Partial fallout.",
+  "WRAITH": "Earned from a 2nd Shadow-of title. Once a job, swap a Combat check to Stealth.",
+  "WICKED": "Earned from a 2nd Killer-of title. Once a job, swap a Stealth check to Combat."
+};
+function classFeaturesFor(c) {
+  return [PROFESSION_FEATURE[c.profession], c.wraith ? "WRAITH" : null, c.wicked ? "WICKED" : null].filter(Boolean);
+}
+
 function tabBarHtml(tabs, active, dataAttr) {
   return `<div class="tab-bar">${tabs.map(t =>
     `<button type="button" class="tab-btn${t === active ? " active" : ""}" data-${dataAttr}="${t}">${t}</button>`
@@ -564,6 +583,11 @@ function renderSheet() {
     const modBadge = cyberMod ? ` <span class="cyber-mod">${cyberMod > 0 ? "+" : ""}${cyberMod}</span>` : "";
     return `<div class="stat"><span>${k}</span><span>${v}${modBadge}</span></div>`;
   }).join("");
+  // UPDATE 3.1 (chat request) — Class Features listed under Attributes;
+  // title="" gives a native hover tooltip with each one's short description.
+  const classFeaturesHtml = classFeaturesFor(c).map(f =>
+    `<span class="class-feature" title="${CLASS_FEATURE_DESC[f]}">${f}</span>`
+  ).join("");
   const healthRow = c.health.map(h => `<span class="hbox ${h ? "hurt" : ""}"></span>`).join("");
 
   // Armor boxes (INTERFACE 2.4.1): carried gear armor (depletable — one box
@@ -685,7 +709,7 @@ function renderSheet() {
     <div class="section"><h3>Health</h3><div class="hboxes">${healthRow}</div>${cyberBadges}${injuryBadge}</div>
     <div class="section"><h3>Bonds</h3><div class="cred">${c.bonds} BOND${c.bonds === 1 ? "" : "S"}</div></div>
     ${apartmentSectionHtml}
-    <div class="section"><h3>Attributes</h3>${attrRows}</div>
+    <div class="section"><h3>Attributes</h3>${attrRows}<div class="class-features">${classFeaturesHtml}</div></div>
     <div class="section"><h3>Boost</h3><div class="cred">⚡${c.boost}</div></div>
     <div class="section"><h3>Reputation</h3><div class="cred">${c.reputation} <span class="tag" style="margin:0;display:inline">${reputationTitle(c)} (T${reputationTier(c)})</span></div>${titlesList}</div>
     <div class="section"><h3>Gear</h3>${tabBarHtml(GEAR_TABS, G.gearTab, "gear-tab")}<ul>${gearList}</ul></div>
