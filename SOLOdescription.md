@@ -2569,6 +2569,21 @@ starts with exactly 2 items covering 2 distinct mechanics. The Class
 Ability power gap itself (Solo > Jockey/Hacker > Rocker) was flagged
 but left untouched pending a decision on which direction to take it.
 
+**Follow-up (same session)**: `computeDefaultCarry()` (§20.8, state.js)
+only carries the single best item *per category*, so Hacker's two Decks
+items tied for that one slot and the one-shot (0 tie-break priority behind
+whichever item happens to iterate first) started **uncarried** — invisible
+until the player spent a spare Loadout slot on it manually, unlike every
+other Profession's second item, which lands in its own category and gets
+its free slot automatically. `defaultCharacter()` now force-carries every
+one-shot (`1S`-tagged) item right after `computeDefaultCarry()` runs, in
+addition to whatever it already picked, not instead of it — scoped to
+character creation only, not `computeDefaultCarry()` itself (which
+`migrateCharacter()` also calls for old saves), so it can't retroactively
+carry a pile of shop-bought one-shots on an existing character. A starting
+one-shot is now available from the very first Gear Up, same as everyone
+else's second item.
+
 - **Jockey — GEARHEAD**: two effects, one passive and permanent for the
   whole job, one a limited-use swap.
   - *"They never lose their vehicle... it can be damaged (or destroyed) by

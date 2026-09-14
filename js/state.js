@@ -76,6 +76,19 @@ function defaultCharacter(name, profession, turf) {
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
   computeDefaultCarry(character); // §20.8 — best item per category carried by default
+  // Balance pass (chat request) — computeDefaultCarry() only carries the
+  // single best item per category, so a starting one-shot ("1S") sharing a
+  // category with a permanent item (Hacker's Burner ICE Breaker vs. its
+  // Bootleg Deck, both Decks) loses that tie and starts uncarried, unusable
+  // until the player spends a spare Loadout slot on it manually. A starting
+  // one-shot should be available turn one — carry it in addition to
+  // whatever computeDefaultCarry() already picked, not instead of it. Scoped
+  // to character creation only (not computeDefaultCarry() itself, which
+  // migrateCharacter() also calls for old saves) so it can't retroactively
+  // carry a pile of shop-bought one-shots on an existing character.
+  character.gear.forEach(item => {
+    if (item.tags && item.tags.includes("1S")) item.carried = true;
+  });
   return character;
 }
 
