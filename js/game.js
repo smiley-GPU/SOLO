@@ -585,7 +585,7 @@ const CLASS_FEATURE_DESC = {
   "GEARHEAD": "Your vehicle can't be lost to mission fallout — it always comes back. Once a job, swap a Combat check to Driving.",
   "NETRUNNER": "Your deck can't be lost to mission fallout — it always comes back. Once a job, swap a Stealth or Combat check to Hacking.",
   "NATURAL LEADER": "Your first Hire each job is free.",
-  "STREET SAMURAI": "Once a job, auto-resolve a Combat check as a guaranteed Partial — no roll, but still runs the normal Partial fallout.",
+  "STREET SAMURAI": "Once a job, roll Combat as normal — but a Fail on this roll still resolves as a Partial.",
   "WRAITH": "Earned from a 2nd Shadow-of title. Once a job, swap a Combat check to Stealth.",
   "WICKED": "Earned from a 2nd Killer-of title. Once a job, swap a Stealth check to Combat."
 };
@@ -884,7 +884,10 @@ function renderHub() {
   if (c.permanentInjury) {
     const repairSection = document.createElement("div");
     repairSection.className = "section";
-    repairSection.innerHTML = "<h3>Permanent Injury</h3><p class=\"muted\">Every roll takes -1 until this is fixed.</p>";
+    // UPDATE 3.1 (chat request) — no longer a flat -1 (injuryPenaltyMod):
+    // it's the 4th conceptual "box" on top of Health, so it only actually
+    // costs a point once something else is also filled.
+    repairSection.innerHTML = "<h3>Permanent Injury</h3><p class=\"muted\">Counts as a 4th Wounded box until this is fixed — stacks with fresh Harm.</p>";
     DATA.repairs.forEach(r => {
       const btn = document.createElement("button");
       btn.textContent = `${r.name} — ${r.price} BOND${r.price === 1 ? "" : "S"}`;
@@ -2712,9 +2715,8 @@ function renderChallenge(container, step, onContinue, ctx) {
     && rawAttrs.includes("Stealth") && !rawAttrs.includes("Combat");
   // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
   // "they can choose to have one auto success in combat challenge. Once a
-  // mission." No gear/attr-swap prerequisite (unlike the four above) — it
-  // replaces the roll itself with a guaranteed outcome rather than
-  // substituting a different attribute.
+  // mission." No gear/attr-swap prerequisite (unlike the four above) — its
+  // own attr is Combat itself, not a substitute (see the swaps.push below).
   const samuraiEligible = job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed
     && rawAttrs.includes("Combat");
 
@@ -2779,13 +2781,19 @@ function renderChallenge(container, step, onContinue, ctx) {
     // into the shared toggle-picker whenever it contends with WRAITH for
     // the same Combat box (earned, not profession-gated — a Solo can have
     // both), and otherwise gets the same "renders fully expanded, no click
-    // needed" treatment a lone GEARHEAD/NETRUNNER swap gets. `noRoll: true`
-    // marks it for renderSamuraiOption() below instead of renderRollOption
-    // — it replaces the roll outright with a guaranteed outcome rather than
-    // substituting a different attribute to roll.
+    // needed" treatment a lone GEARHEAD/NETRUNNER swap gets. Its own attr is
+    // "Combat" too — this isn't a substitute attribute the way the other
+    // four are, it's the same roll with a floor under the worst outcome.
+    // Revision (chat request) — "make the roll anyway, but failure will be
+    // read as partial success": no longer a synthesized no-dice result
+    // (`noRoll`/renderSamuraiOption, one turn earlier) — it's a real
+    // resolveRoll() through the same renderRollOption() every other swap
+    // uses (real mods: gear, BOOST, Ally-Assist, one-shots, Wounded, all of
+    // it), just with `floorAtPartial: true` telling that roll's own click
+    // handler to bump a Fail up to Partial afterward — see renderRollOption.
     if (samuraiEligible && attr === "Combat") {
       swaps.push({
-        key: "STREET SAMURAI", noRoll: true,
+        key: "STREET SAMURAI", attr: "Combat", floorAtPartial: true,
         onUse: () => {
           job.classAbility.samuraiUsed = true;
           addLog(c, `${c.name} muscles through on instinct — STREET SAMURAI reflexes take over, messy but effective.`);
@@ -2797,21 +2805,19 @@ function renderChallenge(container, step, onContinue, ctx) {
       // The common case, unchanged: a single swap always renders fully
       // expanded, side by side with the real roll.
       const s = swaps[0];
-      if (s.noRoll) renderSamuraiOption(block, step, job, holder, c, { label: s.key, onUse: s.onUse });
-      else renderRollOption(block, s.attr, step, job, holder, c, { label: s.key, onUse: s.onUse });
+      renderRollOption(block, s.attr, step, job, holder, c, { label: s.key, onUse: s.onUse, floorAtPartial: s.floorAtPartial });
     } else if (swaps.length > 1) {
       // UPDATE 3.1 (chat request) — "if you have both wraith and other
       // ability that can change a combat roll, make them buttons": 2+
       // swaps contending for the same box collapse into a row of toggle
       // buttons (one per ability) instead of all rendering fully expanded
-      // at once. Clicking a button reveals that swap's full details (a
-      // roll-option's mods/BOOST/Ally-Assist/one-shot + its own "Roll X"
-      // confirm button via renderRollOption, or STREET SAMURAI's own
-      // description + "Confirm Auto-Success" via renderSamuraiOption);
-      // clicking the same button again hides them; clicking a different
-      // ability's button switches directly, no need to close the first.
-      // G.expandedSwap (ephemeral UI state, never persisted — same idiom as
-      // G.shopTab/G.gearTab/G.peopleTab) tracks which one, if any.
+      // at once. Clicking a button reveals that swap's full roll-option
+      // details (mods/BOOST/Ally-Assist/one-shot + its own "Roll X"
+      // confirm button) via the same renderRollOption() the single-swap
+      // case uses; clicking the same button again hides them; clicking a
+      // different ability's button switches directly, no need to close the
+      // first. G.expandedSwap (ephemeral UI state, never persisted — same
+      // idiom as G.shopTab/G.gearTab/G.peopleTab) tracks which one, if any.
       block.classList.add("has-swap");
       const picker = document.createElement("div");
       picker.className = "swap-picker";
@@ -2829,8 +2835,7 @@ function renderChallenge(container, step, onContinue, ctx) {
       block.appendChild(picker);
       const active = swaps.find(s => s.key === G.expandedSwap);
       if (active) {
-        if (active.noRoll) renderSamuraiOption(block, step, job, holder, c, { label: active.key, onUse: active.onUse });
-        else renderRollOption(block, active.attr, step, job, holder, c, { label: active.key, onUse: active.onUse });
+        renderRollOption(block, active.attr, step, job, holder, c, { label: active.key, onUse: active.onUse, floorAtPartial: active.floorAtPartial });
       }
     }
 
@@ -2909,6 +2914,15 @@ function renderRollOption(parent, attr, step, job, holder, c, swapMeta) {
     consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
     if (swapMeta) swapMeta.onUse();
     const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
+    // Revision (chat request) — STREET SAMURAI: "make the roll anyway, but
+    // failure will be read as partial success." A real roll, same mods as
+    // any other Combat check (gear, BOOST, Ally-Assist, one-shots, Wounded,
+    // all of it) — only a Fail gets bumped up, Full/Partial land exactly as
+    // rolled. Note this only ever floors *this specific roll's* own tier,
+    // not the mission overall — a Fail elsewhere in the same job (a
+    // different step, or a Fail on the ordinary "Roll Combat" button
+    // instead of this one) is unaffected.
+    if (swapMeta && swapMeta.floorAtPartial && result.tier === "fail") result.tier = "partial";
     result.usedAttr = attr;
     step.usedAttr = attr;
     holder.pendingResult = result;
@@ -2920,44 +2934,6 @@ function renderRollOption(parent, attr, step, job, holder, c, swapMeta) {
   parent.appendChild(wrap);
 }
 
-// UPDATE 3.1 (chat request) — "make the STREET SAMURAI button similar to
-// GEARHEAD and NETRUNNER": the noRoll counterpart to renderRollOption above
-// — same `.swap-option` box/heading treatment and the same swapMeta
-// {label, onUse} shape, but no dice, no modifiers, no BOOST/Ally-Assist/
-// one-shot checkboxes (none of them would do anything — the outcome is a
-// fixed synthesized Partial, not a real roll), just the ability's own
-// description and a single confirm button.
-function renderSamuraiOption(parent, step, job, holder, c, swapMeta) {
-  const wrap = document.createElement("div");
-  wrap.className = "swap-option";
-  parent.classList.add("has-swap");
-  wrap.innerHTML = `<h4>${swapMeta.label} — Auto-Success</h4><p class="muted">${CLASS_FEATURE_DESC["STREET SAMURAI"]}</p>`;
-  const confirmBtn = document.createElement("button");
-  confirmBtn.textContent = "Confirm Auto-Success";
-  confirmBtn.addEventListener("click", () => {
-    swapMeta.onUse();
-    // Balance pass (chat request): originally synthesized a guaranteed Full
-    // (total 12) — the strongest of the four Class Abilities, since it was
-    // a *free*, *unconditional*, *downside-free* guarantee, usable on any
-    // Combat roll including a mission's key challenge (§21.2). Softened to
-    // a guaranteed Partial (total 8) instead: still an unconditional
-    // "success" — still wins a Combat key challenge outright, §21.2 — but
-    // now runs through applyOutcome()'s normal Partial fallout too (a real
-    // chance of Harm, gear damage, or a wounded Helper, same as if the
-    // player had actually rolled a 7-9), no BOOST-for-a-Full-success at
-    // Debrief, and the mission's own payout multiplier lands at Partial
-    // Success (0.6x) rather than Full (1x) if this was the deciding roll.
-    const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 8, tier: "partial", usedAttr: "Combat" };
-    step.usedAttr = "Combat";
-    holder.pendingResult = result;
-    holder.lastResult = result;
-    persist();
-    render();
-  });
-  wrap.appendChild(confirmBtn);
-  parent.appendChild(wrap);
-}
-
 function attrAvailable(c, job, attr) {
   if (attr === "Hacking") return ownsGearForAttr(c, "Hacking");
   if (job && attr === "Driving" && job.mission && job.mission.type === "Transport" && job.mission.difficulty >= 2) {
@@ -2965,6 +2941,23 @@ function attrAvailable(c, job, attr) {
     if (rural) return ownsGearForAttr(c, "Driving");
   }
   return true;
+}
+
+// UPDATE 3.1 (chat request) — "character can take 3 boxes of damage and
+// [a] 4th is permanent injury. Also penalty is (number of damage boxes
+// filled -1)": replaces the old two-part penalty (Wounded -1/-2, capped at
+// 2 Harm boxes, plus a flat separate -1 for Permanent Injury) with one
+// combined formula. An unrepaired Permanent Injury counts as a 4th
+// conceptual "box" stacked on top of the 3 real Health boxes — a character
+// carrying one *and* freshly Wounded this job reads as boxes-filled = Harm
+// count + 1, not two independent penalties added together. Shared by
+// computeModifiers (job Challenges) and renderHuntRoll's own buildMods
+// (Hunt combat) so the two never drift apart the way the pre-revision
+// duplication briefly risked.
+function injuryPenaltyMod(c) {
+  const filled = c.health.filter(h => h).length + (c.permanentInjury ? 1 : 0);
+  const penalty = filled - 1;
+  return penalty > 0 ? { label: "Wounded", value: -penalty } : null;
 }
 
 // job may be null (a Rest sub-flow's Challenge has no accepted job to pull
@@ -3034,10 +3027,8 @@ function computeModifiers(attr, spendBoost, assistIds, job, chosenOneShots) {
       }
     });
   }
-  const harmCount = c.health.filter(h => h).length;
-  if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
-  else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
-  if (c.permanentInjury) mods.push({ label: "Permanent Injury", value: -1 });
+  const injuryMod = injuryPenaltyMod(c);
+  if (injuryMod) mods.push(injuryMod);
   return mods;
 }
 
@@ -3521,9 +3512,11 @@ function renderLoss() {
 }
 
 // ---------- DEATH (BATCH 2.0) ----------
-// Going Down while already carrying a Permanent Injury is fatal — unless
-// an Amigue is present to take the hit instead (handleGoingDown, below).
-// This is the only way the run itself can end besides Win/MULTI-CORP-Loss.
+// Going Down while already carrying a Permanent Injury is fatal — unless an
+// Amigue is present to take the hit instead, or the character is carrying
+// at least one Cybernetic Replacement (UPDATE 3.1, chat request — their own
+// rules apply instead; see handleGoingDown, below). This is the only way
+// the run itself can end besides Win/MULTI-CORP-Loss.
 function renderDeath() {
   const c = G.character;
   const wrap = document.createElement("div");
@@ -3553,7 +3546,9 @@ function renderDeath() {
 
 // Central Down/death handler (BATCH 2.0): going Down while already
 // carrying a Permanent Injury is fatal, unless an Amigue (Bloodbrother) is
-// present to sacrifice their own life instead. A first-ever Down is
+// present to sacrifice their own life instead, or the character is
+// chromed up enough that their own rules apply (UPDATE 3.1, chat request —
+// see the cyberneticReplacements check below). A first-ever Down is
 // unchanged (resolveDownEvent's BOOST-loss chance + sets permanentInjury).
 // Sets G.phase = "death" and returns true if this call ended the run —
 // every call site that would otherwise continue on to its own next-step
@@ -3563,6 +3558,20 @@ function renderDeath() {
 function handleGoingDown(c, wentDown) {
   if (!wentDown) return false;
   if (!c.permanentInjury) { resolveDownEvent(c); return false; }
+  // UPDATE 3.1 (chat request) — "if character gets cybernetic replacement
+  // don't kill him after next permanent injury. Cybernetic replacements
+  // have their own rules": a character carrying at least one Cybernetic
+  // Replacement (§ "getting to borg" — from choosing that repair over
+  // Biovat Regrowth, state.js DATA.repairs) doesn't die outright from a 2nd
+  // Down the way an unmodified human does. They fall through to their own
+  // existing risk instead — maybeTriggerCyberpsycho (game.js), which
+  // applyMissionHarm already runs right after this whenever a Harm box
+  // actually landed, and which has its own death chance (a 10+ roll) but
+  // isn't a guaranteed kill the way this branch is. Outside a job (Rest/
+  // Hunt Harm, which never routes through applyMissionHarm/cyberpsycho at
+  // all — they're their own separate systems, per §20.9), this simply means
+  // the chrome keeps them standing with no extra roll.
+  if (c.cyberneticReplacements.length > 0) return false;
   const amigues = c.contacts.filter(p => p.bloodbrother);
   if (amigues.length) {
     const savior = pick(amigues);
@@ -3775,10 +3784,8 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     if (spendBoost) mods.push({ label: "Boost", value: spendBoost }); // BATCH 2.1 (item 13) — integer amount, not a boolean
     const calledBrother = callBrotherId && amigues.find(a => a.id === callBrotherId);
     if (calledBrother) mods.push({ label: calledBrother.name, value: 2 });
-    const harmCount = c.health.filter(h => h).length;
-    if (harmCount === 1) mods.push({ label: "Wounded", value: -1 });
-    else if (harmCount >= 2) mods.push({ label: "Wounded", value: -2 });
-    if (c.permanentInjury) mods.push({ label: "Permanent Injury", value: -1 });
+    const injuryMod = injuryPenaltyMod(c);
+    if (injuryMod) mods.push(injuryMod);
     return mods;
   };
 

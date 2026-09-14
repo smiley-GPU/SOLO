@@ -251,6 +251,62 @@ stacked with the Wounded penalty, until repaired).
 Going Down triggers `resolveDownEvent()`: a 10% chance of "you should be
 dead" — costs 2 BOOST (floored at 0) — either way, `permanentInjury = true`.
 
+**Revision (chat request) — "character can take 3 boxes of damage and [a]
+4th is permanent injury. Also penalty is (number of damage boxes filled
+-1)."** Confirms the box count is unchanged (3 real Health boxes — it
+already was), but replaces the two separate penalties above (Wounded
+-1/-2 capped at 2 boxes; Permanent Injury a flat extra -1) with **one**
+combined formula, treating an unrepaired Permanent Injury as a 4th
+conceptual box stacked on top of the 3 real ones:
+```
+injuryPenaltyMod(c):
+  filled = health.filter(marked).length + (permanentInjury ? 1 : 0)
+  penalty = filled - 1
+  return penalty > 0 ? {label: "Wounded", value: -penalty} : null
+```
+So: 0 or 1 box filled (however it got there — fresh Harm or a lingering
+unrepaired injury alone) = **no penalty at all**, softer than before (a
+single Harm box used to cost -1 immediately); 2 filled = **-1**; 3 filled =
+**-2**; the (rare, since 3 fresh Harm boxes alone already end the job in
+Failure — see §17) theoretical max of 3 Harm + the injury = **-3**. One
+`injuryPenaltyMod()` (game.js) is shared by `computeModifiers()` (job
+Challenges) and `renderHuntRoll()`'s own `buildMods` (Hunt combat, a
+separate system per §20.9) — they used to duplicate the same 4-line
+formula independently; now both call the one function so they can't drift.
+Live-tested (`injuryPenaltyMod` called directly against every box/injury
+combination): 0/1 filled → `null`, 2 → `-1`, 3 → `-2`, 3+injury → `-3`,
+matching the formula exactly.
+
+**Revision (chat request) — "if character gets cybernetic replacement
+don't kill him after next permanent injury. Cybernetic replacements have
+their own rules."** §20.9's "going Down again while already carrying a
+Permanent Injury is fatal" rule (`handleGoingDown()`, game.js) now checks
+`character.cyberneticReplacements.length > 0` *before* the
+Bloodbrother-savior check — a character carrying at least one Cybernetic
+Replacement (from choosing that repair over Biovat Regrowth, below) never
+hits this particular death branch at all. Within a job, this isn't "no
+consequence" — `applyMissionHarm()` (the job-Harm chokepoint) already runs
+`maybeTriggerCyberpsycho()` right after `handleGoingDown()` whenever a Harm
+box actually landed (§20 "getting to borg"), and `handleGoingDown()`
+returning `false` here (instead of ending the run outright) is exactly what
+lets that check still fire — chrome swaps the *guaranteed* death of the old
+rule for the cyberpsycho roll's *own* death chance (10+: SwissGuard kills
+you outright; 7-9: everyone around you dies but you live; ≤6: you hold the
+line) — "their own rules," not a plain get-out-of-death-free card. Outside
+a job (Rest/Hunt Harm — §20.9's own separate systems, which never call
+`applyMissionHarm`/`maybeTriggerCyberpsycho` at all), the practical effect
+is simpler: the chrome just keeps them standing, no extra roll. A
+non-cybered character's behavior is completely unchanged — still fatal
+unless a Bloodbrother is present. Live-tested (`handleGoingDown()` and
+`applyMissionHarm()` called directly, `Math.random()` pinned for each
+branch): a cybered character with an existing injury survives a 2nd Down
+outright (`handleGoingDown` alone); the same setup run through
+`applyMissionHarm` can still die, but only via the cyberpsycho roll's own
+10+ branch (confirmed by its distinct log lines, not the old "doesn't get
+back up this time" message) — and can also fully survive via its ≤6
+branch; a non-cybered character in the identical setup still dies outright
+via the old branch, confirming no regression.
+
 **Permanent Injury repair** (Hub, only shown while `permanentInjury` is
 true): heals all 3 boxes and clears the flag.
 - **Cybernetic Replacement** — 2 BONDS, quick: also knocks -1 off one
@@ -3032,6 +3088,35 @@ else's second item.
   kill-flavor line (§21 revision above) still correctly reads the equipped
   weapon; with WRAITH also earned, both collapse into toggle buttons that
   expand/collapse/switch correctly.
+  **Revision (chat request) — "make the roll anyway, but failure will be
+  read as partial success."** Supersedes the `noRoll`/`renderSamuraiOption()`
+  approach just above (one turn later, same session) — STREET SAMURAI no
+  longer synthesizes a fixed no-dice Partial at all. Its swap entry is now
+  `{key: "STREET SAMURAI", attr: "Combat", floorAtPartial: true, onUse}` —
+  `attr: "Combat"` (its *own* attr, not a substitute the way GEARHEAD/
+  NETRUNNER/WRAITH/WICKED swap to a different one) routes it back through
+  the ordinary `renderRollOption()` every other swap already uses, so it
+  gets a real `resolveRoll()` with every real modifier (gear, BOOST,
+  Ally-Assist, one-shots, Wounded, Heat, Adversary Tier, Special Mission
+  -1 — whatever a plain "Roll Combat" would have) — `renderSamuraiOption()`
+  and the `noRoll` flag are gone entirely. The one behavior change lives in
+  `renderRollOption()`'s own Roll-button handler: `if (swapMeta &&
+  swapMeta.floorAtPartial && result.tier === "fail") result.tier =
+  "partial"` — bumps a Fail up to Partial *on this roll only*, after the
+  real dice/mods already decided it; Full and Partial land exactly as
+  rolled, untouched. Mechanically this is a genuine downgrade in the
+  guaranteed floor (Partial's own fallout can still land Harm/gear-damage/
+  a wounded Helper — same as before — but the *outcome tier itself* is no
+  longer free; a low roll still only reaches Partial, not Full) in exchange
+  for a real shot at Full. `CLASS_FEATURE_DESC["STREET SAMURAI"]` updated to
+  match: *"Once a job, roll Combat as normal — but a Fail on this roll
+  still resolves as a Partial."* Live-tested (60-try loop, no Combat gear
+  carried to keep totals low): a raw total of 6 (would ordinarily be a
+  Fail) resolved as Partial through STREET SAMURAI's own Roll button; a
+  raw Full (total 11) came through untouched; the *ordinary* "Roll Combat"
+  button (not the STREET SAMURAI swap) still produces a real, unfloored
+  Fail on the same character — confirming the floor is scoped to this one
+  swap's own roll, not the whole Combat box.
 - **WRAITH** (chat request, same session) — the odd one out: not gated by
   `character.profession` like the four above, but **earned**. A 2nd
   "Shadow of `<Location>`" (§19.1's own revision note) sets
