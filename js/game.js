@@ -523,7 +523,7 @@ function renderStocksBox() {
     investBtn.addEventListener("click", () => {
       c.bonds -= 1;
       c.stocks[f.name] = (c.stocks[f.name] || 0) + 1;
-      addLog(c, `You park a BOND in ${f.name} stock.`);
+      addLog(c, `You park a BOND in ${f.name} stock.`, "stocks"); // UPDATE 3.1 (chat request) — blue EuroStoxx log lines
       persist(); render();
     });
     row.appendChild(investBtn);
@@ -536,7 +536,7 @@ function renderStocksBox() {
         c.bonds += 1;
         c.stocks[f.name] -= 1;
         if (c.stocks[f.name] <= 0) delete c.stocks[f.name];
-        addLog(c, `You cash out 1 share of ${f.name} stock for 1 BOND.`);
+        addLog(c, `You cash out 1 share of ${f.name} stock for 1 BOND.`, "stocks");
         persist(); render();
       });
       row.appendChild(sell1Btn);
@@ -546,7 +546,7 @@ function renderStocksBox() {
       sellBtn.addEventListener("click", () => {
         c.bonds += held;
         delete c.stocks[f.name];
-        addLog(c, `You cash out your ${f.name} stock for ${held} BOND${held === 1 ? "" : "S"}.`);
+        addLog(c, `You cash out your ${f.name} stock for ${held} BOND${held === 1 ? "" : "S"}.`, "stocks");
         persist(); render();
       });
       row.appendChild(sellBtn);

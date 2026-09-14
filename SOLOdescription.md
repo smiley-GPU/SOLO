@@ -2259,6 +2259,15 @@ declared after `.log-new` in the stylesheet so red always wins the tie for
 a line that's both new and Archenemy-tagged (confirmed as the intended
 behavior by §20.21's "Archenemy actions always come with red and stay red").
 
+**Revision (chat request) — EuroStoxx lines in blue.** Same tagged-`addLog()`
+mechanism, a second explicit tag: every stock invest/sell-1/sell-all line
+(`renderStocksBox()`, game.js) and every automatic gain/loss/wipe line
+(`settleStockGains()`, `destroyFaction()`, state.js) now passes `"stocks"`
+as `addLog()`'s third argument. `.log-line.log-stocks { color: var(--info);
+}` (a new `--info: #4da6ff` root token, style.css) is declared after
+`.log-new` the same way `.log-archenemy` is, so blue wins the same tie a
+freshly-added EuroStoxx line would otherwise lose to yellow.
+
 **Spend the Night at your own Apartment gets the same navigation fix as
 Spend the Night with an Amigue (§20.19).** `restAtApartment()`'s call to
 `processRestTick()` now passes `returnToHub: true` unconditionally (it has

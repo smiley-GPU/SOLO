@@ -9,6 +9,7 @@
   --accent-2: #ff2e63;
   --warn: #ffb703;
   --danger: #ff4d4d;
+  --info: #4da6ff; /* UPDATE 3.1 (chat request) — EuroStoxx journal lines */
 }
 
 * { box-sizing: border-box; }
@@ -78,6 +79,11 @@ header h1 {
    (declared after it, same specificity) since danger-red is the more
    specific signal when a line is both. */
 .log-line.log-archenemy { color: var(--danger); }
+/* UPDATE 3.1 (chat request) — "make all EuroStoxx log markings in blue
+   color": every stock invest/sell/gain/loss/wipe line (addLog(..., "stocks")
+   call sites in game.js/state.js) tags "stocks", declared after log-new so
+   blue wins the same tie log-archenemy already does for its own tag. */
+.log-line.log-stocks { color: var(--info); }
 
 /* INTERFACE 2.4.2 — Downtime moved into #main: a Lay-Low window (rest
    options + Find a Job) followed by a row of Shop/Workshop/Apartment/

@@ -248,7 +248,7 @@ function destroyFaction(character, factionName) {
   // §20.5 — any EuroStoxx position in a destroyed faction is wiped, not sellable.
   if (character.stocks[factionName]) {
     delete character.stocks[factionName];
-    addLog(character, `Your ${factionName} stock is worthless overnight.`);
+    addLog(character, `Your ${factionName} stock is worthless overnight.`, "stocks"); // UPDATE 3.1 (chat request) — blue EuroStoxx log lines
   }
   addLog(character, `${factionName} is torn apart. What's left of it scatters.`);
 }
@@ -884,11 +884,11 @@ function settleStockGains(character, factionName, before, after) {
   if (after > before) {
     const gain = before < 10 && after >= 10 ? 2 : 1;
     character.stocks[factionName] += gain;
-    addLog(character, `Your ${factionName} stock ticks up (+${gain} BOND).`);
+    addLog(character, `Your ${factionName} stock ticks up (+${gain} BOND).`, "stocks");
   } else {
     const loss = Math.min(held, before - after);
     character.stocks[factionName] -= loss;
-    addLog(character, `Your ${factionName} stock takes a hit (-${loss} BOND).`);
+    addLog(character, `Your ${factionName} stock takes a hit (-${loss} BOND).`, "stocks");
   }
 }
 
