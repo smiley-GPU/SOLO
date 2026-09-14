@@ -2619,6 +2619,30 @@ Two additions to the Archenemy system (§7.3, §13, §20.6):
   `startHunt()`'s usual `notice` stage or `startHuntManual()`'s `track`
   stage.
 
+**Bug fix (chat request: "why doesn't the Archenemy attack during shopping
+at Tier 3/4") — a stale `archenemyId` after the locked-in Archenemy died.**
+`character.archenemyId` used to be set exactly once per Rest-clock cycle
+(`lockInArchenemy()`, only called when `restCount` ticks to 1) and never
+touched again. Killing that specific Archenemy through anything other than
+the Rest-clock's own forced Hunt — a player-initiated Hunt
+(`startHuntManual()`), or them simply turning up as an ordinary mission's
+Assassination target — left `archenemyId` pointing at a person no longer
+in `character.contacts` (moved to the graveyard). Every mechanic keyed off
+it went dormant as a result: `maybeArchenemyAmbush()`'s `!archenemy` check
+above always failed, the Rest-clock's own forced Hunt silently no-op'd
+back to Hub (`startHunt()`'s own dead-Archenemy safety net), and the
+Tier-3+ home-invasion check (§20.6) had nothing to invade with. The gap
+was bounded but could span a full Rest-clock cycle (up to 4 more Rests) or
+longer for a player who mostly just runs jobs without resting — easily
+read as "the ambush doesn't work at all." `killPerson()` (state.js) now
+re-locks a fresh Archenemy immediately (`lockInArchenemy(character)`)
+whenever the person being killed is the one `character.archenemyId`
+currently points to, the same call the clock's own first tick makes.
+(Separately: a character who has genuinely never Rested even once still
+has `archenemyId: null` and sees no ambushes at all — that half is
+original, intentional design, §12.4's "the Rest clock's first tick locks
+one in," not a bug.)
+
 ### 21.2 Mission key challenges (supersedes §16's flat step-ratio Debrief calc)
 
 `determineMissionOutcome()` (game.js) replaces the old one-size-fits-all

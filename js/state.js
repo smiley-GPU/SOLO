@@ -642,6 +642,26 @@ function killPerson(character, personId) {
   if (dead.relationship >= 3 || dead.bloodbrother || dead.archenemy) {
     addLog(character, `${dead.name} ${pick(DATA.obituaries)}`);
   }
+  // Bug fix (chat request: "why doesn't the Archenemy attack during
+  // shopping at Tier 3/4") — character.archenemyId used to be set exactly
+  // once per Rest-clock cycle (lockInArchenemy(), game.js, only fires when
+  // restCount ticks to 1) and never touched again. Killing the locked-in
+  // Archenemy through any path other than the Rest-clock's own forced Hunt
+  // (a manual Hunt, or them simply turning up as an ordinary mission's
+  // target) left archenemyId pointing at a now-dead, no-longer-in-contacts
+  // person — every mechanic keyed off it (maybeArchenemyAmbush()'s
+  // Shop/Workshop/Street-Dojo check, the forced Hunt, the home-invasion
+  // event) went dormant until the clock happened to cycle all the way back
+  // through 0 and up to 1 again, which can take up to 4 more Rests or
+  // never happen at all for a player who mostly just runs jobs. Re-locks a
+  // fresh Archenemy immediately instead, the same call lockInArchenemy()'s
+  // own first tick makes — game.js loads after state.js, but by the time
+  // any gameplay actually calls killPerson() every script has already
+  // finished loading, the same load-order argument addLog()'s own G.hunt
+  // check above relies on.
+  if (character.archenemyId === personId) {
+    lockInArchenemy(character);
+  }
   return dead;
 }
 
