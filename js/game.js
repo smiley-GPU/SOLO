@@ -2466,11 +2466,12 @@ function wireBoostSpend(block, onChange) {
 
 // Item 8 — every generic Challenge roll (never Coffin Hotel's or the
 // Apartment raid/invasion's bespoke inline formulas) goes through here so a
-// 12+ total always nets +1 BOOST (capped 10), regardless of tier — a
+// 13+ total always nets +1 BOOST (capped 10), regardless of tier — a
 // stronger-than-Full success is worth more than a bare Full.
+// Balance pass (chat request) — raised from 12 to 13.
 function resolveRoll(c, attrRank, mods) {
   const result = resolve(attrRank, mods);
-  if (result.total >= 12 && c.boost < 10) {
+  if (result.total >= 13 && c.boost < 10) {
     c.boost = Math.min(10, c.boost + 1);
     addLog(c, `That roll comes back hot (${result.total}) — +1 BOOST (now ${c.boost}).`);
   }

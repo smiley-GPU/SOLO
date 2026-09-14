@@ -1634,10 +1634,10 @@ of costing BONDS, so it's unaffected.
 **A hot roll pays out.** Any Challenge roll (Steps, Encounters, Checkpoint,
 Rest sub-flows, Hunt rolls — everywhere the shared roll-button UI calls
 `resolve()`, not Coffin Hotel's or the Apartment raid's bespoke inline
-formulas) that comes to 12 or more nets an extra +1 BOOST (capped 10),
-regardless of tier — a new shared `resolveRoll(c, attrRank, mods)` wraps
-`resolve()` and is now the one path both `renderChallenge()` and
-`renderHuntRoll()` use.
+formulas) that comes to **13 or more** (raised from 12, balance pass —
+chat request) nets an extra +1 BOOST (capped 10), regardless of tier — a
+new shared `resolveRoll(c, attrRank, mods)` wraps `resolve()` and is now
+the one path both `renderChallenge()` and `renderHuntRoll()` use.
 
 **Spend up to 2 BOOST on one roll.** The old single "Spend 1 BOOST"
 checkbox is now `boostSpendOptionHtml()`/`wireBoostSpend()` — up to
