@@ -2898,7 +2898,16 @@ function runDebrief(forceFailure) {
   if (outcome !== "Failure") {
     let repGain = 1;
     if (basePayout >= 4) repGain += 1;
-    if (job.mission.type === "Assassination") {
+    // UPDATE 3.1 (chat request) — "Shadow of <Location>" (the extra +1 Rep
+    // and the title itself) now also requires the job's Location Heat to
+    // have stayed at 3 or below the whole way through, not just a
+    // successful Assassination outright — a loud hit that spikes Heat past
+    // 3 doesn't earn "Shadow of" anymore, even if the kill itself landed
+    // clean. Heat only ever rises during a job (nothing decays the job's
+    // own Location until Debrief's decayOtherLocations, which explicitly
+    // skips it), so the value read here is already the highest it reached.
+    const finalHeat = (c.locations[job.location.name] || {}).heat;
+    if (job.mission.type === "Assassination" && typeof finalHeat === "number" && finalHeat <= 3) {
       repGain += 1;
       addLog(c, `Word travels: "Shadow of ${job.location.name}."`);
       addTitle(c, `Shadow of ${job.location.name}`);

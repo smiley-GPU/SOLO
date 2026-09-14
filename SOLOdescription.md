@@ -968,8 +968,15 @@ Gained at Debrief (§16) for a non-Failure outcome:
 - **+1** for the mission succeeding at all (Full or Partial Success).
 - **+1** if the job's base payout (§5, before outcome multiplier/Ally
   fee/Side Objective) was **≥4 BONDS**.
-- **+1** if `mission.type === "Assassination"` — logged with the flavor
-  title *"Shadow of `<Location>`"*.
+- **+1** if `mission.type === "Assassination"` **and the job's Location
+  Heat never rose above 3** — logged with the flavor title *"Shadow of
+  `<Location>`"* (revision, chat request: originally granted for any
+  non-Failure Assassination regardless of Heat; a loud hit that spikes
+  Heat past 3 no longer earns it, even if the kill itself landed clean).
+  Checked as `c.locations[job.location.name].heat <= 3` at Debrief — Heat
+  only ever rises during a job (nothing decays the job's own Location until
+  `decayOtherLocations()` right after, which explicitly skips it), so the
+  value read here is already the highest it reached over the whole job.
 - **+1** if the job was a Special Mission (§19.5).
 - **+2** whenever an Archenemy is killed (§13.8) — logged as *"Killer of
   `<name>`"*.
