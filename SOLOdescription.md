@@ -3007,6 +3007,31 @@ else's second item.
   wounded Helper, same as an actually-rolled 7-9 — no BOOST-for-a-Full at
   Debrief, and the mission's own payout multiplier lands at Partial Success
   (0.6x) rather than Full (1x) if this was the deciding roll.
+  **Revision (chat request) — "make the STREET SAMURAI button similar to
+  GEARHEAD and NETRUNNER".** The standalone always-visible button above is
+  gone — STREET SAMURAI now joins the same `swaps` array GEARHEAD/NETRUNNER/
+  WRAITH/WICKED already share for the Combat box, via a new `samuraiEligible`
+  check alongside theirs (`c.profession === "Solo" && !job.classAbility
+  .samuraiUsed && rawAttrs.includes("Combat")`) and a `{key: "STREET
+  SAMURAI", noRoll: true, onUse}` entry. It gets the exact same two
+  behaviors every other swap gets, mechanically unchanged either way: alone
+  in the box (the common case — no WRAITH earned), it renders fully
+  expanded next to "Roll Combat", no click needed; contending with WRAITH
+  for the same box (earned, not profession-gated — a Solo can have both),
+  both collapse into the shared toggle-button row (`.swap-picker`,
+  `G.expandedSwap`) — click STREET SAMURAI to reveal its details, click
+  again to hide them, click WRAITH to switch straight over. `noRoll: true`
+  is the one new wrinkle: `renderRollOption()` assumes a real dice roll
+  (BOOST/Ally-Assist/one-shot checkboxes, live modifier chips, "Roll X"), none
+  of which would do anything to a fixed synthesized Partial, so a sibling
+  `renderSamuraiOption()` renders instead wherever a swap's `noRoll` flag is
+  set — same `.swap-option` box, but just the ability's own
+  `CLASS_FEATURE_DESC` line and a single "Confirm Auto-Success" button that
+  does what the old button's click handler did. Live-tested: solo (no
+  WRAITH) renders fully expanded and resolves into a real Partial whose
+  kill-flavor line (§21 revision above) still correctly reads the equipped
+  weapon; with WRAITH also earned, both collapse into toggle buttons that
+  expand/collapse/switch correctly.
 - **WRAITH** (chat request, same session) — the odd one out: not gated by
   `character.profession` like the four above, but **earned**. A 2nd
   "Shadow of `<Location>`" (§19.1's own revision note) sets

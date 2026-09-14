@@ -2710,6 +2710,13 @@ function renderChallenge(container, step, onContinue, ctx) {
   // shape.
   const wickedEligible = job && c.wicked && job.classAbility && !job.classAbility.wickedUsed
     && rawAttrs.includes("Stealth") && !rawAttrs.includes("Combat");
+  // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
+  // "they can choose to have one auto success in combat challenge. Once a
+  // mission." No gear/attr-swap prerequisite (unlike the four above) — it
+  // replaces the roll itself with a guaranteed outcome rather than
+  // substituting a different attribute.
+  const samuraiEligible = job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed
+    && rawAttrs.includes("Combat");
 
   attrs.forEach(attr => {
     const block = document.createElement("div");
@@ -2766,24 +2773,45 @@ function renderChallenge(container, step, onContinue, ctx) {
         }
       });
     }
+    // UPDATE 3.1 (chat request) — "make the STREET SAMURAI button similar
+    // to GEARHEAD and NETRUNNER": folded into this same swaps array instead
+    // of its own always-visible button bolted on below, so it collapses
+    // into the shared toggle-picker whenever it contends with WRAITH for
+    // the same Combat box (earned, not profession-gated — a Solo can have
+    // both), and otherwise gets the same "renders fully expanded, no click
+    // needed" treatment a lone GEARHEAD/NETRUNNER swap gets. `noRoll: true`
+    // marks it for renderSamuraiOption() below instead of renderRollOption
+    // — it replaces the roll outright with a guaranteed outcome rather than
+    // substituting a different attribute to roll.
+    if (samuraiEligible && attr === "Combat") {
+      swaps.push({
+        key: "STREET SAMURAI", noRoll: true,
+        onUse: () => {
+          job.classAbility.samuraiUsed = true;
+          addLog(c, `${c.name} muscles through on instinct — STREET SAMURAI reflexes take over, messy but effective.`);
+        }
+      });
+    }
 
     if (swaps.length === 1) {
       // The common case, unchanged: a single swap always renders fully
       // expanded, side by side with the real roll.
       const s = swaps[0];
-      renderRollOption(block, s.attr, step, job, holder, c, { label: s.key, onUse: s.onUse });
+      if (s.noRoll) renderSamuraiOption(block, step, job, holder, c, { label: s.key, onUse: s.onUse });
+      else renderRollOption(block, s.attr, step, job, holder, c, { label: s.key, onUse: s.onUse });
     } else if (swaps.length > 1) {
       // UPDATE 3.1 (chat request) — "if you have both wraith and other
       // ability that can change a combat roll, make them buttons": 2+
       // swaps contending for the same box collapse into a row of toggle
       // buttons (one per ability) instead of all rendering fully expanded
-      // at once. Clicking a button reveals that swap's full roll-option
-      // details (mods/BOOST/Ally-Assist/one-shot + its own "Roll X"
-      // confirm button) via the same renderRollOption() the single-swap
-      // case uses; clicking the same button again hides them; clicking a
-      // different ability's button switches directly, no need to close the
-      // first. G.expandedSwap (ephemeral UI state, never persisted — same
-      // idiom as G.shopTab/G.gearTab/G.peopleTab) tracks which one, if any.
+      // at once. Clicking a button reveals that swap's full details (a
+      // roll-option's mods/BOOST/Ally-Assist/one-shot + its own "Roll X"
+      // confirm button via renderRollOption, or STREET SAMURAI's own
+      // description + "Confirm Auto-Success" via renderSamuraiOption);
+      // clicking the same button again hides them; clicking a different
+      // ability's button switches directly, no need to close the first.
+      // G.expandedSwap (ephemeral UI state, never persisted — same idiom as
+      // G.shopTab/G.gearTab/G.peopleTab) tracks which one, if any.
       block.classList.add("has-swap");
       const picker = document.createElement("div");
       picker.className = "swap-picker";
@@ -2801,42 +2829,11 @@ function renderChallenge(container, step, onContinue, ctx) {
       block.appendChild(picker);
       const active = swaps.find(s => s.key === G.expandedSwap);
       if (active) {
-        renderRollOption(block, active.attr, step, job, holder, c, { label: active.key, onUse: active.onUse });
+        if (active.noRoll) renderSamuraiOption(block, step, job, holder, c, { label: active.key, onUse: active.onUse });
+        else renderRollOption(block, active.attr, step, job, holder, c, { label: active.key, onUse: active.onUse });
       }
     }
 
-    // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
-    // "they can choose to have one auto success in combat challenge. Once
-    // a mission." A separate no-roll button, already living in this same
-    // Combat box right under "Roll Combat" — synthesizes a result (matches
-    // renderResultBlock's expected shape) instead of calling resolve() at
-    // all.
-    // Balance pass (chat request): originally synthesized a guaranteed Full
-    // (total 12) — the strongest of the four Class Abilities, since it was
-    // a *free*, *unconditional*, *downside-free* guarantee, usable on any
-    // Combat roll including a mission's key challenge (§21.2). Softened to
-    // a guaranteed Partial (total 8) instead: still an unconditional
-    // "success" — still wins a Combat key challenge outright, §21.2 — but
-    // now runs through applyOutcome()'s normal Partial fallout too (a real
-    // chance of Harm, gear damage, or a wounded Helper, same as if the
-    // player had actually rolled a 7-9), no BOOST-for-a-Full-success at
-    // Debrief, and the mission's own payout multiplier lands at Partial
-    // Success (0.6x) rather than Full (1x) if this was the deciding roll.
-    if (attr === "Combat" && job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed) {
-      const samuraiBtn = document.createElement("button");
-      samuraiBtn.textContent = "STREET SAMURAI: Auto-Success";
-      samuraiBtn.addEventListener("click", () => {
-        job.classAbility.samuraiUsed = true;
-        const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 8, tier: "partial", usedAttr: "Combat" };
-        addLog(c, `${c.name} muscles through on instinct — STREET SAMURAI reflexes take over, messy but effective.`);
-        step.usedAttr = "Combat";
-        holder.pendingResult = result;
-        holder.lastResult = result;
-        persist();
-        render();
-      });
-      block.appendChild(samuraiBtn);
-    }
     container.appendChild(block);
   });
 }
@@ -2920,6 +2917,44 @@ function renderRollOption(parent, attr, step, job, holder, c, swapMeta) {
     render();
   });
   wrap.appendChild(rollBtn);
+  parent.appendChild(wrap);
+}
+
+// UPDATE 3.1 (chat request) — "make the STREET SAMURAI button similar to
+// GEARHEAD and NETRUNNER": the noRoll counterpart to renderRollOption above
+// — same `.swap-option` box/heading treatment and the same swapMeta
+// {label, onUse} shape, but no dice, no modifiers, no BOOST/Ally-Assist/
+// one-shot checkboxes (none of them would do anything — the outcome is a
+// fixed synthesized Partial, not a real roll), just the ability's own
+// description and a single confirm button.
+function renderSamuraiOption(parent, step, job, holder, c, swapMeta) {
+  const wrap = document.createElement("div");
+  wrap.className = "swap-option";
+  parent.classList.add("has-swap");
+  wrap.innerHTML = `<h4>${swapMeta.label} — Auto-Success</h4><p class="muted">${CLASS_FEATURE_DESC["STREET SAMURAI"]}</p>`;
+  const confirmBtn = document.createElement("button");
+  confirmBtn.textContent = "Confirm Auto-Success";
+  confirmBtn.addEventListener("click", () => {
+    swapMeta.onUse();
+    // Balance pass (chat request): originally synthesized a guaranteed Full
+    // (total 12) — the strongest of the four Class Abilities, since it was
+    // a *free*, *unconditional*, *downside-free* guarantee, usable on any
+    // Combat roll including a mission's key challenge (§21.2). Softened to
+    // a guaranteed Partial (total 8) instead: still an unconditional
+    // "success" — still wins a Combat key challenge outright, §21.2 — but
+    // now runs through applyOutcome()'s normal Partial fallout too (a real
+    // chance of Harm, gear damage, or a wounded Helper, same as if the
+    // player had actually rolled a 7-9), no BOOST-for-a-Full-success at
+    // Debrief, and the mission's own payout multiplier lands at Partial
+    // Success (0.6x) rather than Full (1x) if this was the deciding roll.
+    const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 8, tier: "partial", usedAttr: "Combat" };
+    step.usedAttr = "Combat";
+    holder.pendingResult = result;
+    holder.lastResult = result;
+    persist();
+    render();
+  });
+  wrap.appendChild(confirmBtn);
   parent.appendChild(wrap);
 }
 
