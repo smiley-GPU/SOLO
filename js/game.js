@@ -1728,11 +1728,17 @@ function renderGearUp() {
     wrap.appendChild(hireRow);
 
     // Call in a Favor — a contact you're square with (relationship ≥3)
-    // instead of a stranger. Excludes anyone already brought along, and
-    // (todo3.md UPDATE 2.8) a wounded Compi/Amigue — they're sidelined,
-    // not fit for a job.
+    // instead of a stranger. Excludes anyone already brought along, a
+    // wounded Compi/Amigue (todo3.md UPDATE 2.8) — they're sidelined, not
+    // fit for a job — and (UPDATE 3.1, chat request: "the same person
+    // doesn't have two roles at the same time... they can't be giving the
+    // job and helping you") anyone already cast into this job (or the
+    // Board's other slot — see genMissionBoard) as its Employer, Target, or
+    // an Adversary. "Hire backup" (the paid-stranger option just above)
+    // already drew from `job.excludeIds` via getPerson() — this is the one
+    // Helper path that hadn't been checking it.
     const broughtIds = new Set(job.helpers.map(h => h.person.id));
-    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy && !p.wounded && !broughtIds.has(p.id));
+    const eligible = c.contacts.filter(p => p.relationship >= 3 && !p.archenemy && !p.wounded && !broughtIds.has(p.id) && !job.excludeIds.has(p.id));
     if (eligible.length) {
       const allySection = document.createElement("div");
       allySection.className = "section";

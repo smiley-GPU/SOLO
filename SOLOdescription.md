@@ -1385,6 +1385,57 @@ Job 2's Target land on it 300/300 instead. Tier 4 with 2 Tier-4 factions —
 both jobs' Employer and Target 300/300 Tier 4. Tier 1/2 boards unchanged
 (still category-gated, Freelance still allowed) — confirmed no regression.
 
+**Revision (chat request) — "the same person doesn't have two roles at the
+same time: they can't be present at both jobs, they can't be giving the job
+and helping you, etc."** Two real gaps, both closed:
+- **Cross-Board overlap.** `genBoardJob()` used to build its own `excludeIds`
+  from scratch every call — job A's Employer/Target/Adversaries had no way
+  to keep job B from independently drawing the exact same person (or vice
+  versa). It now takes an optional `preExcludeIds`, seeding its own set from
+  it instead of starting empty; `genMissionBoard()` passes job A's
+  `excludeIds` in for job B's generation (the guaranteed-war branch
+  included — it was never exempt from *this*, only from the Employer/Tier-
+  pin retry above), then — since that only stops B from reusing A's people,
+  not the reverse, and A was already fully built before B existed — folds
+  B's now-larger `excludeIds` back into A's. Both Board candidates end up
+  holding the identical combined set, so neither can ever cast the other's
+  Employer, Target, or any Adversary, in either direction.
+- **Employer/Target doubling as a Helper.** Gear Up's "Hire backup" (a
+  paid stranger) already drew from `job.excludeIds` via `getPerson()`, so
+  it already couldn't reach the job's own Employer/Target/Adversaries — but
+  "Call in a Favor" (an existing high-relationship contact) only ever
+  filtered out already-brought Helpers, a wounded Compi/Amigue, and the
+  Archenemy; nothing stopped a contact who happened to be *this job's own
+  Employer* (or Target, or an Adversary) from also showing up there to be
+  hired as backup on their own job. Now filters `!job.excludeIds.has(p.id)`
+  too. Because job.excludeIds is the same object referenced by both these
+  checks and by the cross-Board fix above, this one filter now also
+  transparently keeps a Helper from being drawn out of the Board's
+  *other*, unaccepted job's cast — and a Side Objective's own Target
+  (`takeSideJob()`, already keyed off `job.excludeIds`) inherits the same
+  protection for free, no separate fix needed there.
+
+Deliberately unchanged: the Archenemy can still turn up as an ordinary
+job's Target or Adversary (getPerson()'s `"hostile"` pool has no Archenemy
+exclusion) — that's how the player can kill an Archenemy outside a formal
+Hunt at all (§20.6/UPDATE 3.1's Assassination-always-creates-an-Archenemy
+note), a deliberate feature, not a role conflict. They can never become an
+Employer or Helper regardless, though — both roles require
+`relationship >= 0` (getPerson's `"ally"` pool) and an Archenemy's
+relationship is always deeply negative by construction, so that overlap
+was never actually reachable.
+
+Live-tested: a 500-board Monte Carlo (`genMissionBoard()` called directly,
+no war queued) found **zero** shared person-ids between job A's and job B's
+{Employer, Target, Adversaries} across all 500, and both jobs' `excludeIds`
+always ended the same size (confirming the union); a 200-board run with a
+guaranteed war queued every time showed the same — zero overlap even
+through the forced-war branch. For the Helper fix: a job's own Employer
+was manually pushed to `relationship = 5` (well past the ≥3 threshold) and
+"Call in a Favor" correctly declined to list them at all — the section
+either doesn't render (they were the only eligible contact) or renders
+without them once an unrelated high-relationship contact is also present.
+
 ### 20.3 Background faction missions (supplements §19.7)
 Distinct from §19.7's Power-struggle destroy-attempts (which only fire for
 Power ≥10 attackers, on Rest ticks, and can destroy a faction): once per

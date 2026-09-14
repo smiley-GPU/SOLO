@@ -261,9 +261,15 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 // (0-1) is the odds this job is forced into a mission type that actually
 // grows the Employer's faction Power (§19.2's missionFactionEffects) — a
 // faction "actively trying" to trigger its own §19.7 Power struggle.
-function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories, requiredFactionTier, powerChance) {
+// preExcludeIds (UPDATE 3.1, chat request, optional) — "the same person
+// doesn't have two roles at the same time... they can't be present at both
+// jobs": seeds this job's own excludeIds with the Board's *other* slot's
+// people (its Employer/Target/Adversaries) before this job draws any of its
+// own, so neither Board job can ever cast someone the other already cast —
+// see genMissionBoard, which passes job A's excludeIds in for job B.
+function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories, requiredFactionTier, powerChance, preExcludeIds) {
   const fullLoc = resolveLocation(character, genLocationDef());
-  const excludeIds = new Set();
+  const excludeIds = new Set(preExcludeIds || []);
   // BATCH 2.0 — never draw an Employer from the faction a queued war is
   // already targeting, or a forced-war Special could end up hiring itself.
   const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories, requiredFactionTier);
@@ -348,14 +354,16 @@ function genMissionBoard(character) {
 
   // §20.1 — the Board's two jobs always come from different Employers and
   // different factions (never a repeat of jobA's contact or faction). A
-  // queued war (guaranteed Special Mission) is exempt — it must be exactly
-  // what the Power struggle targeted, so it's never retried against this
-  // (and exempt from the Tier-pin/power-chance above too, same reasoning).
+  // queued war (guaranteed Special Mission) is exempt from the *retry* —
+  // it must be exactly what the Power struggle targeted, so it's never
+  // rerolled against this (and exempt from the Tier-pin/power-chance above
+  // too, same reasoning) — but it's never exempt from the person-level
+  // exclusion just below; jobA.excludeIds is still threaded in regardless.
   let jobB;
   const sameEmployer = candidate => candidate.employer.id === jobA.employer.id || candidate.employer.faction === jobA.employer.faction;
   for (let attempt = 0; attempt < 5; attempt++) {
     if (war) {
-      jobB = genBoardJob(character, capTier, true, true, war);
+      jobB = genBoardJob(character, capTier, true, true, war, null, undefined, undefined, jobA.excludeIds);
       break;
     }
     const higherChance = 10 + 10 * character.restCount;
@@ -364,9 +372,20 @@ function genMissionBoard(character) {
     // slot is already escalating to a higher Tier, a coin flip decides
     // whether it's a Special Mission instead of an ordinary higher-tier job.
     const wantSpecial = wantHigher && randInt(1, 100) <= 50;
-    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial, null, null, jobBTier, powerChance);
+    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial, null, null, jobBTier, powerChance, jobA.excludeIds);
     if (!sameEmployer(jobB)) break;
   }
+  // UPDATE 3.1 (chat request) — "the same person doesn't have two roles at
+  // the same time... they can't be present at both jobs": job B was seeded
+  // with job A's excludeIds above, so it can never reuse job A's people —
+  // but that's one-directional (job A has no idea job B exists yet while
+  // it's generating). Folding job B's ids back into job A's own set makes
+  // it symmetric: both Board candidates end up sharing the same combined
+  // excludeIds, so anything drawn *later* against either job's own set
+  // (Gear Up's Hire/Call-in-a-Favor, a Side Objective — all keyed off
+  // job.excludeIds, game.js) also can't reach into the other job's cast,
+  // even though only one of the two ever actually gets played.
+  jobB.excludeIds.forEach(id => jobA.excludeIds.add(id));
   return [jobA, jobB];
 }
 
