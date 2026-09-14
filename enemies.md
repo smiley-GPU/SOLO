@@ -44,8 +44,8 @@ never bought clean.
 | Power ↓ / R&D → | **1–3 (basic)** | **4–6 (decent)** | **7–10 (hi-tech)** |
 |---|---|---|---|
 | **1–3 (simple)** | **Street Ganger** — a knife or a beat-up pistol, no training, more desperate than dangerous. | **Corner Boy with a Burner Deck** — can't fight worth much, but scavenged a cheap hacking rig and knows just enough to be a nuisance. | **Hangaround with a Railgun** — hasn't been patched in yet, still proving themselves, and got handed (or grabbed) absurdly good hardware doing it. Dangerous by accident, not skill. |
-| **4–6 (hardened)** | **Bar Brawler** — scarred, mean, knows how to hit and take a hit. Fists, a bat, brass knuckles. | **Ganger Enforcer** — proper mid-tier muscle: a real gun, maybe one cheap street cybernetic, knows the block. | **Chrome-Handed Bruiser** — a solid fighter running black-market cyberware they can barely afford — a cyberarm bought on credit from the wrong people. |
-| **7–10 (veteran)** | **Combat-Drugged Gangwar Vet** — pumped full of combat drugs and adrenal boosters, terrifyingly strong, still fights dirty and low-tech: chains, cleavers, a sawed-off. | **Gangwar Vet, Armed Proper** — the same hardened killer, now carrying military-surplus weaponry instead of whatever was lying around. | **Gangwar Vet with a Minigun** — peak street-tier terror: veteran instinct plus top-shelf hardware. A one-person massacre waiting to happen. |
+| **4–6 (hardened)** | **Knuckle-Dragger** — scarred, mean, knows how to hit and take a hit. Fists, a bat, brass knuckles. | **Ganger Enforcer** — proper mid-tier muscle: a real gun, maybe one cheap street cybernetic, knows the block. | **Chrome-Handed Bruiser** — a solid fighter running black-market cyberware they can barely afford — a cyberarm bought on credit from the wrong people. |
+| **7–10 (veteran)** | **Juiced-Up Gangwar Vet** — pumped full of combat drugs and adrenal boosters, terrifyingly strong, still fights dirty and low-tech: chains, cleavers, a sawed-off. | **Gangwar Vet, Armed Proper** — the same hardened killer, now carrying military-surplus weaponry instead of whatever was lying around. | **Gangwar Vet with a Minigun** — peak street-tier terror: veteran instinct plus top-shelf hardware. A one-person massacre waiting to happen. |
 
 ---
 
@@ -58,7 +58,7 @@ than Street at every tier, and the "family" backs its own.
 
 | Power ↓ / R&D → | **1–3 (basic)** | **4–6 (decent)** | **7–10 (hi-tech)** |
 |---|---|---|---|
-| **1–3 (associate)** | **Mob Errand Runner** — low-level associate, a concealed pistol, more nerve than skill. | **Wiretap Watcher** — not a fighter — a surveillance and comms specialist with decent kit, dangerous for what they know more than what they carry. | **Trainee, Overarmed** — still being tested by the family, carrying gear far above the skill to back it up — a loaner nobody expects returned in one piece. |
+| **1–3 (associate)** | **Family Associate** — the lowest formal rung, not yet made, a concealed pistol and more nerve than skill. | **Family Wire Man** — not a fighter — a surveillance and comms man with decent kit, dangerous for what he knows more than what he carries. | **Trainee, Overarmed** — still being tested by the family, carrying gear far above the skill to back it up — a loaner nobody expects returned in one piece. |
 | **4–6 (soldier)** | **Collector** — a knee-breaker, reliable with a bat or knuckledusters, does the family's dirty work in person. | **Capo's Guard** — professional muscle: a decent firearm, basic armor, actual training. | **Made Man, Chromed** — a trusted enforcer the family invested in — real cyberware, a good piece, expected to perform. |
 | **7–10 (made)** | **Blood-Oath Killer** — a legend in the underworld, terrifying in a fight, still prefers a blade. Old-school, personal, a message every time. | **Family Hitter** — veteran contract killer, military-grade weapon, knows precisely how and when to use it. | **Don's Own Enforcer** — the family's best. Fully chromed, a small arsenal, answers only to the top. |
 
@@ -74,9 +74,9 @@ gun."
 
 | Power ↓ / R&D → | **1–3 (basic)** | **4–6 (decent)** | **7–10 (hi-tech)** |
 |---|---|---|---|
-| **1–3 (staff)** | **Rent-a-Cop** — a uniformed guard, a stun baton, mostly there to check badges and call it in. | **Data-Entry Sentinel** — low-tier security tech monitoring the systems, backed by a networked sidearm they're only half-trained on. | **Rookie with a Loaner Exo** — fresh out of onboarding, issued cutting-edge loaner gear they don't fully understand yet. |
+| **1–3 (staff)** | **Facility Security Associate** — entry-level headcount, a stun baton, mostly there to check badges and call it in. | **Security Operations Technician** — low-tier systems monitoring staff, backed by a networked sidearm they're only half-trained on. | **Rookie with a Loaner Exo** — fresh out of onboarding, issued cutting-edge loaner gear they don't fully understand yet. |
 | **4–6 (professional)** | **Floor Security** — trained guard, standard-issue sidearm and vest, knows the building cold. | **Corporate Response Officer** — a proper security professional: a smart-linked weapon, drone backup on call. | **Augmented Response Officer** — the same professional, now cybernetically enhanced and running a combat AI assist. |
-| **7–10 (asset)** | **Old-Guard Enforcer** — a veteran who came up before the tech boom, brutally effective on skill and a sidearm alone. | **Black-Badge Operative** — an elite corporate operative, military-grade loadout, near-unkillable in the field. | **Prototype-Class Cyber-Op** — the bleeding edge: full-body cyberware, experimental weapon systems. Less a person than a walking weapons platform. |
+| **7–10 (asset)** | **Old-Guard Protection Specialist** — a veteran who came up before the tech boom, brutally effective on skill and a sidearm alone. | **Black-Badge Operative** — an elite corporate operative, military-grade loadout, near-unkillable in the field. | **Prototype-Class Cyber-Op** — the bleeding edge: full-body cyberware, experimental weapon systems. Less a person than a walking weapons platform. |
 
 ---
 
@@ -93,3 +93,17 @@ gun."
   `DATA.gear`/Appendix B catalog voice rather than full sentences — these
   read as a name+one-line flavor pair, ready to drop into a `pick()` pool
   the way `DATA.npcProfessions` or `DATA.gear[tier]` already work.
+- **Register, per category** (checked pass, chat request): each category's
+  names should read in *its own* jargon, not a generic cyberpunk-mercenary
+  voice smeared across all three —
+  - **Street** — street/gang slang: "corner boy," "burner," "hangaround,"
+    "chrome," "juiced," "knuckle-dragger." Nothing official, nothing anyone
+    put on a badge.
+  - **Crime** — mob talk: real (or real-adjacent) Cosa Nostra rank and
+    slang — "associate," "made man," "capo," "don," "hitter," "collector,"
+    "blood-oath" — the family's own words for its own people.
+  - **Corpo** — corporate jargon: title-cased job titles and HR euphemism
+    — "Associate," "Technician," "Specialist," "Operative," "onboarding,"
+    "headcount" — never a slur an outsider would use about the guard
+    (a corp doesn't call its own "Rent-a-Cop," it calls him a "Facility
+    Security Associate").
