@@ -295,6 +295,12 @@ button.danger { background: var(--danger); color: #2a0000; }
   background: var(--panel);
 }
 .challenge h4 { margin: 0 0 8px; color: var(--accent); font-size: 14px; }
+/* UPDATE 3.1 (chat request) — a Class Ability swap (GEARHEAD/NETRUNNER)
+   renders as a second roll option inside the same .challenge box as the
+   roll it replaces, set off by a dashed divider and a warn-colored heading
+   so it reads as "instead of the roll above," not a 3rd independent choice. */
+.swap-option { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.swap-option h4 { color: var(--warn); }
 .mods { margin: 8px 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;

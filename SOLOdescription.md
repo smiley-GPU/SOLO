@@ -2601,15 +2601,25 @@ else's second item.
     restored. A Jockey effectively can't lose their one signature ride to
     mission fallout — only ever inconvenienced by it mid-job.
   - *"They can also change one Combat check to a Driving check"* — once
-    per job. `renderChallenge()` (game.js) injects `"Driving"` as an extra
-    offered attr on any step whose real options include Combat but not
-    already Driving, only while `!job.classAbility.gearheadUsed` and the
-    character actually carries a vehicle (`ownsGearForAttr(c, "Driving")`)
-    — reusing the normal roll-block UI (mods, BOOST, Ally Assist, one-shot
-    checkboxes all apply identically) with a `"GEARHEAD — "` label prefix.
-    Clicking its Roll button sets `job.classAbility.gearheadUsed = true`
-    and logs the swap; picking a step's real Driving option instead (when
-    one exists) never touches the flag.
+    per job, only while `!job.classAbility.gearheadUsed` and the character
+    actually carries a vehicle (`ownsGearForAttr(c, "Driving")`). **Revision
+    (chat request) — placement**: originally rendered as its own separate
+    top-level box next to "Roll Combat" (reusing `renderChallenge()`'s
+    per-attr loop via an injected extra entry); moved into a nested
+    `.swap-option` sub-section *inside* the Combat box it substitutes for,
+    right under "Roll Combat" — "so the mechanic is evident to the player."
+    `renderRollOption(parent, attr, step, job, holder, c, swapMeta)` (game.js)
+    is the shared block-builder both the step's own real roll and this
+    substitute now go through: called once per box with `swapMeta: null`
+    for the real attr, then again with `swapMeta: {label, onUse}` to append
+    the swap as a second sub-section in the same box, headed `"GEARHEAD —
+    Roll Driving instead (rank N)"` in `--warn` (amber) and set off by a
+    dashed top divider (`.swap-option` in style.css). Same full roll-block
+    UI either way (mods, BOOST, Ally Assist, one-shot checkboxes). Clicking
+    the swap's Roll button calls `swapMeta.onUse()` — which sets
+    `job.classAbility.gearheadUsed = true` and logs it — right before
+    resolving; picking the box's real "Roll Combat" option instead never
+    touches the flag.
 - **Hacker — NETRUNNER** (chat request, same session): the same
   never-lose-it/limited-swap shape as Jockey's GEARHEAD, mirrored onto
   Hacking instead of Driving.
@@ -2620,13 +2630,16 @@ else's second item.
     Vehicle does); `runDebrief()` reconciles it the same way, right after
     the Jockey vehicle check — pushing the item back if it's gone, restoring
     its Tier if it's merely downgraded.
-  - *"Change one stealth or combat check to hacking"* — once per job.
-    `renderChallenge()` injects `"Hacking"` as an extra offered attr on any
-    step whose real options include Combat **or** Stealth but not already
-    Hacking, while `!job.classAbility.hackerSwapUsed` and the character
-    carries a deck (`ownsGearForAttr(c, "Hacking")`) — labeled
-    `"NETRUNNER — "`. Clicking its Roll button sets
-    `job.classAbility.hackerSwapUsed = true`.
+  - *"Change one stealth or combat check to hacking"* — once per job,
+    while `!job.classAbility.hackerSwapUsed` and the character carries a
+    deck (`ownsGearForAttr(c, "Hacking")`). **Revision (chat request) —
+    placement**: same `renderRollOption()` nested-`.swap-option` treatment
+    as Jockey's GEARHEAD swap above, headed `"NETRUNNER — Roll Hacking
+    instead (rank N)"`. Since NETRUNNER can substitute for *either* Combat
+    or Stealth, a step offering both (e.g. Hold: `Combat alt Stealth`)
+    embeds it in **both** boxes — clicking either resolves the same
+    underlying Hacking roll and spends the same once-per-job flag, so
+    whichever the player clicks first is the one that counts.
 - **Rocker — NATURAL LEADER**: *"they get a one free Hire for a mission."*
   `renderGearUp()`'s "Hire backup for this job" row costs 0 BONDS instead
   of 1 the first time a Rocker uses it per job (`freeHire = c.profession

@@ -2500,103 +2500,58 @@ function renderChallenge(container, step, onContinue, ctx) {
   const rawAttrs = [step.attr, step.alt].filter(Boolean);
   const gatedAttrs = rawAttrs.filter(attr => attrAvailable(c, job, attr));
   const attrs = gatedAttrs.length ? gatedAttrs : rawAttrs;
-  // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — Jockey GEARHEAD
-  // (moved here from the Nomad Turf, chat request): "they can also change
-  // one Combat check to a Driving check," once per mission. Injected as an
-  // extra offered attr (reusing the normal roll block below, labeled
-  // distinctly) rather than a bespoke UI — only when Combat is on offer,
-  // Driving isn't already, and they're actually carrying a vehicle.
+  // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — Jockey GEARHEAD:
+  // "they can also change one Combat check to a Driving check," once per
+  // mission — only when Combat is on offer, Driving isn't already, and
+  // they're actually carrying a vehicle.
   const gearheadEligible = job && c.profession === "Jockey" && job.classAbility && !job.classAbility.gearheadUsed
     && rawAttrs.includes("Combat") && !rawAttrs.includes("Driving") && ownsGearForAttr(c, "Driving");
-  if (gearheadEligible) attrs.push("Driving");
-  // UPDATE 3.1 (chat request) — Hacker: "change one stealth or combat check
-  // to hacking," once per mission. Same injected-extra-attr idiom as
-  // Jockey's GEARHEAD swap above — offered whenever the step's real options
-  // include Combat or Stealth (Hacking isn't already one of them), and
-  // they're actually carrying a deck.
+  // UPDATE 3.1 (chat request) — Hacker NETRUNNER: "change one stealth or
+  // combat check to hacking," once per mission — offered whenever the
+  // step's real options include Combat or Stealth (Hacking isn't already
+  // one of them), and they're actually carrying a deck.
   const hackerSwapEligible = job && c.profession === "Hacker" && job.classAbility && !job.classAbility.hackerSwapUsed
     && (rawAttrs.includes("Combat") || rawAttrs.includes("Stealth")) && !rawAttrs.includes("Hacking") && ownsGearForAttr(c, "Hacking");
-  if (hackerSwapEligible) attrs.push("Hacking");
+
   attrs.forEach(attr => {
-    const isGearheadSwap = gearheadEligible && attr === "Driving";
-    const isHackerSwap = hackerSwapEligible && attr === "Hacking";
     const block = document.createElement("div");
     block.className = "challenge";
-    const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
-    // Ally Assist (todo3.md Persons, §20.1: now up to 3 possible) — each
-    // not-yet-used, not-benched "ally" Helper's one-time +2 to a single
-    // test, consumed on the roll it's checked for. Independent checkboxes —
-    // bringing more helpers means being able to stack more than one.
-    const assistHelpers = job ? job.helpers.filter(h => h.source === "ally" && !h.used && !h.benched) : [];
-    // todo3.md UPDATE 2.8 — "align Amigue/Compi bonus boxes with helper
-    // name": reuses Gear Up's .helper-row/.helper-info layout (§20.21) so
-    // the checkbox sits consistently next to a name/effect stack here too,
-    // instead of a plain inline "Name: +2 to this roll" label.
-    const assistOptions = assistHelpers.map(h =>
-      `<label class="offer helper-row assist-toggle"><div class="helper-info"><div class="helper-name">${h.person.name}</div><div class="helper-effect muted">+2 to this roll</div></div><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /></label>`
-    ).join("");
-    // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
-    // roll now, not auto-applied/burned whenever it happened to be the best
-    // gear for this attribute. One independent checkbox per carried
-    // one-shot item matching this attr.
-    const oneShotItems = oneShotOptionsForAttr(c, attr);
-    const oneShotOptions = oneShotItems.map((item, i) =>
-      `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
-    ).join("");
-    const swapLabel = isGearheadSwap ? "GEARHEAD — " : isHackerSwap ? "NETRUNNER — " : "";
-    block.innerHTML = `<h4>${swapLabel}Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
-    const modsEl = block.querySelector(".mods");
-    const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
-    const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
-    const oneShotChecks = Array.from(block.querySelectorAll(".oneshot-check"));
-    const checkedOneShots = () => oneShotChecks.filter(el => el.checked).map(el => oneShotItems[Number(el.dataset.idx)]);
+    renderRollOption(block, attr, step, job, holder, c, null);
 
-    const refreshMods = () => {
-      const mods = computeModifiers(attr, getBoostSpend(), checkedAssistIds(), job, checkedOneShots());
-      modsEl.innerHTML = mods.length
-        ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
-        : `<span class="chip">no modifiers</span>`;
-    };
-    const getBoostSpend = wireBoostSpend(block, refreshMods); // BATCH 2.1 (item 13)
-    refreshMods();
-    assistChecks.forEach(el => el.addEventListener("change", refreshMods));
-    oneShotChecks.forEach(el => el.addEventListener("change", refreshMods));
-
-    const rollBtn = document.createElement("button");
-    rollBtn.textContent = `Roll ${attr}`;
-    rollBtn.addEventListener("click", () => {
-      const spendAmount = getBoostSpend();
-      const assistIds = checkedAssistIds();
-      const chosenOneShots = checkedOneShots();
-      const mods = computeModifiers(attr, spendAmount, assistIds, job, chosenOneShots);
-      if (spendAmount) c.boost -= spendAmount;
-      if (job && assistIds.length) {
-        job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
-      }
-      consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
-      if (isGearheadSwap) {
-        job.classAbility.gearheadUsed = true;
-        addLog(c, `${c.name} fights it from behind the wheel — GEARHEAD.`);
-      }
-      if (isHackerSwap) {
-        job.classAbility.hackerSwapUsed = true;
-        addLog(c, `${c.name} routes it through the deck instead — NETRUNNER.`);
-      }
-      const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
-      result.usedAttr = attr;
-      step.usedAttr = attr;
-      holder.pendingResult = result;
-      holder.lastResult = result;
-      persist();
-      render();
-    });
-    block.appendChild(rollBtn);
+    // UPDATE 3.1 (chat request) — "place GEARHEAD and NETRUNNER in the same
+    // box as the roll they could replace, so the mechanic is evident to the
+    // player": each swap now renders as a second `.swap-option` sub-section
+    // inside this same attr's box (renderRollOption below), right under the
+    // roll it substitutes for, instead of appearing as its own separate
+    // top-level box next to it. A step offering both Combat and Stealth
+    // gets NETRUNNER embedded in both boxes, since it could replace either
+    // — clicking either one resolves the same underlying Hacking roll and
+    // spends the same once-per-job flag.
+    if (gearheadEligible && attr === "Combat") {
+      renderRollOption(block, "Driving", step, job, holder, c, {
+        label: "GEARHEAD",
+        onUse: () => {
+          job.classAbility.gearheadUsed = true;
+          addLog(c, `${c.name} fights it from behind the wheel — GEARHEAD.`);
+        }
+      });
+    }
+    if (hackerSwapEligible && (attr === "Combat" || attr === "Stealth")) {
+      renderRollOption(block, "Hacking", step, job, holder, c, {
+        label: "NETRUNNER",
+        onUse: () => {
+          job.classAbility.hackerSwapUsed = true;
+          addLog(c, `${c.name} routes it through the deck instead — NETRUNNER.`);
+        }
+      });
+    }
 
     // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
     // "they can choose to have one auto success in combat challenge. Once
-    // a mission." A separate no-roll button on the Combat block only —
-    // synthesizes a result (matches renderResultBlock's expected shape)
-    // instead of calling resolve() at all.
+    // a mission." A separate no-roll button, already living in this same
+    // Combat box right under "Roll Combat" — synthesizes a result (matches
+    // renderResultBlock's expected shape) instead of calling resolve() at
+    // all.
     // Balance pass (chat request): originally synthesized a guaranteed Full
     // (total 12) — the strongest of the four Class Abilities, since it was
     // a *free*, *unconditional*, *downside-free* guarantee, usable on any
@@ -2625,6 +2580,82 @@ function renderChallenge(container, step, onContinue, ctx) {
     }
     container.appendChild(block);
   });
+}
+
+// Renders one roll option (checkboxes, live modifier chips, Roll button)
+// into `parent` — either the outer `.challenge` box itself (the step's own
+// real attr, swapMeta null) or a nested `.swap-option` sub-section within
+// that same box (a Class Ability substitute roll, swapMeta = {label,
+// onUse}). Factored out of renderChallenge (UPDATE 3.1, chat request) so
+// GEARHEAD/NETRUNNER's swap renders inside the box of the roll they
+// replace instead of as a separate top-level box — see renderChallenge's
+// attrs.forEach above for where each is invoked.
+function renderRollOption(parent, attr, step, job, holder, c, swapMeta) {
+  const wrap = document.createElement("div");
+  if (swapMeta) wrap.className = "swap-option";
+  const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
+  // Ally Assist (todo3.md Persons, §20.1: now up to 3 possible) — each
+  // not-yet-used, not-benched "ally" Helper's one-time +2 to a single
+  // test, consumed on the roll it's checked for. Independent checkboxes —
+  // bringing more helpers means being able to stack more than one.
+  const assistHelpers = job ? job.helpers.filter(h => h.source === "ally" && !h.used && !h.benched) : [];
+  // todo3.md UPDATE 2.8 — "align Amigue/Compi bonus boxes with helper
+  // name": reuses Gear Up's .helper-row/.helper-info layout (§20.21) so
+  // the checkbox sits consistently next to a name/effect stack here too,
+  // instead of a plain inline "Name: +2 to this roll" label.
+  const assistOptions = assistHelpers.map(h =>
+    `<label class="offer helper-row assist-toggle"><div class="helper-info"><div class="helper-name">${h.person.name}</div><div class="helper-effect muted">+2 to this roll</div></div><input type="checkbox" class="assist-check" data-person-id="${h.person.id}" /></label>`
+  ).join("");
+  // PATCH 2.4 (todo3.md) — one-shot ("1S") gear is an opt-in choice per
+  // roll now, not auto-applied/burned whenever it happened to be the best
+  // gear for this attribute. One independent checkbox per carried
+  // one-shot item matching this attr.
+  const oneShotItems = oneShotOptionsForAttr(c, attr);
+  const oneShotOptions = oneShotItems.map((item, i) =>
+    `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
+  ).join("");
+  const heading = swapMeta ? `${swapMeta.label} — Roll ${attr} instead (rank ${c.attrs[attr]})` : `Roll ${attr} (rank ${c.attrs[attr]})`;
+  wrap.innerHTML = `<h4>${heading}</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
+  const modsEl = wrap.querySelector(".mods");
+  const assistChecks = Array.from(wrap.querySelectorAll(".assist-check"));
+  const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
+  const oneShotChecks = Array.from(wrap.querySelectorAll(".oneshot-check"));
+  const checkedOneShots = () => oneShotChecks.filter(el => el.checked).map(el => oneShotItems[Number(el.dataset.idx)]);
+
+  const refreshMods = () => {
+    const mods = computeModifiers(attr, getBoostSpend(), checkedAssistIds(), job, checkedOneShots());
+    modsEl.innerHTML = mods.length
+      ? mods.map(m => `<span class="chip ${m.value > 0 ? "pos" : "neg"}">${m.label} ${m.value > 0 ? "+" : ""}${m.value}</span>`).join("")
+      : `<span class="chip">no modifiers</span>`;
+  };
+  const getBoostSpend = wireBoostSpend(wrap, refreshMods); // BATCH 2.1 (item 13)
+  refreshMods();
+  assistChecks.forEach(el => el.addEventListener("change", refreshMods));
+  oneShotChecks.forEach(el => el.addEventListener("change", refreshMods));
+
+  const rollBtn = document.createElement("button");
+  rollBtn.textContent = `Roll ${attr}`;
+  rollBtn.addEventListener("click", () => {
+    const spendAmount = getBoostSpend();
+    const assistIds = checkedAssistIds();
+    const chosenOneShots = checkedOneShots();
+    const mods = computeModifiers(attr, spendAmount, assistIds, job, chosenOneShots);
+    if (spendAmount) c.boost -= spendAmount;
+    if (job && assistIds.length) {
+      job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
+    }
+    consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
+    if (swapMeta) swapMeta.onUse();
+    const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
+    result.usedAttr = attr;
+    step.usedAttr = attr;
+    holder.pendingResult = result;
+    holder.lastResult = result;
+    persist();
+    render();
+  });
+  wrap.appendChild(rollBtn);
+  parent.appendChild(wrap);
 }
 
 function attrAvailable(c, job, attr) {
