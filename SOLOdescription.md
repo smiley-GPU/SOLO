@@ -989,7 +989,15 @@ Gained at Debrief (§16) for a non-Failure outcome:
   use for their own attr — see §21.3's WRAITH entry.
 - **+1** if the job was a Special Mission (§19.5).
 - **+2** whenever an Archenemy is killed (§13.8) — logged as *"Killer of
-  `<name>`"*.
+  `<name>`"*. **Revision (chat request) — WICKED**: `character.killerCount`
+  (`applyHuntKillReward()`, game.js) tracks how many times this has ever
+  fired, the same shape as `shadowCount`/WRAITH just above. The 1st still
+  titles *"Killer of `<name>`"*; the 2nd instead sets `character.wicked =
+  true` and titles **WICKED**; the 3rd and beyond add no title and no
+  extra flavor line — the +2 Reputation itself still applies every time,
+  unaffected. WICKED is the mirror of WRAITH: the same permanent,
+  profession-independent unlock, granting a once-per-job Stealth-to-Combat
+  swap instead of WRAITH's Combat-to-Stealth — see §21.3's WICKED entry.
 - **+1** whenever a contact becomes a Bloodbrother (§14) — logged as
   *"Friend of `<name>`"*.
 
@@ -2551,13 +2559,13 @@ position, since a forced step (the Transport-ambush or "Caught!" insert,
 
 "Each Character class has a special ability that is available once in a
 mission." `job.classAbility = {gearheadUsed, samuraiUsed, freeHireUsed,
-hackerSwapUsed, wraithUsed}` (all `false`, `buildJobFromCandidate()`)
-tracks each per job, so every new job refreshes all five regardless of
-whether the last one used them. Four of the five key off
-`character.profession` — every one of the four Professions (§4.1's table,
-including Jockey) has exactly one; the three Turfs have none. The 5th,
-**WRAITH**, is earned instead of profession-gated — see its own entry
-below, after Solo's.
+hackerSwapUsed, wraithUsed, wickedUsed}` (all `false`,
+`buildJobFromCandidate()`) tracks each per job, so every new job refreshes
+all six regardless of whether the last one used them. Four of the six key
+off `character.profession` — every one of the four Professions (§4.1's
+table, including Jockey) has exactly one; the three Turfs have none. The
+other two, **WRAITH** and **WICKED**, are earned instead of
+profession-gated — see their own entries below, after Solo's.
 
 **Revision (chat request, same session as §21.1-21.2)**: GEARHEAD originally
 shipped keyed to the Nomad **Turf** rather than a Profession — inconsistent
@@ -2705,13 +2713,31 @@ else's second item.
   `.swap-option` inside the Combat box, identical placement/UI to Jockey's
   GEARHEAD swap (§21.3, right above). Clicking it sets
   `job.classAbility.wraithUsed = true`.
+- **WICKED** (chat request, same session) — WRAITH's mirror: earned off a
+  2nd "Killer of `<name>`" (§13.8/§19.1's own revision note,
+  `applyHuntKillReward()`) instead of a 2nd Shadow, setting
+  `character.wicked = true` the same permanent, profession-independent way.
+  *"Change Stealth to Combat once in a mission"* — `wickedEligible`
+  (`c.wicked && !job.classAbility.wickedUsed && rawAttrs.includes("Stealth")
+  && !rawAttrs.includes("Combat")` — the exact reverse of `wraithEligible`'s
+  condition, no gear prerequisite either) offers `"WICKED — Roll Combat
+  instead"` as a `.swap-option` inside the **Stealth** box instead of the
+  Combat one. Clicking it sets `job.classAbility.wickedUsed = true`. Since
+  WRAITH only ever attaches to a Combat box and WICKED only ever to a
+  Stealth box, the two can never compete for the same box even on a
+  character who's earned both — each still renders as its own single swap
+  unless it happens to land alongside NETRUNNER (which can attach to
+  either box), in which case the swap picker below applies.
 
 **Two-or-more swaps on the same box — the swap picker (chat request)**:
-since WRAITH is earned independently of Profession, a character can now
-own two Combat-box swaps at once (a Jockey or Hacker who's also earned
-WRAITH — GEARHEAD+WRAITH or NETRUNNER+WRAITH; the two profession-gated
-swaps can never coexist on one character, since Professions are mutually
-exclusive). "If you have both wraith and other ability that can change a
+since WRAITH/WICKED are earned independently of Profession, a character
+can now own two swaps contending for the same box at once: a Combat box
+gets GEARHEAD+WRAITH (Jockey) or NETRUNNER+WRAITH (Hacker); a Stealth box
+gets NETRUNNER+WICKED (Hacker) — the two profession-gated swaps
+(GEARHEAD/NETRUNNER) can never coexist on one character, since Professions
+are mutually exclusive, and WRAITH/WICKED themselves never compete with
+each other since one only ever attaches to Combat and the other only ever
+to Stealth. "If you have both wraith and other ability that can change a
 combat roll, make them buttons" — `renderChallenge()` collects every
 eligible swap for a box into one array first: exactly one renders exactly
 as described above (fully expanded, side by side, unchanged); two or more

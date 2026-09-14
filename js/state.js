@@ -78,6 +78,13 @@ function defaultCharacter(name, profession, turf) {
     // is the unlocked-or-not flag the ability itself reads.
     shadowCount: 0,
     wraith: false,
+    // UPDATE 3.1 (chat request) — WICKED: the same track/unlock shape as
+    // WRAITH above, off "Killer of X" (a killed Archenemy, §13.8) instead
+    // of "Shadow of X" — once per job, swap a Stealth check to Combat
+    // (wickedEligible in renderChallenge, game.js) — the reverse pairing
+    // of WRAITH's Combat-to-Stealth.
+    killerCount: 0,
+    wicked: false,
     pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
     stocks: {}, // §20.5 EuroStoxx — {factionName: amount}, Corpo factions only
     apartment: null, // §20.5 — {locationName, tier, security: [names]} once bought
@@ -351,9 +358,11 @@ function migrateCharacter(character) {
   if (typeof character.reputation !== "number") character.reputation = 1;
   if (!character.titles) character.titles = []; // INTERFACE 2.4.1
   if (!character.pendingWars) character.pendingWars = [];
-  // UPDATE 3.1 (chat request) — WRAITH progress/unlock.
+  // UPDATE 3.1 (chat request) — WRAITH/WICKED progress/unlock.
   if (typeof character.shadowCount !== "number") character.shadowCount = 0;
   if (typeof character.wraith !== "boolean") character.wraith = false;
+  if (typeof character.killerCount !== "number") character.killerCount = 0;
+  if (typeof character.wicked !== "boolean") character.wicked = false;
   Object.entries(character.factionStandings).forEach(([name, standing]) => {
     const f = DATA.factions.find(f => f.name === name);
     if (!standing.category) standing.category = f ? f.type : "None";

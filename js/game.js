@@ -965,10 +965,11 @@ function buildJobFromCandidate(candidate) {
     // once-per-mission special, tracked per job so it refreshes every time
     // out: Jockey's Combat-to-Driving swap (renderChallenge), Rocker's free
     // Hire (renderGearUp), Solo's auto-success (renderChallenge), Hacker's
-    // Stealth-or-Combat-to-Hacking swap (renderChallenge). wraithUsed
-    // (chat request) is the odd one out — not profession-gated, unlocked by
-    // earning a 2nd "Shadow of X" (§19.1) instead; see wraithEligible.
-    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false, hackerSwapUsed: false, wraithUsed: false },
+    // Stealth-or-Combat-to-Hacking swap (renderChallenge). wraithUsed/
+    // wickedUsed (chat request) are the odd ones out — not profession-gated,
+    // unlocked by earning a 2nd "Shadow of X"/"Killer of X" instead; see
+    // wraithEligible/wickedEligible.
+    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false, hackerSwapUsed: false, wraithUsed: false, wickedUsed: false },
     pendingStepPenalty: null, // UPDATE 3.0 MISSIONS — see MISSION_SEQUENCES' alertOnFail (engine.js)
     jockeyVehicleSnapshot: null, // UPDATE 3.0/3.1 GEARHEAD — set on "Head Out", restored at Debrief
     hackerDeckSnapshot: null // UPDATE 3.1 (chat request) — same never-lose-it protection, for a Hacker's deck
@@ -2520,6 +2521,12 @@ function renderChallenge(container, step, onContinue, ctx) {
   // Jockey's vehicle/Hacker's deck) — it's an earned trait, not equipment.
   const wraithEligible = job && c.wraith && job.classAbility && !job.classAbility.wraithUsed
     && rawAttrs.includes("Combat") && !rawAttrs.includes("Stealth");
+  // UPDATE 3.1 (chat request) — WICKED: earned by a 2nd "Killer of X"
+  // (§13.8, applyHuntKillReward) — "change Stealth to Combat once in a
+  // mission," the reverse pairing of WRAITH above. Same no-gear-prerequisite
+  // shape.
+  const wickedEligible = job && c.wicked && job.classAbility && !job.classAbility.wickedUsed
+    && rawAttrs.includes("Stealth") && !rawAttrs.includes("Combat");
 
   attrs.forEach(attr => {
     const block = document.createElement("div");
@@ -2564,6 +2571,15 @@ function renderChallenge(container, step, onContinue, ctx) {
         onUse: () => {
           job.classAbility.wraithUsed = true;
           addLog(c, `${c.name} is already gone before the fight starts — WRAITH.`);
+        }
+      });
+    }
+    if (wickedEligible && attr === "Stealth") {
+      swaps.push({
+        key: "WICKED", attr: "Combat",
+        onUse: () => {
+          job.classAbility.wickedUsed = true;
+          addLog(c, `${c.name} drops the quiet approach and goes straight for the throat — WICKED.`);
         }
       });
     }
@@ -3802,7 +3818,20 @@ function applyHuntKillReward(c) {
   addLog(c, `${hunt.archenemy.name} goes down for good. You walk away with a ${weapon.name}, a surge of BOOST, and 2 more BONDS.`);
   gainReputation(c, 2); // §19.1
   addLog(c, `Reputation +2 — "Killer of ${hunt.archenemy.name}" (now ${c.reputation}, ${reputationTitle(c)}).`);
-  addTitle(c, `Killer of ${hunt.archenemy.name}`);
+  // UPDATE 3.1 (chat request) — WICKED: same track/upgrade shape as
+  // WRAITH (§19.1's Shadow-of note) — a 2nd "Killer of X" upgrades the
+  // title track to WICKED instead of stacking more Killer entries, and
+  // permanently unlocks a Stealth-to-Combat swap (the reverse of WRAITH's
+  // Combat-to-Stealth). The +2 Reputation above still applies every time,
+  // unaffected — only the title/flavor-line progression changes.
+  c.killerCount = (c.killerCount || 0) + 1;
+  if (c.killerCount === 1) {
+    addTitle(c, `Killer of ${hunt.archenemy.name}`);
+  } else if (c.killerCount === 2) {
+    c.wicked = true;
+    addLog(c, `${c.name} isn't just a killer anymore — the street starts calling them WICKED.`);
+    addTitle(c, `WICKED`);
+  }
   killPerson(c, hunt.archenemy.id);
   hunt.stage = "resolved-kill";
 }
