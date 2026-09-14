@@ -3091,6 +3091,13 @@ function runDebrief(forceFailure) {
         addTitle(c, `Shadow of ${job.location.name}`);
       } else if (c.shadowCount === 2) {
         c.wraith = true;
+        // UPDATE 3.1 (chat request) — "when you get Wraith or Wicked,
+        // remove the first title under reputation": WRAITH supersedes the
+        // one earlier "Shadow of X" entry (shadowCount was exactly 1
+        // before this, so there's exactly one to find), not something to
+        // keep sitting alongside it in the list.
+        const shadowIdx = c.titles.findIndex(t => t.startsWith("Shadow of "));
+        if (shadowIdx !== -1) c.titles.splice(shadowIdx, 1);
         addLog(c, `${c.name} isn't just a shadow anymore — the street starts calling them WRAITH.`);
         addTitle(c, `WRAITH`);
       }
@@ -3932,6 +3939,12 @@ function applyHuntKillReward(c) {
     addTitle(c, `Killer of ${hunt.archenemy.name}`);
   } else if (c.killerCount === 2) {
     c.wicked = true;
+    // UPDATE 3.1 (chat request) — "when you get Wraith or Wicked, remove
+    // the first title under reputation": WICKED supersedes the one
+    // earlier "Killer of X" entry (killerCount was exactly 1 before this,
+    // so there's exactly one to find).
+    const killerIdx = c.titles.findIndex(t => t.startsWith("Killer of "));
+    if (killerIdx !== -1) c.titles.splice(killerIdx, 1);
     addLog(c, `${c.name} isn't just a killer anymore — the street starts calling them WICKED.`);
     addTitle(c, `WICKED`);
   }

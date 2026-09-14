@@ -983,10 +983,17 @@ Gained at Debrief (§16) for a non-Failure outcome:
   `character.wraith = true` and titles **WRAITH** — "further Shadow titles
   are not shown or have no effect": the 3rd and beyond add no title and no
   extra flavor line (the +1 Reputation itself still applies every time,
-  unaffected). WRAITH is a permanent, profession-independent unlock (unlike
-  every other Class Ability, §21.3, which is gated by `character.profession`)
-  granting the same once-per-job Combat-to-Stealth swap GEARHEAD/NETRUNNER
-  use for their own attr — see §21.3's WRAITH entry.
+  unaffected). **Further revision (chat request)** — earning WRAITH also
+  removes the one earlier "Shadow of `<Location>`" entry from
+  `character.titles` (`c.titles.findIndex(t => t.startsWith("Shadow of
+  "))`, spliced out — always exactly one to find, since `shadowCount` was
+  exactly 1 before this branch runs) rather than leaving both titles
+  sitting in the list side by side; any *other* titles (Friend of X, Killer
+  of Y, ...) are untouched. WRAITH is a permanent, profession-independent
+  unlock (unlike every other Class Ability, §21.3, which is gated by
+  `character.profession`) granting the same once-per-job Combat-to-Stealth
+  swap GEARHEAD/NETRUNNER use for their own attr — see §21.3's WRAITH
+  entry.
 - **+1** if the job was a Special Mission (§19.5).
 - **+2** whenever an Archenemy is killed (§13.8) — logged as *"Killer of
   `<name>`"*. **Revision (chat request) — WICKED**: `character.killerCount`
@@ -995,9 +1002,12 @@ Gained at Debrief (§16) for a non-Failure outcome:
   titles *"Killer of `<name>`"*; the 2nd instead sets `character.wicked =
   true` and titles **WICKED**; the 3rd and beyond add no title and no
   extra flavor line — the +2 Reputation itself still applies every time,
-  unaffected. WICKED is the mirror of WRAITH: the same permanent,
-  profession-independent unlock, granting a once-per-job Stealth-to-Combat
-  swap instead of WRAITH's Combat-to-Stealth — see §21.3's WICKED entry.
+  unaffected. **Further revision (chat request)** — same as WRAITH above:
+  earning WICKED removes the one earlier "Killer of `<name>`" entry
+  (`findIndex(t => t.startsWith("Killer of "))`, spliced out). WICKED is
+  the mirror of WRAITH: the same permanent, profession-independent unlock,
+  granting a once-per-job Stealth-to-Combat swap instead of WRAITH's
+  Combat-to-Stealth — see §21.3's WICKED entry.
 - **+1** whenever a contact becomes a Bloodbrother (§14) — logged as
   *"Friend of `<name>`"*.
 
