@@ -125,7 +125,11 @@ attrs[turf.boost] = min(3, attrs[turf.boost]+1)
 
 **Revision (§21.3)**: a 4th Profession, **Jockey** (Driving, Combat;
 Roadhouse Revolver + Steel Jackal), joined this table — see §21.3 for its
-Class Ability.
+Class Ability. A balance pass (§21.3) also changed Hacker's 2nd item to a
+one-shot ("Burner ICE Breaker" in place of "Patchwork ICE Program") and gave
+Rocker a 2nd item it didn't have before ("Back-Alley Barter Chip," Social) —
+every Profession now starts with exactly 2 items covering 2 distinct
+mechanics.
 
 **Turfs:**
 | Turf | Boost | Starting BONDS | Starting gear | Contact faction | Extra |
@@ -2547,6 +2551,23 @@ unchanged otherwise — it still grants +Driving, 2 BONDS, and a starting
 Kombi Wagon (§4.1's Turfs table); it just no longer carries a Class Ability
 of its own. `job.nomadVehicleSnapshot` was renamed `job.jockeyVehicleSnapshot`
 to match.
+
+**Balance pass (chat request)**: a "check the four Professions for balance"
+review found Solo's guaranteed auto-success clearly ahead of Jockey's/
+Hacker's probabilistic swaps, which in turn were ahead of Rocker's — whose
+ability is pure economy (no protection, no success-guarantee, no swap) and
+who was also the only Profession starting with just one item instead of
+two. Two starting-gear fixes landed from that review (§4.1's table): Hacker's
+2nd item changed from "Patchwork ICE Program" (a 2nd *permanent* Hacking
+item — functionally redundant with the Bootleg Deck, since `bestGearBonus()`
+only ever counts the single best item per attr) to "Burner ICE Breaker," a
+one-shot (reusing `DATA.oneShotGear`'s existing Professional-tier entry,
+priced in at Street-tier bonus like any other starting item) — a genuinely
+distinct 2nd mechanic instead of an inert spare; and Rocker gained a 2nd
+item it never had, "Back-Alley Barter Chip" (Social). Every Profession now
+starts with exactly 2 items covering 2 distinct mechanics. The Class
+Ability power gap itself (Solo > Jockey/Hacker > Rocker) was flagged
+but left untouched pending a decision on which direction to take it.
 
 - **Jockey — GEARHEAD**: two effects, one passive and permanent for the
   whole job, one a limited-use swap.

@@ -11,8 +11,21 @@ const PROFESSIONS = {
   // Combat check to Hacking; the deck itself is never lost for good, same
   // never-lose-it protection as Jockey's GEARHEAD vehicle (see
   // hackerDeckSnapshot, game.js).
-  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Bootleg Deck", attr: "Hacking" }, { name: "Patchwork ICE Program", attr: "Hacking" }], desc: "Hacking & Social. Starts with a deck and a program — NETRUNNER, once a job." },
-  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Ostrava Runner", attr: "Driving" }], desc: "Social & Driving. Starts with a ride and a crew contact." },
+  // Balance pass (chat request): the 2nd starting item used to be
+  // "Patchwork ICE Program" — a 2nd permanent Hacking item, which
+  // bestGearBonus() (only the single best item per attr counts) made
+  // functionally redundant with the Bootleg Deck. Swapped for a one-shot
+  // ("1S", §20.10/BATCH 2.1) instead — a genuinely distinct 2nd mechanic
+  // (an opt-in one-time boost) rather than a spare that does nothing until
+  // the first one breaks. Reuses the existing Professional-tier one-shot
+  // catalog entry (DATA.oneShotGear, data.js); defaultCharacter's `tier:
+  // g.tier || "Street"` still prices it in at Street-tier bonus like every
+  // other piece of starting gear.
+  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Bootleg Deck", attr: "Hacking" }, { name: "Burner ICE Breaker", attr: "Hacking", tags: ["1S"] }], desc: "Hacking & Social. Starts with a deck and a one-shot ICE breaker — NETRUNNER, once a job." },
+  // Balance pass (chat request): a 2nd starting item (Social), matching the
+  // other three Professions' 2-items-covering-2-mechanics loadout — Rocker
+  // used to be the only one with just one starting item.
+  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Ostrava Runner", attr: "Driving" }, { name: "Back-Alley Barter Chip", attr: "Social" }], desc: "Social & Driving. Starts with a ride, a social item, and a crew contact." },
   // UPDATE 3.1 (chat request) — GEARHEAD moved here from the Nomad Turf: a
   // Profession, not a Turf, is what gates a Class Ability (§21.3), so it
   // needed a Profession home of its own instead of piggybacking on Nomad.
