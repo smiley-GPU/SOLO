@@ -398,3 +398,23 @@ Make each tier have all these places as choices. Choices should be from differen
 
 ## UPDATE 2.9
 * make sure that wounded helpers Compi/AMigue heal after one tick/night/turn
+
+## UPDATE 3.0
+## ARCHENEMY
+* Archenemy should not hit on helper that are on a Job.
+* When character has reached Tier 3, the Archnenemy can try to HUNT character when he chooses a shop/workshop/street-dojo option. When player clicks the purchase, there is a 20% chance that he bumps to an Archenemy and there is a shootout in the shop/workshop/street-dojo. Describe accordingly. Run full HUNT sequence. Social roll, you hear that Archenemy is on a warpath near by. Successful avoid, let's you do business as normal.
+
+## MISSIONS
+* there is a key challenge or two in each mission. If these challenges succeeds, the the mission succeeds.
+| Assassination | 
+    Stealth "Approach the target undetected." if partial  -1 (alerted) to following combat; if failure -2 (code RED) to following combat; → Combat/Hacking "Take out the target..." this is the key challenge. Even partial is success considering mission result, but creates Archenemy of killed persons sibling.
+| Heist | Hacking/Stealth "Breach the security..." similar to assassination: partial next stealth check is harder (-1); failure and the check is (-2) → Stealth "Grab the target..." this is the key challenge. Partial success is also a success but with a normal partial cost.
+| Transport | Driving/Stealth "Run the transit route..." → Social/Combat "Get past a checkpoint..." | the target that has been transported has to survive. Each failure gives 2 damage, is partial gives 1. The target can take 3 damage.
+| Delay | Social/Stealth "Stall them without tipping your hand." (repeated per Time unit) | If Heat gets to 5, the mission is over and a failure. Partial raises 1, if it doesn't already do so; Failure in check raises Heat by 2, if it doesn't already do so.
+| Hold | Combat/Stealth "Hold the position against the next wave." (repeated per Time unit) | As long as character survives the mission is success.
+
+## CHARACTER CLASS ABILITY
+* each Character class has a specia lability that is available once in a mission.
+* Nomad: GEARHEAD: they never lose their vehicle. It can be damaged (or destroyed) by effect but it always returns to him after mission. They can also change one Combat check to Driving check.
+* Rocker: NATURAL LEADER: they get a one free Hire for a mission.
+* SOLO: STREET SAMURAI: they can choose to have one auto success in combat challenge. Once a mission.

@@ -547,6 +547,23 @@ function tagBloodbrother(character, person) {
   person.bloodbrother = true;
 }
 
+// UPDATE 3.0 (todo3.md MISSIONS) — "Even partial is success considering
+// mission result, but creates Archenemy of killed person's sibling": a
+// Partial on an Assassination's key Combat/Hacking challenge still kills
+// the target (runDebrief, game.js), but leaves a fresh relative gunning for
+// the player — a brand-new Archenemy, distinct from every other trigger in
+// §7.3/tagArchenemy above (the Rest clock, a botched-and-spotted hit, a
+// relationship hitting -5, a turned Amigue).
+function spawnArchenemySibling(character, deadTarget) {
+  const sibling = { name: genName(), faction: deadTarget.faction, profession: pick(DATA.npcProfessions), relationship: -3, favor: 0 };
+  sibling.id = character.nextPersonId++;
+  assignFactionTier(character, sibling);
+  character.contacts.push(sibling);
+  tagArchenemy(character, sibling);
+  addLog(character, `${deadTarget.name}'s sibling, ${sibling.name}, swears revenge for the botched hit. You've made an Archenemy.`, "archenemy");
+  return sibling;
+}
+
 function killPerson(character, personId) {
   const idx = character.contacts.findIndex(p => p.id === personId);
   if (idx === -1) return null;

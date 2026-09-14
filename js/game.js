@@ -203,6 +203,9 @@ function renderShopBox() {
     btn.textContent = item.bought ? "Bought" : "Buy";
     btn.disabled = c.bonds < price || item.bought;
     btn.addEventListener("click", () => {
+      // UPDATE 3.0 (todo3.md ARCHENEMY) — a Tier-3+ shop trip risks an
+      // Archenemy ambush; a triggered one aborts the purchase entirely.
+      if (maybeArchenemyAmbush(c, "shop")) { persist(); render(); return; }
       c.bonds -= price;
       const bought = { name: item.name, attr: item.attr, heal: item.heal, armor: item.armor, tier: item.tier, tags: item.tags };
       c.gear.push(bought);
@@ -283,6 +286,8 @@ function renderWorkshopBox() {
     btn.textContent = `${isMod ? "Mod" : "Repair"} — ${cost} BOND${cost === 1 ? "" : "S"}`;
     btn.disabled = c.bonds < cost;
     btn.addEventListener("click", () => {
+      // UPDATE 3.0 (todo3.md ARCHENEMY) — same Tier-3+ ambush risk as the Shop.
+      if (maybeArchenemyAmbush(c, "workshop")) { persist(); render(); return; }
       c.bonds -= cost;
       item.tier = nextTier;
       if (item.armor) item.armor = DATA.gearTierBonus[nextTier]; // full charges at the new tier
@@ -447,6 +452,8 @@ function renderTrainingBox() {
     btn.textContent = `Train ${attr} (${rank} → ${Math.min(5, rank + 1)}) — ${cost} BOND${cost === 1 ? "" : "S"} + 1 BOOST`;
     btn.disabled = rank >= 5 || c.bonds < cost || c.boost < 1;
     btn.addEventListener("click", () => {
+      // UPDATE 3.0 (todo3.md ARCHENEMY) — same Tier-3+ ambush risk as the Shop.
+      if (maybeArchenemyAmbush(c, "street-dojo")) { persist(); render(); return; }
       c.bonds -= cost;
       c.boost -= 1;
       c.attrs[attr] = Math.min(5, c.attrs[attr] + 1);
@@ -953,7 +960,14 @@ function buildJobFromCandidate(candidate) {
     checkpoint: { pre: { done: false }, post: { done: false }, stage: null, agency: null, activeStage: null },
     outcome: null,
     sideObjective: null, // "more BONDS" side job (todo3.md ADD) — see takeSideJob
-    abortFlow: null // todo3.md INTERFACE 2.4.2 — "Abort Mission" Evasion roll, see renderAbortBox
+    abortFlow: null, // todo3.md INTERFACE 2.4.2 — "Abort Mission" Evasion roll, see renderAbortBox
+    // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — each profession's
+    // once-per-mission special, tracked per job so it refreshes every time
+    // out: Nomad's Combat-to-Driving swap (renderChallenge), Rocker's free
+    // Hire (renderGearUp), Solo's auto-success (renderChallenge).
+    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false },
+    pendingStepPenalty: null, // UPDATE 3.0 MISSIONS — see MISSION_SEQUENCES' alertOnFail (engine.js)
+    nomadVehicleSnapshot: null // UPDATE 3.0 ARCHENEMY/GEARHEAD — set on "Head Out", restored at Debrief
   };
 }
 
@@ -1382,13 +1396,18 @@ function findBloodbrother(c) {
 // Amigue/Compi, relationship ≥3) or the player's Apartment, whichever is
 // available (a coin flip between the two if both are). No-ops if neither a
 // friend nor an apartment exists, or the Archenemy is somehow already gone.
-function resolveArchenemyClockEvent(c) {
+// job (UPDATE 3.0, todo3.md ARCHENEMY, optional): the just-finished job —
+// "Archenemy should not hit on helpers that are on a Job" excludes anyone
+// who rode along as one of this job's Helpers from the "hit a friend" pool
+// (they're out on the job with the player, not an easy mark at home).
+function resolveArchenemyClockEvent(c, job) {
   if (c.restCount !== 3) return;
   if (Math.random() >= 0.5) return;
   const archenemy = c.contacts.find(p => p.id === c.archenemyId);
   if (!archenemy) return;
 
-  const friends = c.contacts.filter(p => p.relationship >= 3 && p.id !== archenemy.id);
+  const helperIds = new Set((job && job.helpers ? job.helpers : []).map(h => h.person.id));
+  const friends = c.contacts.filter(p => p.relationship >= 3 && p.id !== archenemy.id && !helperIds.has(p.id));
   const hasApartment = !!c.apartment;
   if (!friends.length && !hasApartment) return;
 
@@ -1583,14 +1602,20 @@ function renderGearUp() {
   wrap.appendChild(helperSection);
 
   if (job.helpers.length < 3) {
+    // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Rocker's NATURAL
+    // LEADER: "they get a one free Hire for a mission" — waives the 1 BOND
+    // cost on the first Hire per job only, then behaves normally.
+    const freeHire = c.profession === "Rocker" && !job.classAbility.freeHireUsed;
+    const hireCost = freeHire ? 0 : 1;
     const hireRow = document.createElement("div");
     hireRow.className = "offer helper-row";
-    hireRow.innerHTML = `<div class="helper-info"><div class="helper-name">Hire backup for this job</div><div class="helper-effect muted">+1 to a random specialty attribute</div></div><div class="helper-actions"><span class="helper-cost muted">1 BOND</span></div>`;
+    hireRow.innerHTML = `<div class="helper-info"><div class="helper-name">Hire backup for this job</div><div class="helper-effect muted">+1 to a random specialty attribute</div></div><div class="helper-actions"><span class="helper-cost muted">${freeHire ? "Free (Natural Leader)" : "1 BOND"}</span></div>`;
     const hireBtn = document.createElement("button");
     hireBtn.textContent = "Hire";
-    hireBtn.disabled = c.bonds < 1;
+    hireBtn.disabled = c.bonds < hireCost;
     hireBtn.addEventListener("click", () => {
-      c.bonds -= 1;
+      if (freeHire) job.classAbility.freeHireUsed = true;
+      else c.bonds -= 1;
       const person = getPerson(c, "ally", job.excludeIds);
       // §20.6 — their passive bonus attr comes from their profession's
       // specialty (a random pick between the two, for a profession with two)
@@ -1648,6 +1673,13 @@ function renderGearUp() {
     if (vehicle) {
       vehicle.preMissionLocation = vehicleLocation(vehicle);
       vehicle.location = "Moving";
+    }
+    // UPDATE 3.0 — Nomad GEARHEAD: "they never lose their vehicle... it
+    // always returns to him after mission" — snapshot it here (name/tier
+    // survive even if degradeGearItem/loseVehicle later strips or removes
+    // it mid-job) so runDebrief can restore it once the job's over.
+    if (c.turf === "Nomad" && vehicle) {
+      job.nomadVehicleSnapshot = { name: vehicle.name, tier: vehicle.tier, tags: vehicle.tags, preMissionLocation: vehicle.preMissionLocation };
     }
     G.phase = advanceFromGearUp();
     persist(); render();
@@ -2073,6 +2105,8 @@ function finalizeChallengeCommon() {
 function finalizeStep(step) {
   const job = G.job;
   const c = G.character;
+  const loc = c.locations[job.location.name]; // UPDATE 3.0 — snapshotted before the roll's own fallout can raise it
+  const heatBefore = loc ? loc.heat : 0;
   const res = finalizeChallengeCommon();
   if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
   // Side-objective steps (todo3.md ADD: "more BONDS") are tracked
@@ -2081,8 +2115,33 @@ function finalizeStep(step) {
   if (step.sideObjective) {
     job.sideObjective.results.push({ attr: res.usedAttr, tier: res.tier });
   } else {
-    job.stepResults.push({ attr: res.usedAttr, tier: res.tier });
+    // UPDATE 3.0 (todo3.md MISSIONS) — carry the step's keyChallenge tag
+    // (MISSION_SEQUENCES, engine.js) onto its result so determineMissionOutcome
+    // can find it by tag instead of array position (a forced step spliced in
+    // right after it would otherwise shift the indices).
+    job.stepResults.push({ attr: res.usedAttr, tier: res.tier, keyChallenge: !!step.keyChallenge });
     applySpecialMissionBloodbrotherDanger(c, job, res);
+
+    // Assassination's Approach / Heist's Breach: a Partial/Fail hands the
+    // very next main-sequence step a -1/-2 ("alerted"/"code RED") penalty —
+    // consumed automatically by computeModifiers() once job.stepIndex moves
+    // onto that next step (see its stepIndex-keyed check there).
+    if (step.alertOnFail && res.tier !== "full") {
+      job.pendingStepPenalty = {
+        stepIndex: job.stepIndex + 1,
+        value: res.tier === "fail" ? -2 : -1,
+        label: res.tier === "fail" ? "Code RED" : "Alerted"
+      };
+    }
+
+    // Transport: the person/cargo being moved takes damage on either of its
+    // two main steps — Fail 2, Partial 1, out of 3 before they die in
+    // transit (checked at Debrief, determineMissionOutcome).
+    if (step.targetDamage && (res.tier === "partial" || res.tier === "fail")) {
+      const dmg = res.tier === "fail" ? 2 : 1;
+      job.mission.targetDamage = (job.mission.targetDamage || 0) + dmg;
+      addLog(c, `${job.mission.target.name} takes a hit in transit (${job.mission.targetDamage}/3).`);
+    }
   }
 
   // Transport: a failed transit leg (Driving or its Stealth alt) risks an
@@ -2109,6 +2168,31 @@ function finalizeStep(step) {
     persist();
     render();
     return;
+  }
+
+  // UPDATE 3.0 (todo3.md MISSIONS, Delay) — "If Heat gets to 5, the mission
+  // is over and a failure. Partial raises 1, if it doesn't already do so;
+  // Failure in check raises Heat by 2, if it doesn't already do so." The
+  // generic §19.9 fallout table sometimes picks "lose equipment" instead of
+  // Heat on a Social/Stealth Partial/Fail — this tops Heat up to the
+  // guaranteed amount regardless of what it actually picked, then checks
+  // the Heat-5 mission-ending condition.
+  if (job.mission.type === "Delay" && !step.sideObjective && loc) {
+    if (res.usedAttr === "Social" || res.usedAttr === "Stealth") {
+      const wanted = res.tier === "fail" ? 2 : res.tier === "partial" ? 1 : 0;
+      if (wanted) {
+        const gained = loc.heat - heatBefore;
+        if (gained < wanted) raiseHeat(c, loc, wanted - gained);
+      }
+    }
+    if (loc.heat >= 5) {
+      addLog(c, `Heat hits 5 at ${job.location.name} — the whole thing falls apart.`);
+      G.phase = "debrief";
+      runDebrief(true); // forceFailure
+      persist();
+      render();
+      return;
+    }
   }
 
   job.stepIndex++;
@@ -2404,7 +2488,16 @@ function renderChallenge(container, step, onContinue, ctx) {
   const rawAttrs = [step.attr, step.alt].filter(Boolean);
   const gatedAttrs = rawAttrs.filter(attr => attrAvailable(c, job, attr));
   const attrs = gatedAttrs.length ? gatedAttrs : rawAttrs;
+  // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Nomad GEARHEAD: "they
+  // can also change one Combat check to a Driving check," once per mission.
+  // Injected as an extra offered attr (reusing the normal roll block below,
+  // labeled distinctly) rather than a bespoke UI — only when Combat is on
+  // offer, Driving isn't already, and they're actually carrying a vehicle.
+  const gearheadEligible = job && c.turf === "Nomad" && job.classAbility && !job.classAbility.gearheadUsed
+    && rawAttrs.includes("Combat") && !rawAttrs.includes("Driving") && ownsGearForAttr(c, "Driving");
+  if (gearheadEligible) attrs.push("Driving");
   attrs.forEach(attr => {
+    const isGearheadSwap = gearheadEligible && attr === "Driving";
     const block = document.createElement("div");
     block.className = "challenge";
     const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
@@ -2428,7 +2521,8 @@ function renderChallenge(container, step, onContinue, ctx) {
     const oneShotOptions = oneShotItems.map((item, i) =>
       `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
     ).join("");
-    block.innerHTML = `<h4>Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
+    const gearheadLabel = isGearheadSwap ? "GEARHEAD — " : "";
+    block.innerHTML = `<h4>${gearheadLabel}Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
     const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
     const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
@@ -2458,6 +2552,10 @@ function renderChallenge(container, step, onContinue, ctx) {
         job.helpers.forEach(h => { if (assistIds.includes(h.person.id)) h.used = true; });
       }
       consumeOneShotItems(c, chosenOneShots); // PATCH 2.4
+      if (isGearheadSwap) {
+        job.classAbility.gearheadUsed = true;
+        addLog(c, `${c.name} fights it from behind the wheel — GEARHEAD.`);
+      }
       const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
       result.usedAttr = attr;
       step.usedAttr = attr;
@@ -2467,6 +2565,27 @@ function renderChallenge(container, step, onContinue, ctx) {
       render();
     });
     block.appendChild(rollBtn);
+
+    // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
+    // "they can choose to have one auto success in combat challenge. Once
+    // a mission." A separate no-roll button on the Combat block only —
+    // synthesizes a Full result (matches renderResultBlock's expected
+    // shape) instead of calling resolve() at all.
+    if (attr === "Combat" && job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed) {
+      const samuraiBtn = document.createElement("button");
+      samuraiBtn.textContent = "STREET SAMURAI: Auto-Success";
+      samuraiBtn.addEventListener("click", () => {
+        job.classAbility.samuraiUsed = true;
+        const result = { d1: 0, d2: 0, diceSum: 0, attrRank: c.attrs.Combat, modifiers: [], modTotal: 0, total: 12, tier: "full", usedAttr: "Combat" };
+        addLog(c, `${c.name} moves like nothing can touch them — STREET SAMURAI reflexes take over.`);
+        step.usedAttr = "Combat";
+        holder.pendingResult = result;
+        holder.lastResult = result;
+        persist();
+        render();
+      });
+      block.appendChild(samuraiBtn);
+    }
     container.appendChild(block);
   });
 }
@@ -2520,6 +2639,14 @@ function computeModifiers(attr, spendBoost, assistIds, job, chosenOneShots) {
   }
   // §19.5 — every Challenge on a Special Mission carries an extra -1.
   if (job && job.mission && job.mission.special) mods.push({ label: "Special Mission", value: -1 });
+  // UPDATE 3.0 (todo3.md MISSIONS) — Assassination's Approach / Heist's
+  // Breach (MISSION_SEQUENCES' alertOnFail, engine.js): a Partial/Fail
+  // there hands the very next main-sequence step a -1/-2 penalty. Keyed to
+  // job.stepIndex so it self-expires once that next step resolves — no
+  // explicit clearing needed.
+  if (job && job.pendingStepPenalty && job.pendingStepPenalty.stepIndex === job.stepIndex) {
+    mods.push({ label: job.pendingStepPenalty.label, value: job.pendingStepPenalty.value });
+  }
   // §20.1 — up to 3 Helpers: each "hire" Helper gives a passive +1 to their
   // assigned attr; 2+ active (non-benched) Helpers of any kind give the
   // whole crew +1 Combat / -1 Stealth.
@@ -2574,22 +2701,79 @@ function renderResultBlock(container, result, onContinue) {
 }
 
 // ---------- DEBRIEF ----------
-// forceFailure (todo3.md INTERFACE 2.4.2 — Abort Mission): skips the step-
-// ratio calculation entirely and always lands on Failure, same as isDown(c),
-// regardless of how many steps already succeeded before the player bailed.
-function runDebrief(forceFailure) {
-  const c = G.character, job = G.job;
+// The old flat step-ratio calc (score/max, thresholds 0.85/0.4), kept as
+// determineMissionOutcome()'s fallback for Delay (past the Heat-5 check,
+// UPDATE 3.0 doesn't specify anything else for it) and as a defensive net
+// for Assassination/Heist if their key-challenge step is somehow missing
+// (e.g. a job aborted before it was ever reached).
+function legacyRatioOutcome(job) {
   const score = job.stepResults.reduce((a, r) => a + (r.tier === "full" ? 2 : r.tier === "partial" ? 1 : 0), 0);
   const max = Math.max(1, job.stepResults.length * 2);
   const ratio = score / max;
+  if (ratio >= 0.85) return { outcome: "Full Success", mult: 1 };
+  if (ratio >= 0.4) return { outcome: "Partial Success", mult: 0.6 };
+  return { outcome: "Failure", mult: 0 };
+}
+
+// UPDATE 3.0 (todo3.md MISSIONS) — "there is a key challenge or two in each
+// mission. If these challenges succeed, the mission succeeds" — replaces the
+// old one-size-fits-all step-ratio Debrief calc with a rule per mission
+// type. forceFailure (todo3.md INTERFACE 2.4.2 — Abort Mission) and isDown
+// both short-circuit to Failure exactly as before, ahead of any type rule.
+function determineMissionOutcome(c, job, forceFailure) {
+  if (isDown(c) || forceFailure) return { outcome: "Failure", mult: 0 };
+
+  switch (job.mission.type) {
+    case "Assassination":
+    case "Heist": {
+      // The key challenge (Combat/Hacking "Take out the target" for an
+      // Assassination, Stealth "Grab the target" for a Heist) decides it on
+      // its own — a Partial still kills/steals the goal ("even partial is
+      // success"), only a Fail on that specific step is a Failure. Escape/
+      // Getaway and the Approach/Breach setup step still play out and still
+      // apply their own fallout, but don't move this needle.
+      const key = job.stepResults.find(r => r.keyChallenge);
+      if (!key) return legacyRatioOutcome(job); // defensive net — see comment above
+      if (key.tier === "fail") return { outcome: "Failure", mult: 0 };
+      return key.tier === "full" ? { outcome: "Full Success", mult: 1 } : { outcome: "Partial Success", mult: 0.6 };
+    }
+    case "Transport": {
+      // "The target that has been transported has to survive... the target
+      // can take 3 damage" (job.mission.targetDamage, tallied in
+      // finalizeStep). 0 damage taken is a clean Full Success, any damage
+      // short of dying is a Partial, 3+ is a Failure (the target dies in
+      // transit — see runDebrief's existing Transport/Hold kill handling).
+      const dmg = job.mission.targetDamage || 0;
+      if (dmg >= 3) return { outcome: "Failure", mult: 0 };
+      return dmg === 0 ? { outcome: "Full Success", mult: 1 } : { outcome: "Partial Success", mult: 0.6 };
+    }
+    case "Delay": {
+      // "If Heat gets to 5, the mission is over and a failure" — already
+      // caught mid-job by finalizeStep's own check (forceFailure, above),
+      // so reaching here at all means Heat stayed under 5. No further
+      // UPDATE 3.0 rule for the non-failure case — falls back to the old
+      // step-ratio calc for Full vs. Partial.
+      return legacyRatioOutcome(job);
+    }
+    case "Hold":
+      // "As long as character survives the mission is success" — isDown
+      // already ruled that out above, so anything else is a clean win,
+      // regardless of how any individual wave went.
+      return { outcome: "Full Success", mult: 1 };
+    default:
+      return legacyRatioOutcome(job);
+  }
+}
+
+// forceFailure (todo3.md INTERFACE 2.4.2 — Abort Mission): forces a
+// Failure outcome regardless of how the job was actually going, same as
+// isDown(c) — see determineMissionOutcome above.
+function runDebrief(forceFailure) {
+  const c = G.character, job = G.job;
 
   // A Failure pays nothing (todo3.md ADD: "Failed mission should not give
-  // you any payment") — both Failure branches below get mult 0.
-  let outcome, mult;
-  if (isDown(c) || forceFailure) { outcome = "Failure"; mult = 0; }
-  else if (ratio >= 0.85) { outcome = "Full Success"; mult = 1; }
-  else if (ratio >= 0.4) { outcome = "Partial Success"; mult = 0.6; }
-  else { outcome = "Failure"; mult = 0; }
+  // you any payment") — every Failure path below gets mult 0.
+  const { outcome, mult } = determineMissionOutcome(c, job, forceFailure);
 
   const basePayout = estimatePayout(job); // §19.1 — "job's base payout, before outcome multiplier"
   const payout = Math.round(basePayout * mult);
@@ -2661,8 +2845,14 @@ function runDebrief(forceFailure) {
   // a failed Transport/Hold kills whoever was being moved/protected.
   if (job.mission.type === "Assassination") {
     if (outcome !== "Failure") {
+      const keyResult = job.stepResults.find(r => r.keyChallenge);
       killPerson(c, job.mission.target.id);
       addLog(c, `${job.mission.target.name} won't be a problem for anyone again.`);
+      // UPDATE 3.0 (todo3.md MISSIONS) — "Even partial is success
+      // considering mission result, but creates Archenemy of killed
+      // person's sibling": the kill goes through either way, but a Partial
+      // on the key Combat/Hacking challenge leaves a fresh Archenemy behind.
+      if (keyResult && keyResult.tier === "partial") spawnArchenemySibling(c, job.mission.target);
       // §19.7 — a guaranteed Special Mission queued by a faction Power
       // struggle's 7-9 result destroys the target faction outright on
       // success (todo3.md FACTIONS: "if the mission succeeds then it
@@ -2763,8 +2953,9 @@ function runDebrief(forceFailure) {
   // §20.6 — while the Rest clock sits one tick short of a forced Hunt, the
   // Archenemy might move on a friend or the player's home instead of
   // waiting. Checked after payment (per todo3.md) and before the Heat/
-  // EurCop raid check below.
-  resolveArchenemyClockEvent(c);
+  // EurCop raid check below. UPDATE 3.0 (todo3.md ARCHENEMY) — passes job
+  // so it can exclude this job's own Helpers from the "hit a friend" pool.
+  resolveArchenemyClockEvent(c, job);
 
   // §20.7 — a job that ended hot enough (Corpo Heat 4-5, or Crime Heat 5)
   // has a 20% chance of the same agency that would've manned a checkpoint
@@ -2779,6 +2970,25 @@ function runDebrief(forceFailure) {
       delete item.preMissionLocation;
     }
   });
+
+  // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Nomad GEARHEAD: "they
+  // never lose their vehicle. It can be damaged (or destroyed) by effect
+  // but it always returns to him after mission." Reconciles whatever the
+  // job's own fallout did to it (degradeGearItem's tier drop, or
+  // loseVehicle's outright removal) against the snapshot taken on "Head
+  // Out" — restoring the item if it's gone, or its Tier if it's merely
+  // downgraded.
+  if (job.nomadVehicleSnapshot) {
+    const snap = job.nomadVehicleSnapshot;
+    const item = c.gear.find(g => g.attr === "Driving" && g.name === snap.name);
+    if (!item) {
+      c.gear.push({ name: snap.name, attr: "Driving", tier: snap.tier, tags: snap.tags, carried: true, location: snap.preMissionLocation || "Street" });
+      addLog(c, `${snap.name} rolls back up outside your place, patched together — GEARHEAD, you never really lose it.`);
+    } else if (DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.indexOf(snap.tier)) {
+      item.tier = snap.tier;
+      addLog(c, `${snap.name} comes back fixed up to spec overnight — GEARHEAD keeps it running.`);
+    }
+  }
 
   job.outcome = outcome;
   job.payout = totalPayout;
@@ -2992,6 +3202,48 @@ function startHuntManual(personId) {
   G.phase = "hunt";
   persist();
   render();
+}
+
+// UPDATE 3.0 (todo3.md ARCHENEMY) — "When character has reached Tier 3, the
+// Archenemy can try to HUNT character when he chooses a shop/workshop/
+// street-dojo option. When player clicks the purchase, there is a 20%
+// chance that he bumps to an Archenemy and there is a shootout." Called at
+// the top of the Shop/Workshop/Street-Dojo purchase handlers, before any
+// BONDS/BOOST are spent — if it returns true, the purchase is aborted
+// entirely (nothing spent, nothing bought) and a full Hunt takes over
+// instead. A Social roll first ("you hear that an Archenemy is on a
+// warpath nearby") — success just flavors the transaction and lets it
+// proceed as normal; only a Fail actually triggers the ambush.
+function maybeArchenemyAmbush(c, origin) {
+  if (reputationTier(c) < 3) return false;
+  if (!c.archenemyId) return false;
+  const archenemy = c.contacts.find(p => p.id === c.archenemyId && p.archenemy);
+  if (!archenemy) return false;
+  if (randInt(1, 100) > 20) return false;
+
+  const gearBonus = bestGearBonus(c, "Social");
+  const { sum } = roll2d6();
+  const total = sum + c.attrs.Social + (gearBonus ? gearBonus.bonus : 0) + cyberAttrModifier(c, "Social");
+  addLog(c, `Word on the street: ${archenemy.name} is on a warpath nearby.`);
+  if (total >= 7) {
+    addLog(c, `You clock it in time and keep your head down — business as usual at the ${origin}.`);
+    return false;
+  }
+  addLog(c, `${archenemy.name} finds you first — a shootout breaks out right there in the ${origin}!`, "archenemy");
+  startHuntAmbush(origin);
+  return true;
+}
+
+// The Hunt this ambush drops into: no "notice" roll of its own (the Social
+// check above already stood in for it) — straight to the Fight/Run/Break-Off
+// combat stage, same as any other Hunt from there.
+function startHuntAmbush(origin) {
+  const c = G.character;
+  const archenemy = c.contacts.find(p => p.id === c.archenemyId);
+  if (!archenemy) { G.phase = "hub"; persist(); render(); return; }
+  G.hunt = { archenemy, stage: "combat", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false };
+  addLog(c, `Gunfire in the ${origin} — everyone else scatters. It's just you and ${archenemy.name} now.`, "archenemy");
+  G.phase = "hunt";
 }
 
 function renderHunt() {

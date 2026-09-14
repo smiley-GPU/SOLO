@@ -199,6 +199,13 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
     assetFlavor = type === "Delay" ? pick(DATA.delayFlavor) : pick(DATA.assetTypes[assetType]); // BATCH 2.1 (item 14)
   }
 
+  // UPDATE 3.0 (todo3.md MISSIONS) — Transport tracks cumulative damage to
+  // the person/cargo being moved across its two main steps (see
+  // MISSION_SEQUENCES' targetDamage tag and finalizeStep, game.js): a Fail
+  // deals 2, a Partial deals 1, out of 3 the target can take before dying
+  // in transit (checked at Debrief, determineMissionOutcome, game.js).
+  const targetDamage = type === "Transport" ? 0 : null;
+
   // 1/2/3 (easy/medium/hard) — drives the BOND payout table (game.js
   // estimatePayout) and the vehicle-gating rule (renderChallenge in game.js).
   const tierDifficulty = { weak: 1, tough: 2, elite: 3 };
@@ -217,6 +224,7 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
     difficulty,
     assetType,
     assetFlavor,
+    targetDamage,
     special: false, // §19.5 — set true/named by genBoardJob() for the Mission Board's escalated slot
     specialName: null,
     forcedFactionWar: null // §19.7 — set when this Special Mission comes from a queued faction Power struggle
@@ -314,20 +322,29 @@ function genMissionBoard(character) {
   return [jobA, jobB];
 }
 
+// UPDATE 3.0 (todo3.md MISSIONS) — "there is a key challenge or two in each
+// mission. If these challenges succeed, the mission succeeds": each type's
+// deciding step carries `keyChallenge: true` (read by determineMissionOutcome,
+// game.js — replaces the old flat step-ratio Debrief calc for these five
+// types). Assassination's Approach and Heist's Breach carry `alertOnFail`
+// instead — a Partial/Fail there hands a -1/-2 penalty to the very next
+// step (job.pendingStepPenalty, applied in finalizeStep/computeModifiers,
+// game.js), not to the mission's outcome directly. Transport's two steps
+// both carry `targetDamage` — see genMission's targetDamage field above.
 const MISSION_SEQUENCES = {
   Assassination: [
-    { attr: "Stealth", desc: "Approach the target undetected." },
-    { attr: "Combat", alt: "Hacking", desc: "Take out the target — a gun or a blade up close, or a burst of lethal ICE through the net." },
+    { attr: "Stealth", desc: "Approach the target undetected.", alertOnFail: true },
+    { attr: "Combat", alt: "Hacking", desc: "Take out the target — a gun or a blade up close, or a burst of lethal ICE through the net.", keyChallenge: true },
     { attr: "Stealth", alt: "Driving", desc: "Escape the scene." }
   ],
   Heist: [
-    { attr: "Hacking", alt: "Stealth", desc: "Breach the security around the target." },
-    { attr: "Stealth", desc: "Grab the target and get clear of the room." },
+    { attr: "Hacking", alt: "Stealth", desc: "Breach the security around the target.", alertOnFail: true },
+    { attr: "Stealth", desc: "Grab the target and get clear of the room.", keyChallenge: true },
     { attr: "Driving", desc: "Getaway before the block locks down." }
   ],
   Transport: [
-    { attr: "Driving", alt: "Stealth", desc: "Run the transit route to the drop-off — fast and open, or slow and quiet." },
-    { attr: "Social", alt: "Combat", desc: "Get past a checkpoint on the way." }
+    { attr: "Driving", alt: "Stealth", desc: "Run the transit route to the drop-off — fast and open, or slow and quiet.", targetDamage: true },
+    { attr: "Social", alt: "Combat", desc: "Get past a checkpoint on the way.", targetDamage: true }
   ],
   Delay: [
     { attr: "Social", alt: "Stealth", desc: "Stall them without tipping your hand." }

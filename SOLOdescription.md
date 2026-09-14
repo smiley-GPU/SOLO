@@ -2418,6 +2418,167 @@ pair does.
 
 ---
 
+## 21. UPDATE 3.0: Archenemy shop ambushes, key-challenge missions, and Class Abilities
+
+`todo3.md` rows 402-420 ("UPDATE 3.0", "ARCHENEMY", "MISSIONS", "CHARACTER
+CLASS ABILITY"). Three independent additions layered on top of everything
+above; where a rule here narrows or replaces an earlier one (§10.1's fixed
+step sequences, §16's Debrief ratio calc, §20.6's home-invasion friend
+pool), this section is canonical.
+
+### 21.1 Archenemy: no hitting a job's own Helpers, and Tier-3+ Downtime ambushes
+
+Two additions to the Archenemy system (§7.3, §13, §20.6):
+
+- **Helpers are off-limits for the home-invasion "hit a friend" event**
+  (`resolveArchenemyClockEvent()`, game.js, §20.6): it now takes the
+  just-finished `job` as a second argument and excludes every contact who
+  rode along as one of that job's Helpers (`job.helpers`) from the eligible
+  "friend" pool — they were out on the job with the player, not an easy
+  mark left alone at home. No change to the Apartment-invasion branch or
+  to the pick odds otherwise.
+- **Downtime ambushes** (`maybeArchenemyAmbush()`, game.js): once the
+  player reaches Reputation Tier 3 (§19.1) and has a live, tagged Archenemy
+  (`character.archenemyId`), every click of the Shop's "Buy," the
+  Workshop's "Repair"/"Mod," or the Street-Dojo's "Train" button first
+  rolls a flat 20% chance of the Archenemy having tracked them down there.
+  If it fires, an ambient Social check runs (`2d6 + Social rank + best
+  owned Social gear + cyberware`, no job/Helper modifiers — there's no job
+  in progress): 7+ ("you clock it in time and keep your head down") lets
+  the purchase go through exactly as normal, nothing spent yet beyond the
+  roll; ≤6 aborts the purchase entirely (no BONDS/BOOST spent, nothing
+  bought) and drops straight into a Hunt (`startHuntAmbush()`) — flavored
+  as a shootout breaking out in the shop/workshop/street-dojo, opening
+  directly on the Hunt's `combat` stage (no separate "notice" roll of its
+  own; the Social check above already served that purpose) rather than
+  `startHunt()`'s usual `notice` stage or `startHuntManual()`'s `track`
+  stage.
+
+### 21.2 Mission key challenges (supersedes §16's flat step-ratio Debrief calc)
+
+`determineMissionOutcome()` (game.js) replaces the old one-size-fits-all
+"score/max step ratio, thresholds 0.85/0.4" Debrief calculation (§16) with
+a rule specific to each mission type — "there is a key challenge or two in
+each mission; if these challenges succeed, the mission succeeds." `isDown`/
+Abort-Mission `forceFailure` still short-circuit to Failure ahead of every
+type rule, exactly as before. `MISSION_SEQUENCES` (engine.js) tags the
+relevant step(s) per type; `finalizeStep()` copies the tag onto the pushed
+`job.stepResults` entry (`keyChallenge`) rather than relying on array
+position, since a forced step (the Transport-ambush or "Caught!" insert,
+§10.2) spliced in right after a tagged step would otherwise shift indices:
+
+- **Assassination**: the Combat/Hacking "Take out the target" step is
+  tagged `keyChallenge`. Its own tier alone decides the mission — Fail is a
+  Failure, Partial *or* Full is a success ("even partial is success
+  considering mission result"), independent of how the Approach or Escape
+  steps went. The Stealth "Approach the target undetected" step is tagged
+  `alertOnFail` instead (see below). A **Partial** on the key challenge
+  still kills the target, but also spawns a fresh Archenemy —
+  `spawnArchenemySibling()` (state.js) generates a new contact sharing the
+  dead target's faction, relationship -5 immediately, `tagArchenemy()`'d on
+  the spot ("creates Archenemy of killed person's sibling") — distinct from
+  every other Archenemy trigger in §7.3 (the Rest clock, a botched-and-
+  spotted hit, the relationship floor, a turned Amigue).
+- **Heist**: the Stealth "Grab the target" step is tagged `keyChallenge`
+  the same way — Fail is a Failure, Partial/Full a success (a Partial still
+  applies its own normal fallout cost, unchanged). The Hacking/Stealth
+  "Breach the security" step is tagged `alertOnFail`.
+- **`alertOnFail` chaining** (Assassination's Approach, Heist's Breach): a
+  Partial there hands the *very next* main-sequence step a flat **-1**
+  modifier ("Alerted"); a Fail hands **-2** ("Code RED"). Stored as
+  `job.pendingStepPenalty = {stepIndex, value, label}` targeting
+  `job.stepIndex + 1` at the moment it's set; `computeModifiers()` shows it
+  as a chip only while `job.stepIndex` still matches that target, so it
+  self-expires the moment that next step resolves — no explicit clearing
+  needed, and a forced step inserted in between doesn't consume it early
+  (the forced step isn't the one the penalty's `stepIndex` was aimed at).
+- **Transport**: both main-sequence steps ("Run the transit route,"
+  "Get past a checkpoint," tagged `targetDamage`) chip away at the
+  transported person/cargo's health — a Fail deals 2, a Partial deals 1,
+  tallied on `job.mission.targetDamage` (initialized 0 by `genMission()`
+  for this type only). A forced Transport-ambush step isn't tagged, so it
+  never adds damage on top. At Debrief: 0 damage taken is a Full Success, 1
+  or 2 is a Partial Success, 3+ means the target died in transit — a
+  Failure (feeding into §16's existing "Failure kills the Transport target"
+  handling unchanged).
+- **Delay**: reaching Location Heat 5 during any step ends the job
+  immediately as a Failure ("If Heat gets to 5, the mission is over and a
+  failure") — checked in `finalizeStep()` right after the existing `isDown`
+  early-return, routing straight to `runDebrief(true)` the same way Down
+  does. Since §19.9's per-attribute fallout table sometimes picks a
+  non-Heat alternative on a Social/Stealth Partial/Fail (Appendix F's
+  weighted "or lose equipment" branch), `finalizeStep()` tops Heat up to
+  the guaranteed **+1 Partial / +2 Fail** if the roll's own fallout didn't
+  already raise it that much ("if it doesn't already do so") — measured
+  against a snapshot of Heat taken before that step's fallout resolved, and
+  restricted to when the roll actually used Social or Stealth (a rare
+  forced Combat sub-step from a Delay's own Stealth-Fail branch doesn't
+  double up on top of Combat's own unconditional +1 Heat, §19.9). Short of
+  Heat 5, Delay still falls back to the old step-ratio calc (§16) for
+  Full-vs-Partial — UPDATE 3.0 specifies nothing further for that case.
+- **Hold**: "as long as character survives the mission is success" — with
+  `isDown` already ruled out by the shared early check, every Hold job that
+  reaches Debrief is an unconditional Full Success, regardless of how any
+  individual wave went (no more step-ratio Partial-or-worse outcome for
+  this type).
+
+### 21.3 Character Class Abilities — one free use per job, per background trait
+
+"Each Character class has a special ability that is available once in a
+mission." `job.classAbility = {gearheadUsed, samuraiUsed, freeHireUsed}`
+(all `false`, `buildJobFromCandidate()`) tracks each per job, so every new
+job refreshes all three regardless of whether the last one used them.
+Despite the todo's heading, these key off whichever of the six background
+traits (§4.1's three Professions, three Turfs) the character actually has
+— "Nomad" here is the **Turf** (`character.turf === "Nomad"`), "Rocker"
+and "Solo" are **Professions** (`character.profession`); Hacker/Corpo/
+Street have no ability of their own yet.
+
+- **Nomad — GEARHEAD**: two effects, one passive and permanent for the
+  whole job, one a limited-use swap.
+  - *"They never lose their vehicle... it can be damaged (or destroyed) by
+    effect but it always returns to him after mission."* On Gear Up's
+    "Head Out" click, a Nomad's currently-carried Driving-attr item is
+    snapshotted (`job.nomadVehicleSnapshot = {name, tier, tags,
+    preMissionLocation}`) before the normal "vehicle goes Moving"
+    handling (§20.20/INTERFACE 2.5). At Debrief, right after that same
+    Moving-location restore, `runDebrief()` reconciles the snapshot against
+    whatever the job's own fallout did to it: if no Driving-attr item with
+    that name remains (`loseVehicle`, §19.9, removed it outright), it's
+    pushed back onto `character.gear` at its original name/Tier/tags,
+    carried, returned to wherever it was stocked before the job; if it's
+    merely downgraded (`degradeGearItem` on a Driving item), its Tier is
+    restored. A Nomad effectively can't lose their one signature ride to
+    mission fallout — only ever inconvenienced by it mid-job.
+  - *"They can also change one Combat check to a Driving check"* — once
+    per job. `renderChallenge()` (game.js) injects `"Driving"` as an extra
+    offered attr on any step whose real options include Combat but not
+    already Driving, only while `!job.classAbility.gearheadUsed` and the
+    character actually carries a vehicle (`ownsGearForAttr(c, "Driving")`)
+    — reusing the normal roll-block UI (mods, BOOST, Ally Assist, one-shot
+    checkboxes all apply identically) with a `"GEARHEAD — "` label prefix.
+    Clicking its Roll button sets `job.classAbility.gearheadUsed = true`
+    and logs the swap; picking a step's real Driving option instead (when
+    one exists) never touches the flag.
+- **Rocker — NATURAL LEADER**: *"they get a one free Hire for a mission."*
+  `renderGearUp()`'s "Hire backup for this job" row costs 0 BONDS instead
+  of 1 the first time a Rocker uses it per job (`freeHire = c.profession
+  === "Rocker" && !job.classAbility.freeHireUsed`, labeled "Free (Natural
+  Leader)" in place of the usual "1 BOND"); clicking it sets
+  `job.classAbility.freeHireUsed = true` instead of spending BONDS. Every
+  Hire after the first (or every Hire for anyone else) is unaffected.
+- **Solo — STREET SAMURAI**: *"they can choose to have one auto success in
+  combat challenge. Once a mission."* A dedicated "STREET SAMURAI:
+  Auto-Success" button appears alongside the normal "Roll Combat" button on
+  any Combat challenge block, for a Solo with `!job.classAbility
+  .samuraiUsed`. Clicking it sets the flag and synthesizes a Full result
+  (`{tier: "full", total: 12, ...}`, `usedAttr: "Combat"`) without calling
+  `resolve()` at all — no dice, no modifiers, feeds straight into the same
+  `renderResultBlock()`/Continue flow (and the same §19.9 "Full success, no
+  further consequence" handling) a genuinely rolled Full would.
+
+---
+
 ## Appendix A — Names
 **First names (20)**: Luca, Amara, Bjorn, Elin, Mateusz, Ines, Dimitri,
 Freya, Giulia, Sven, Katarina, Marco, Ingrid, Nikolai, Chiara, Anders,
