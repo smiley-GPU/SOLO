@@ -87,7 +87,13 @@ function defaultCharacter(name, profession, turf) {
     wicked: false,
     pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
     stocks: {}, // §20.5 EuroStoxx — {factionName: amount}, Corpo factions only
-    apartment: null, // §20.5 — {locationName, tier, security: [names]} once bought
+    // UPDATE 3.1 (chat request) — "make it possible to own several
+    // apartments": an array now, one entry per owned place — was a single
+    // {...}-or-null. Each entry: {location, tier, place, security: [names],
+    // trapped: false}. At most one entry per Location (buying again at a
+    // Location you already own at upgrades that entry in place; buying at a
+    // new Location adds a new one instead of replacing anything).
+    apartments: [], // §20.5, revised
     shopOffers: null, // §20.5 — the Shop's current offer list, refreshed each Rest tick
     log: [`${name} (${profession} / ${turf}) steps onto the street for the first time.`]
   };
@@ -372,7 +378,13 @@ function migrateCharacter(character) {
 
   // §20.5 — EuroStoxx, Apartments, and the Shop's persisted offer list.
   if (!character.stocks) character.stocks = {};
-  if (character.apartment === undefined) character.apartment = null;
+  // UPDATE 3.1 (chat request) — apartment (singular, one-or-null) became
+  // apartments (array): carry an old save's single owned place forward
+  // instead of losing it, then drop the old field for good.
+  if (!Array.isArray(character.apartments)) {
+    character.apartments = character.apartment ? [character.apartment] : [];
+  }
+  delete character.apartment;
   if (character.shopOffers === undefined) character.shopOffers = null;
 
   // §20.9 — backfill `name` onto any persisted Location record saved

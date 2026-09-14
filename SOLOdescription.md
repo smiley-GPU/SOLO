@@ -1283,6 +1283,8 @@ phase) keeps only Helper recruitment (§20.4) and "Head Out".
   independent of the Rest clock/Mission Board reroll (§12) entirely; it
   doesn't tick `restCount`.
 
+  **Revision (§20.25)**: more than one can be owned at once.
+
 **LESSONS FROM THE STREET**: the Training mechanic (§4.3) unchanged,
 relocated out of the Hub's inline section into its own panel.
 
@@ -2205,7 +2207,9 @@ Location left to put it in. Buying stores the chosen `place` name on
 display the stage name instead) alongside the existing `location`/`tier`/
 `security`. A tab below the player's own apartment Tier is marked "Already
 have better" instead of offering a downgrade; the exact place+Location
-already owned reads "Home" instead of a price.
+already owned reads "Home" instead of a price. **Revision (§20.25)**:
+`character.apartment` became `character.apartments`, an array — more than
+one can be owned at once, one per Location.
 
 **Archenemy actions log in red.** `addLog()` (state.js) now accepts an
 optional third `tag` argument — the common case still just pushes a plain
@@ -2248,6 +2252,9 @@ Location>]` / `[Moving]` next to every vehicle, Driving-attr items only,
 with a "Move to `<the other place>`" button (`data-move-vehicle`, only
 rendered when an Apartment exists — otherwise there's nowhere else to move
 it) that toggles the vehicle between Street and the Apartment's Location.
+**Revision (§20.25)**: a `<select>` destination picker (Street plus every
+owned Location but the vehicle's current one) replaces that toggle, now
+that there can be more than one Apartment Location to move a vehicle to.
 Heading out on a job (`renderGearUp()`'s "Head Out" button) stashes the
 carried Vehicle's current location on `preMissionLocation` and sets
 `location = "Moving"`; `runDebrief()` restores it (and deletes the stash
@@ -2264,6 +2271,9 @@ ephemeral) that expands to show installed Security and which vehicles
 stocked there. Only one Apartment can exist at a time in the data model
 (buying again replaces it, unchanged from §20.5), so this always
 summarizes that one rather than branching on "more than one."
+**Revision (§20.25)**: more than one Apartment can exist now — the summary
+line becomes `"N apartments"` once it's more than one, and the expanded
+view lists every one of them with its own Security/vehicles-here lines.
 
 ---
 
@@ -2448,6 +2458,63 @@ per Rest. A wounded Helper still clears in exactly 2 ticks, but those ticks
 no longer have to be Rests specifically — two jobs run back-to-back with no
 Rest in between heals them just as well as a Rest-then-job or job-then-Rest
 pair does.
+
+### 20.25 Owning several apartments at once (chat request)
+
+Per chat request — "make it possible to own several apartments." Supersedes
+§20.5/§20.20's "only one Apartment can exist at a time in the data model"
+premise entirely: `character.apartments` (state.js) is now an array (was a
+single `{...}`-or-`null`), at most one entry per Location — buying again at
+a Location already owned upgrades that entry in place (unchanged precedent:
+resets its Security), buying at a **different** Location adds a new entry
+instead of replacing anything. `migrateCharacter()` wraps an old save's
+single `apartment` in a 1-item array (or `[]` if it had none) and drops the
+old field for good.
+
+- **`renderApartmentSection()`** (the Shop's Apartment panel): the owned-
+  summary + Security-install block now loops over every entry instead of
+  rendering once; each Install button names its Location
+  (`"Install X at Rive Nord"`) since there can be more than one to pick
+  from. The buy/upgrade grid's "Home"/"Already have better"/"Upgrade" logic
+  now only ever compares against what's owned **at that same Location**
+  (`ownedAt(locName)`) — owning a Tier 4 place across town never blocks or
+  relabels a fresh Tier 2 buy somewhere new. The log line on purchase reads
+  "put down roots at" for a first apartment, "move up to" for a same-
+  Location upgrade, or "add `<place>` in `<Location>` to your holdings" for
+  an additional, different-Location purchase.
+- **The sheet's Apartment summary**: "Street" with none owned, `"<place> —
+  <Location>"` unchanged for exactly one, or `"N apartments"` for more —
+  the expanded (▼/▲) view lists every one of them, each with its own
+  Security/vehicles-here lines.
+- **"Rest at your Apartment"** (Hub Lay Low row): one button per owned
+  apartment now, each naming its own place and Location
+  (`"Rest at Garage in Rive Nord (Free)"`), rather than a single unlabeled
+  button. `restAtApartment(apartment)` takes the specific one clicked and
+  stashes it on `G.homeApartment` (ephemeral, never persisted) right before
+  `processRestTick(true, true)` — the one path that can pass `atHome: true`
+  into `startHunt()` if this tick fills the Rest clock. `startHunt()` reads
+  `G.homeApartment` for that one case and stores it on `G.hunt.homeApartment`
+  so the rest of that Hunt (the Security→Combat modifier in
+  `renderHuntRoll`, and the Tier-4-Security armor-charge pool) stays scoped
+  to the specific apartment that was actually being defended, not "the"
+  apartment.
+- **Vehicle stocking** (the sheet's Gear list "Move to…" control, and the
+  Apartment panel's "Vehicles here" line): a 2-way toggle button stopped
+  making sense once there can be several apartment Locations to choose
+  from — replaced with a `<select>` destination picker offering Street plus
+  every owned Location except the vehicle's current one.
+- **Archenemy home invasion** (§20.6, `resolveArchenemyClockEvent()`): "hits
+  the Apartment" now picks one at random among every one owned
+  (`pick(c.apartments)`) instead of always the single one; a "torched"
+  outcome removes just that one entry (`c.apartments = c.apartments.filter
+  (a => a !== apartment)`), leaving any others untouched. Every log line in
+  `resolveApartmentInvasion()` now names which place/Location was hit.
+- **The EurCop/SwissGuard Apartment raid** (§20.7, `resolveApartmentRaid()`):
+  now only fires if the player owns an apartment **at the just-finished
+  job's own Location** specifically — "the heat traces back home" only
+  means anything if home is actually there — with no fallback to a random
+  other apartment elsewhere that was never near that job. A player who owns
+  apartments only in other cities is safe from any given job's raid check.
 
 ---
 

@@ -318,10 +318,13 @@ function renderApartmentBox() {
 // Apartments (§20.5) — Tier-gated (Reputation Tier, §19.1): nothing at
 // Tier 1, then a bigger place with more Security slots at each Tier up.
 // Price is 2×Tier BONDS, +1 if the chosen Location's faction is
-// Corpo-category. Buying again at a higher Tier than the one you own
-// replaces it (an upgrade); Security options install free, capped at the
-// apartment's slot count — their defensive payoff belongs to the
-// Archenemy home-invasion/EurCop raid mechanics (§20, later phases).
+// Corpo-category. Buying again at a Location you already own at, at a
+// higher Tier, replaces that entry (an upgrade, resetting its Security);
+// buying at a new Location adds another apartment instead — UPDATE 3.1
+// (chat request) — "make it possible to own several apartments." Security
+// options install free, capped at the apartment's slot count — their
+// defensive payoff belongs to the Archenemy home-invasion/EurCop raid
+// mechanics (§20, later phases).
 // todo3.md INTERFACE UPDATE 2.5 (APARTMENTS) — tabs for each unlocked
 // Tier's "stage" (STRIP/CITY/CORE) instead of one fixed name per Tier and a
 // location dropdown. Each stage's several place-type choices are paired
@@ -332,35 +335,36 @@ function renderApartmentSection(c) {
   wrap.className = "section";
   const repTier = reputationTier(c);
 
-  // Owned apartment: summary + Security install options (unchanged mechanic).
-  if (c.apartment) {
-    const ownedDef = DATA.apartments[c.apartment.tier];
-    const secList = c.apartment.security.length ? c.apartment.security.join(", ") : "none installed";
-    const placeLabel = c.apartment.place || ownedDef.stage; // old saves predate the `place` field
+  // Owned apartments: one summary + Security install block each (was a
+  // single `if (c.apartment)` block — now one per array entry).
+  c.apartments.forEach(apt => {
+    const ownedDef = DATA.apartments[apt.tier];
+    const secList = apt.security.length ? apt.security.join(", ") : "none installed";
+    const placeLabel = apt.place || ownedDef.stage; // old saves predate the `place` field
     const summary = document.createElement("p");
     summary.className = "muted";
-    summary.textContent = `${placeLabel} at ${c.apartment.location} (${ownedDef.stage}, Tier ${c.apartment.tier}). Security: ${secList}.`;
+    summary.textContent = `${placeLabel} at ${apt.location} (${ownedDef.stage}, Tier ${apt.tier}). Security: ${secList}.`;
     wrap.appendChild(summary);
-    const options = (DATA.securityOptions[c.apartment.tier] || []).filter(o => !c.apartment.security.includes(o));
-    if (c.apartment.security.length < ownedDef.securitySlots) {
+    const options = (DATA.securityOptions[apt.tier] || []).filter(o => !apt.security.includes(o));
+    if (apt.security.length < ownedDef.securitySlots) {
       // BATCH 2.0 — Security items cost BONDS to install now: 1 BOND for a
       // Tier 3 option, 2 BONDS for a Tier 4 one (Tier 4 ones also grant an
       // armor-charge pool in a home-invasion Hunt — see startHunt/applyHuntHarm).
-      const cost = c.apartment.tier >= 4 ? 2 : 1;
+      const cost = apt.tier >= 4 ? 2 : 1;
       options.forEach(opt => {
         const btn = document.createElement("button");
-        btn.textContent = `Install ${opt} — ${cost} BOND${cost === 1 ? "" : "S"}`;
+        btn.textContent = `Install ${opt} at ${apt.location} — ${cost} BOND${cost === 1 ? "" : "S"}`;
         btn.disabled = c.bonds < cost;
         btn.addEventListener("click", () => {
           c.bonds -= cost;
-          c.apartment.security.push(opt);
-          addLog(c, `${opt} goes in at your place (-${cost} BOND${cost === 1 ? "" : "S"}).`);
+          apt.security.push(opt);
+          addLog(c, `${opt} goes in at your place in ${apt.location} (-${cost} BOND${cost === 1 ? "" : "S"}).`);
           persist(); render();
         });
         wrap.appendChild(btn);
       });
     }
-  }
+  });
 
   if (repTier < 2) {
     const p = document.createElement("p");
@@ -402,25 +406,38 @@ function renderApartmentSection(c) {
     const category = loc.faction ? (c.factionStandings[loc.faction] || {}).category : (loc.area === "Corpo" ? "Corpo" : null);
     return tabTier * 2 + (category === "Corpo" ? 1 : 0);
   };
-  const worseThanOwned = c.apartment && tabTier < c.apartment.tier;
+  // UPDATE 3.1 — "worse than owned"/"upgrade" now only ever compares
+  // against whatever's already owned at *this same Location* (at most one
+  // apartment per Location — buying at a different, new Location is always
+  // just a fresh "Buy", never blocked by what's owned elsewhere).
+  const ownedAt = locName => c.apartments.find(a => a.location === locName);
 
   // Pair each place-type with a distinct known Location, capped to however
   // many are actually known — never repeat a Location across the choices.
   def.places.slice(0, known.length).forEach((place, i) => {
     const locName = known[i];
     const price = priceFor(locName);
-    const isHome = c.apartment && c.apartment.tier === tabTier && c.apartment.place === place && c.apartment.location === locName;
+    const existing = ownedAt(locName);
+    const isHome = existing && existing.tier === tabTier && existing.place === place;
+    const worseThanOwned = existing && tabTier < existing.tier;
     const row = document.createElement("div");
     row.className = "offer";
     row.innerHTML = `<span>${place} <em>at ${locName}</em></span>`;
     const btn = document.createElement("button");
-    btn.textContent = isHome ? "Home" : worseThanOwned ? "Already have better" : `${c.apartment ? "Move to" : "Buy"} — ${price} BOND${price === 1 ? "" : "S"}`;
+    btn.textContent = isHome ? "Home" : worseThanOwned ? "Already have better here" : `${existing ? "Upgrade" : "Buy"} — ${price} BOND${price === 1 ? "" : "S"}`;
     btn.disabled = isHome || worseThanOwned || c.bonds < price;
     btn.addEventListener("click", () => {
       c.bonds -= price;
-      const hadApartment = !!c.apartment;
-      c.apartment = { location: locName, tier: tabTier, place, security: [] };
-      addLog(c, `You ${hadApartment ? "move up to" : "put down roots at"} ${place} in ${locName}.`);
+      const newApt = { location: locName, tier: tabTier, place, security: [] };
+      if (existing) {
+        // Upgrading in place — same Location, resets Security (unchanged
+        // precedent from the single-apartment version).
+        c.apartments[c.apartments.indexOf(existing)] = newApt;
+        addLog(c, `You move up to ${place} in ${locName}.`);
+      } else {
+        c.apartments.push(newApt);
+        addLog(c, c.apartments.length > 1 ? `You add ${place} in ${locName} to your holdings.` : `You put down roots at ${place} in ${locName}.`);
+      }
       persist(); render();
     });
     row.appendChild(btn);
@@ -615,15 +632,24 @@ function renderSheet() {
         const kind = g.attr ? ` ${g.attr}` : g.heal ? " heal" : g.armor ? ` armor x${g.armor}` : "";
         const stowed = gearCategory(g) && !g.carried ? ", stowed" : ""; // §20.8 — only carried gear does anything
         // todo3.md INTERFACE UPDATE 2.5 — "mark where each vehicle is
-        // stocked," with a button to move it (only meaningful once there's
+        // stocked," with a way to move it (only meaningful once there's
         // an Apartment to move it to or from; hidden mid-job while "Moving").
+        // UPDATE 3.1 (chat request) — a simple 2-way toggle button stopped
+        // making sense once there can be several apartment locations; a
+        // <select> destination picker (Street + every owned Location but
+        // the vehicle's current one) replaces it.
         let vehicleHtml = "";
         if (g.attr === "Driving") {
           const loc = vehicleLocation(g);
-          const moveBtn = loc !== "Moving" && c.apartment
-            ? `<button type="button" class="btn-small" data-move-vehicle="${c.gear.indexOf(g)}">Move to ${loc === c.apartment.location ? "Street" : c.apartment.location}</button>`
-            : "";
-          vehicleHtml = ` <span class="muted" style="font-size:11px">[${loc}]</span>${moveBtn}`;
+          let moveControl = "";
+          if (loc !== "Moving" && c.apartments.length) {
+            const destinations = ["Street", ...c.apartments.map(a => a.location)].filter(d => d !== loc);
+            if (destinations.length) {
+              const options = destinations.map(d => `<option value="${d}">${d}</option>`).join("");
+              moveControl = ` <select class="btn-small" data-move-vehicle="${c.gear.indexOf(g)}"><option value="">Move to…</option>${options}</select>`;
+            }
+          }
+          vehicleHtml = ` <span class="muted" style="font-size:11px">[${loc}]</span>${moveControl}`;
         }
         return `<li>${g.name} <em>(${g.tier || "Street"}${kind}${stowed})</em>${vehicleHtml}</li>`;
       }).join("")
@@ -678,24 +704,30 @@ function renderSheet() {
     : "";
   // todo3.md INTERFACE UPDATE 2.5 — "mark Apartment: Street/ or type and
   // LOCATION under the BONDS value... an arrow triangle to open the details
-  // (security, vehicles stocked here)." Only one Apartment can exist at a
-  // time in the data model, so this always summarizes that one (or "Street"
-  // if none owned).
+  // (security, vehicles stocked here)." UPDATE 3.1 (chat request) — several
+  // apartments can now be owned at once, so the summary line reads "N
+  // apartments" once there's more than one (a single one still just names
+  // it, unchanged), and the expanded details list every one of them.
   let apartmentSectionHtml;
-  if (!c.apartment) {
+  if (!c.apartments.length) {
     apartmentSectionHtml = `<div class="section"><h3>Apartment</h3><div class="cred" style="font-size:14px">Street</div></div>`;
   } else {
     const apartmentExpanded = !!G.apartmentSheetExpanded;
-    const ownedDef = DATA.apartments[c.apartment.tier];
-    const placeLabel = c.apartment.place || ownedDef.stage;
-    const secList = c.apartment.security.length ? c.apartment.security.join(", ") : "none installed";
-    const vehiclesHere = c.gear.filter(g => g.attr === "Driving" && vehicleLocation(g) === c.apartment.location);
+    const summaryLine = c.apartments.length === 1
+      ? `${c.apartments[0].place || DATA.apartments[c.apartments[0].tier].stage} — ${c.apartments[0].location}`
+      : `${c.apartments.length} apartments`;
     const details = apartmentExpanded
-      ? `<p class="muted">Security: ${secList}</p><p class="muted">Vehicles here: ${vehiclesHere.length ? vehiclesHere.map(v => v.name).join(", ") : "none"}</p>`
+      ? c.apartments.map(apt => {
+          const ownedDef = DATA.apartments[apt.tier];
+          const placeLabel = apt.place || ownedDef.stage;
+          const secList = apt.security.length ? apt.security.join(", ") : "none installed";
+          const vehiclesHere = c.gear.filter(g => g.attr === "Driving" && vehicleLocation(g) === apt.location);
+          return `<p class="muted"><strong>${placeLabel} — ${apt.location}</strong> (Tier ${apt.tier})<br>Security: ${secList}<br>Vehicles here: ${vehiclesHere.length ? vehiclesHere.map(v => v.name).join(", ") : "none"}</p>`;
+        }).join("")
       : "";
     apartmentSectionHtml = `<div class="section"><h3>Apartment</h3>
       <div style="display:flex; align-items:center; justify-content:space-between; gap:6px">
-        <span class="cred" style="font-size:14px">${placeLabel} — ${c.apartment.location}</span>
+        <span class="cred" style="font-size:14px">${summaryLine}</span>
         <button type="button" id="apartment-toggle" class="btn-small">${apartmentExpanded ? "▲" : "▼"}</button>
       </div>
       ${details}
@@ -744,14 +776,18 @@ function renderSheet() {
       renderSheet();
     });
   }
-  // todo3.md INTERFACE UPDATE 2.5 — toggle a vehicle between Street and the
+  // todo3.md INTERFACE UPDATE 2.5 — move a vehicle between Street and an
   // owned Apartment's location (only shown when there's somewhere to move
-  // it to/from, and never while it's "Moving" mid-job).
-  els.sheet.querySelectorAll("[data-move-vehicle]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const item = c.gear[Number(btn.dataset.moveVehicle)];
-      if (!item || !c.apartment) return;
-      item.location = vehicleLocation(item) === c.apartment.location ? "Street" : c.apartment.location;
+  // it to/from, and never while it's "Moving" mid-job). UPDATE 3.1 (chat
+  // request) — now a <select> destination picker (Street + every owned
+  // Location but the current one) instead of a 2-way toggle button, since
+  // there can be several apartment locations to choose from.
+  els.sheet.querySelectorAll("select[data-move-vehicle]").forEach(sel => {
+    sel.addEventListener("change", () => {
+      const item = c.gear[Number(sel.dataset.moveVehicle)];
+      const dest = sel.value;
+      if (!item || !dest) return;
+      item.location = dest;
       addLog(c, `You move the ${item.name} to ${item.location}.`);
       persist(); render();
     });
@@ -1141,13 +1177,14 @@ function renderRestOptions(wrap) {
   });
 
   // BATCH 2.0 — relocated from the Hub, and now ticks the Rest clock like
-  // every other option here (it deliberately didn't before).
-  if (c.apartment) {
+  // every other option here (it deliberately didn't before). UPDATE 3.1
+  // (chat request) — one button per owned apartment now, not just one.
+  c.apartments.forEach(apt => {
     const homeBtn = document.createElement("button");
-    homeBtn.textContent = "Rest at your Apartment (Free)";
-    homeBtn.addEventListener("click", () => restAtApartment());
+    homeBtn.textContent = `Rest at ${apt.place || DATA.apartments[apt.tier].stage} in ${apt.location} (Free)`;
+    homeBtn.addEventListener("click", () => restAtApartment(apt));
     row2.appendChild(homeBtn);
-  }
+  });
 
   const restNote = document.createElement("p");
   restNote.className = "muted";
@@ -1160,10 +1197,15 @@ function renderRestOptions(wrap) {
 // a trap here (§20.6), that fires instead of the usual heal roll. If this
 // tick is the one that fills the Rest clock, the resulting Hunt happens
 // at home (see startHunt's atHome param) rather than out on the street.
-function restAtApartment() {
+// apartment (UPDATE 3.1, chat request): which of possibly several owned
+// apartments the player chose to rest at — stashed on G.homeApartment
+// (ephemeral, never persisted) so startHunt() knows which one's Security
+// counts toward a forced-Hunt-at-home, if this tick is the one that fills
+// the clock.
+function restAtApartment(apartment) {
   const c = G.character;
-  if (c.apartment.trapped) {
-    c.apartment.trapped = false;
+  if (apartment.trapped) {
+    apartment.trapped = false;
     addLog(c, "The place goes up the second you're inside — you'd left something behind, alright, and it wasn't yours.");
     for (let i = 0; i < 2 && !isDown(c); i++) {
       if (handleGoingDown(c, applyHarm(c))) { persist(); render(); return; }
@@ -1174,6 +1216,7 @@ function restAtApartment() {
   } else {
     addLog(c, "You crash at home for a while. Quiet, at least.");
   }
+  G.homeApartment = apartment;
   // todo3.md INTERFACE UPDATE 2.5 — resting at home still ticks the clock
   // and rerolls the Board, but returns to Downtime instead of dropping
   // straight into the Mission Board (same fix as Spend the Night, §20.19).
@@ -1437,12 +1480,14 @@ function resolveArchenemyClockEvent(c, job) {
 
   const helperIds = new Set((job && job.helpers ? job.helpers : []).map(h => h.person.id));
   const friends = c.contacts.filter(p => p.relationship >= 3 && p.id !== archenemy.id && !helperIds.has(p.id));
-  const hasApartment = !!c.apartment;
+  const hasApartment = c.apartments.length > 0;
   if (!friends.length && !hasApartment) return;
 
   const hitApartment = hasApartment && (!friends.length || Math.random() < 0.5);
   if (hitApartment) {
-    resolveApartmentInvasion(c, archenemy);
+    // UPDATE 3.1 (chat request) — several apartments can exist now; picks
+    // one at random to invade instead of always hitting "the" apartment.
+    resolveApartmentInvasion(c, archenemy, pick(c.apartments));
   } else {
     const target = pick(friends);
     addLog(c, `While you're out on the job, ${archenemy.name} ${pick(DATA.archenemyInvasion.friendHit)} ${target.name}.`, "archenemy");
@@ -1455,8 +1500,11 @@ function resolveArchenemyClockEvent(c, job) {
 // §20.6 — the Archenemy's own break-in roll: 2d6 + (their factionTier -
 // installed Security features) vs. 10+/7-9/6-. No player attribute is
 // involved — this is entirely the Archenemy's side of the roll.
-function resolveApartmentInvasion(c, archenemy) {
-  const features = c.apartment.security.length;
+// apartment (UPDATE 3.1, chat request): which of possibly several owned
+// apartments got picked as the target — every read/write below is scoped
+// to that one entry, not "the" apartment.
+function resolveApartmentInvasion(c, archenemy, apartment) {
+  const features = apartment.security.length;
   const { sum } = roll2d6();
   const roll = sum + ((archenemy.factionTier || 1) - features);
 
@@ -1476,11 +1524,11 @@ function resolveApartmentInvasion(c, archenemy) {
         addLog(c, `${archenemy.name}'s people break in but find nothing worth taking.`, "archenemy");
       }
     } else if (evil <= 5) {
-      addLog(c, pick(DATA.archenemyInvasion.torch), "archenemy");
-      c.apartment = null;
+      addLog(c, `${pick(DATA.archenemyInvasion.torch)} (${apartment.place || DATA.apartments[apartment.tier].stage} in ${apartment.location})`, "archenemy");
+      c.apartments = c.apartments.filter(a => a !== apartment);
     } else {
-      c.apartment.trapped = true; // §20.6 — 2 Harm boxes next time you Rest at home
-      addLog(c, pick(DATA.archenemyInvasion.trap), "archenemy");
+      apartment.trapped = true; // §20.6 — 2 Harm boxes next time you Rest at home
+      addLog(c, `${pick(DATA.archenemyInvasion.trap)} (${apartment.location})`, "archenemy");
     }
     // BATCH 2.0 — a landed hit costs Reputation; being spooked off or
     // burned (below) are player wins, not losses.
@@ -1499,8 +1547,12 @@ function resolveApartmentInvasion(c, archenemy) {
 // a single auto-resolved roll (the player's own Social, since they're the
 // one answering the door) rather than routing back through the interactive
 // Checkpoint UI — the job that triggered it is already over by Debrief.
+// UPDATE 3.1 (chat request) — with several apartments possible, only fires
+// if the player owns one AT the job's own Location — "the heat traces back
+// home" only means anything if home is actually there. No fallback to a
+// random other apartment: one somewhere else was never near this job.
 function resolveApartmentRaid(c, job) {
-  if (!c.apartment) return;
+  if (!c.apartments.some(a => a.location === job.location.name)) return;
   const category = locationCategory(job.location, c.factionStandings);
   const heat = job.location.heat;
   if (!((category === "Corpo" && heat >= 4) || (category === "Crime" && heat >= 5))) return;
@@ -3390,10 +3442,16 @@ function startHunt(atHome) {
   }
   // BATCH 2.0 — Tier-4 Security items grant a one-Hunt armor-like absorb
   // pool (2 charges each, the Professional-tier scale) when hunted at home.
-  const homeArmorCharges = atHome && c.apartment
-    ? c.apartment.security.filter(name => DATA.securityOptions[4].includes(name)).length * 2
+  // UPDATE 3.1 (chat request) — G.homeApartment (set by restAtApartment(),
+  // right before this call — the only path that ever passes atHome truthy)
+  // is which specific one of possibly several owned apartments the player
+  // was resting at; stashed on the hunt itself so the rest of the Hunt
+  // (renderHuntRoll's Security modifier) reads the same one throughout.
+  const homeApartment = atHome ? G.homeApartment : null;
+  const homeArmorCharges = homeApartment
+    ? homeApartment.security.filter(name => DATA.securityOptions[4].includes(name)).length * 2
     : 0;
-  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false, atHome: !!atHome, homeArmorCharges };
+  G.hunt = { archenemy, stage: "notice", wounds: 0, combatBonus: 0, combatChoice: null, pendingResult: null, bloodbrotherUsed: false, atHome: !!atHome, homeApartment, homeArmorCharges };
   addLog(c, atHome ? `${archenemy.name} comes for you at your own front door.` : `${archenemy.name} finally catches up with you.`);
   G.phase = "hunt";
   persist();
@@ -3553,9 +3611,11 @@ function renderHuntRoll(container, attr, desc, extraBonus, onResult) {
     if (tp) mods.push({ label: hunt.archenemy.name, value: tp });
     if (extraBonus) mods.push({ label: "Caught them off guard", value: extraBonus });
     // BATCH 2.0 — hunted at home: installed Security counts toward Combat
-    // only ("other rolls as normal").
-    if (hunt.atHome && attr === "Combat" && c.apartment && c.apartment.security.length) {
-      mods.push({ label: "Security", value: c.apartment.security.length });
+    // only ("other rolls as normal"). UPDATE 3.1 — reads hunt.homeApartment
+    // (the specific one being defended, set in startHunt()) instead of "the"
+    // apartment.
+    if (hunt.atHome && attr === "Combat" && hunt.homeApartment && hunt.homeApartment.security.length) {
+      mods.push({ label: "Security", value: hunt.homeApartment.security.length });
     }
     if (spendBoost) mods.push({ label: "Boost", value: spendBoost }); // BATCH 2.1 (item 13) — integer amount, not a boolean
     const calledBrother = callBrotherId && amigues.find(a => a.id === callBrotherId);
