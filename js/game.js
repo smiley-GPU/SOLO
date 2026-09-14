@@ -804,6 +804,19 @@ function renderSheet() {
 }
 
 function renderMain() {
+  // UPDATE 3.1 (chat request) — "don't move the screen when gear boxes are
+  // clicked in gear up phase, or when different boost/helper options are
+  // clicked in missions": captured before the rebuild below so they can be
+  // restored afterward instead of the blanket scroll-to-top a few lines
+  // down — see G.suppressScrollReset, set by the specific option-toggling
+  // handlers this covers (Loadout carry checkboxes, Hire/Call-in-a-Favor,
+  // the swap-picker's ability toggle buttons) right before they call
+  // render()/renderMain(). Genuine advancing clicks (Roll, Continue, Head
+  // Out, Abort, ...) never set it, so they keep the original UPDATE 2.6
+  // behavior below unchanged.
+  const preserveScroll = G.suppressScrollReset;
+  const savedMainScroll = els.main.scrollTop;
+  const savedWindowScroll = window.scrollY;
   els.main.innerHTML = "";
   els.main.appendChild(renderJournalBox()); // INTERFACE 2.4.2 — journal now leads, not trails
   const fn = {
@@ -828,9 +841,17 @@ function renderMain() {
   // (Roll, Continue, Head Out, Abort, ...), not idle browsing.
   const missionPhases = ["gearup", "steps", "encounter", "checkpoint", "debrief"];
   if (missionPhases.includes(G.phase)) {
-    els.main.scrollTop = 0;
-    window.scrollTo(0, 0);
+    if (preserveScroll) {
+      // els.main.innerHTML = "" above already zeroed its scrollTop as a
+      // side effect of the rebuild — restore what was actually there.
+      els.main.scrollTop = savedMainScroll;
+      window.scrollTo(0, savedWindowScroll);
+    } else {
+      els.main.scrollTop = 0;
+      window.scrollTo(0, 0);
+    }
   }
+  G.suppressScrollReset = false;
 }
 
 // ---------- CREATE ----------
@@ -1713,6 +1734,9 @@ function renderGearUp() {
     hireBtn.textContent = "Hire";
     hireBtn.disabled = c.bonds < hireCost;
     hireBtn.addEventListener("click", () => {
+      // UPDATE 3.1 (chat request) — same as the Loadout checkboxes above:
+      // still on the Gear Up screen afterward, not advancing to Head Out.
+      G.suppressScrollReset = true;
       if (freeHire) job.classAbility.freeHireUsed = true;
       else c.bonds -= 1;
       const person = getPerson(c, "ally", job.excludeIds);
@@ -1754,6 +1778,8 @@ function renderGearUp() {
         const btn = document.createElement("button");
         btn.textContent = "Bring along";
         btn.addEventListener("click", () => {
+          // UPDATE 3.1 (chat request) — same reasoning as "Hire backup" above.
+          G.suppressScrollReset = true;
           job.helpers.push({ person, source: "ally", tier: free ? 5 : 3, attr: null, used: false, benched: false });
           addLog(c, `${person.name} agrees to back you up${free ? "" : ", expecting a cut of the payout"}.`);
           persist(); render();
@@ -1840,6 +1866,10 @@ function renderLoadoutSection() {
       checkbox.type = "checkbox";
       checkbox.checked = !!item.carried;
       checkbox.addEventListener("change", () => {
+        // UPDATE 3.1 (chat request) — "don't move the screen when gear
+        // boxes are clicked in gear up phase": this is a checkbox toggle,
+        // not an advancing action — see G.suppressScrollReset (renderMain).
+        G.suppressScrollReset = true;
         // BATCH 2.1 (item 1) — only one Vehicle can be in use at a time, no
         // matter how much pool room exists (you can't drive two cars).
         // Radio-style swap — checking one auto-uncarries any other carried
@@ -2833,6 +2863,11 @@ function renderChallenge(container, step, onContinue, ctx) {
         btn.className = "swap-picker-btn" + (G.expandedSwap === s.key ? " active" : "");
         btn.textContent = s.key;
         btn.addEventListener("click", () => {
+          // UPDATE 3.1 (chat request) — "don't move the screen when...
+          // different boost/helper options are clicked in missions":
+          // expanding/collapsing/switching a Class Ability's details isn't
+          // an advancing action either.
+          G.suppressScrollReset = true;
           G.expandedSwap = G.expandedSwap === s.key ? null : s.key;
           render();
         });

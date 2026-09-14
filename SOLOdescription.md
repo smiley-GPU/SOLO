@@ -2613,6 +2613,48 @@ Continue, Head Out, install Security, Abort, ...), this reliably fires
 handler, and keeps the Journal (top of `#main`) in view for whatever it
 just logged.
 
+**Revision (chat request) — "don't move the screen when gear boxes are
+clicked in gear up phase, or when different boost/helper options are
+clicked in missions."** The assumption above ("a render in those phases
+only ever follows... Roll, Continue, Head Out... not idle browsing") held
+when this was written, but two things added since then also call
+`render()` from squarely inside those phases without advancing anything —
+a Loadout carry checkbox (§20.8) and the swap-picker's ability-toggle
+button (§21's "make them buttons" revision) both just adjust an option and
+leave the player on the exact same screen, yet still snapped them back to
+the top of a long Gear Up list or Combat box every single click. Rather
+than special-case the blanket rule with an ever-growing exemption list
+maintained separately from it, `renderMain()` now captures
+`els.main.scrollTop`/`window.scrollY` *before* the rebuild and, when
+`G.suppressScrollReset` is `true`, restores them afterward instead of
+zeroing them — an ephemeral flag (never persisted, same idiom as
+`G.expandedSwap`) that the specific option-only handlers set immediately
+before calling `render()`/`persist(); render();`, then `renderMain()`
+clears unconditionally at the end of every call so it can never leak into
+some unrelated later render. Set by: a Loadout carry checkbox (either
+branch — the Vehicle radio-swap and the plain toggle), "Hire backup" and
+"Call in a Favor" (Gear Up's Helper section — not literally a checkbox, but
+the same "still on this screen afterward" case, and the chat request's own
+"helper options" wording), and the swap-picker's toggle button
+(`renderChallenge()`). Every advancing handler (Head Out, a Challenge's
+"Roll X", Continue, Abort, a Checkpoint's Pay/Ditch, ...) never sets it, so
+they're pixel-for-pixel unchanged from the original UPDATE 2.6 behavior
+above. `boostSpendOptionHtml()`/Ally-Assist/one-shot checkboxes inside a
+Challenge were already fine and needed no change — they only ever update
+the small `.mods` chip list in place (`refreshMods()`, a local DOM patch),
+never call `render()` at all.
+
+Live-tested: with enough gear piled on to make Gear Up genuinely tall,
+scrolled to y=1500, toggled a Loadout checkbox — scroll stayed at 1500 (and
+the checkbox state visibly persisted in the rebuilt DOM); "Head Out"
+immediately after still reset scroll to 0, phase advanced to Steps. In a
+Combat box with WRAITH and STREET SAMURAI both contending (so the swap-
+picker renders), scrolled to y=400, clicked WRAITH's toggle button —
+scroll stayed at 400, `G.expandedSwap` correctly became `"WRAITH"`; rolling
+from inside that expanded panel afterward still reset scroll to 0.
+"Hire backup" in Gear Up, scrolled to y=300 beforehand, left scroll at 300
+while still adding the Helper.
+
 **Archenemy red confirmed to persist, not just win new-line ties.** The
 todo's wording ("always come with red and stay red... old text goes gray")
 describes exactly what §20.20's CSS already does: `.log-line.log-archenemy`
