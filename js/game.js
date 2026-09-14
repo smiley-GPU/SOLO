@@ -2528,16 +2528,21 @@ function renderChallenge(container, step, onContinue, ctx) {
 
     // UPDATE 3.1 (chat request) — "place GEARHEAD and NETRUNNER in the same
     // box as the roll they could replace, so the mechanic is evident to the
-    // player": each swap now renders as a second `.swap-option` sub-section
-    // inside this same attr's box (renderRollOption below), right under the
-    // roll it substitutes for, instead of appearing as its own separate
+    // player": each swap renders as a second `.swap-option` sub-section
+    // inside this same attr's box (renderRollOption below), right beside
+    // the roll it substitutes for, instead of appearing as its own separate
     // top-level box next to it. A step offering both Combat and Stealth
     // gets NETRUNNER embedded in both boxes, since it could replace either
     // — clicking either one resolves the same underlying Hacking roll and
-    // spends the same once-per-job flag.
+    // spends the same once-per-job flag. Collected into one array (rather
+    // than each rendered inline as it's found) so a box that happens to
+    // have 2+ eligible swaps (e.g. a Jockey who's also earned WRAITH: both
+    // GEARHEAD and WRAITH want the Combat box) can be told apart from the
+    // common single-swap case just below.
+    const swaps = [];
     if (gearheadEligible && attr === "Combat") {
-      renderRollOption(block, "Driving", step, job, holder, c, {
-        label: "GEARHEAD",
+      swaps.push({
+        key: "GEARHEAD", attr: "Driving",
         onUse: () => {
           job.classAbility.gearheadUsed = true;
           addLog(c, `${c.name} fights it from behind the wheel — GEARHEAD.`);
@@ -2545,8 +2550,8 @@ function renderChallenge(container, step, onContinue, ctx) {
       });
     }
     if (hackerSwapEligible && (attr === "Combat" || attr === "Stealth")) {
-      renderRollOption(block, "Hacking", step, job, holder, c, {
-        label: "NETRUNNER",
+      swaps.push({
+        key: "NETRUNNER", attr: "Hacking",
         onUse: () => {
           job.classAbility.hackerSwapUsed = true;
           addLog(c, `${c.name} routes it through the deck instead — NETRUNNER.`);
@@ -2554,13 +2559,51 @@ function renderChallenge(container, step, onContinue, ctx) {
       });
     }
     if (wraithEligible && attr === "Combat") {
-      renderRollOption(block, "Stealth", step, job, holder, c, {
-        label: "WRAITH",
+      swaps.push({
+        key: "WRAITH", attr: "Stealth",
         onUse: () => {
           job.classAbility.wraithUsed = true;
           addLog(c, `${c.name} is already gone before the fight starts — WRAITH.`);
         }
       });
+    }
+
+    if (swaps.length === 1) {
+      // The common case, unchanged: a single swap always renders fully
+      // expanded, side by side with the real roll.
+      const s = swaps[0];
+      renderRollOption(block, s.attr, step, job, holder, c, { label: s.key, onUse: s.onUse });
+    } else if (swaps.length > 1) {
+      // UPDATE 3.1 (chat request) — "if you have both wraith and other
+      // ability that can change a combat roll, make them buttons": 2+
+      // swaps contending for the same box collapse into a row of toggle
+      // buttons (one per ability) instead of all rendering fully expanded
+      // at once. Clicking a button reveals that swap's full roll-option
+      // details (mods/BOOST/Ally-Assist/one-shot + its own "Roll X"
+      // confirm button) via the same renderRollOption() the single-swap
+      // case uses; clicking the same button again hides them; clicking a
+      // different ability's button switches directly, no need to close the
+      // first. G.expandedSwap (ephemeral UI state, never persisted — same
+      // idiom as G.shopTab/G.gearTab/G.peopleTab) tracks which one, if any.
+      block.classList.add("has-swap");
+      const picker = document.createElement("div");
+      picker.className = "swap-picker";
+      swaps.forEach(s => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "swap-picker-btn" + (G.expandedSwap === s.key ? " active" : "");
+        btn.textContent = s.key;
+        btn.addEventListener("click", () => {
+          G.expandedSwap = G.expandedSwap === s.key ? null : s.key;
+          render();
+        });
+        picker.appendChild(btn);
+      });
+      block.appendChild(picker);
+      const active = swaps.find(s => s.key === G.expandedSwap);
+      if (active) {
+        renderRollOption(block, active.attr, step, job, holder, c, { label: active.key, onUse: active.onUse });
+      }
     }
 
     // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:

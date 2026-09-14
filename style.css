@@ -242,6 +242,10 @@ header h1 {
      cramped once each column has to fit under ~200px. */
   .challenge.has-swap { flex-direction: column; }
   .swap-option { border-left: none; padding-left: 0; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+  /* Same stacked-below flip for the multi-swap picker (chat request): the
+     buttons go in a row instead of a column (more space per button once
+     they're not squeezed into a narrow side column), divider on top. */
+  .swap-picker { flex-direction: row; flex-wrap: wrap; border-left: none; padding-left: 0; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
 }
 .muted { color: var(--muted); font-size: 13px; }
 
@@ -313,6 +317,20 @@ button.danger { background: var(--danger); color: #2a0000; }
 .challenge.has-swap > .swap-option { flex: 1 1 220px; min-width: 200px; }
 .swap-option { border-left: 1px dashed var(--border); padding-left: 16px; }
 .swap-option h4 { color: var(--warn); }
+/* UPDATE 3.1 (chat request) — "if you have both wraith and other ability
+   that can change a combat roll, make them buttons": 2+ swaps contending
+   for the same box collapse into this picker (a compact column of toggle
+   buttons, game.js: renderChallenge) instead of each rendering its full
+   .swap-option panel at once. The expanded one's full panel (still a plain
+   .swap-option, appended right after the picker) skips its own divider —
+   the picker's already drawn one. */
+.challenge.has-swap > .swap-picker { flex: 0 0 auto; border-left: 1px dashed var(--border); padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+.swap-picker-btn {
+  background: transparent; border: 1px solid var(--warn); color: var(--warn);
+  padding: 6px 12px; font-size: 12px; font-weight: 600;
+}
+.swap-picker-btn.active { background: var(--warn); color: #2a1a00; }
+.swap-picker + .swap-option { border-left: none; padding-left: 0; }
 .mods { margin: 8px 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;

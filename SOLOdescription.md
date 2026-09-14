@@ -2706,6 +2706,30 @@ else's second item.
   GEARHEAD swap (§21.3, right above). Clicking it sets
   `job.classAbility.wraithUsed = true`.
 
+**Two-or-more swaps on the same box — the swap picker (chat request)**:
+since WRAITH is earned independently of Profession, a character can now
+own two Combat-box swaps at once (a Jockey or Hacker who's also earned
+WRAITH — GEARHEAD+WRAITH or NETRUNNER+WRAITH; the two profession-gated
+swaps can never coexist on one character, since Professions are mutually
+exclusive). "If you have both wraith and other ability that can change a
+combat roll, make them buttons" — `renderChallenge()` collects every
+eligible swap for a box into one array first: exactly one renders exactly
+as described above (fully expanded, side by side, unchanged); two or more
+instead collapse into a `.swap-picker` — a compact column of small toggle
+buttons, one per ability, next to the real roll — and none of their full
+`renderRollOption()` panels render at all until a button is clicked.
+Clicking a swap's button either reveals its panel (mods/BOOST/Ally-Assist/
+one-shot checkboxes plus its own "Roll X" confirm button — "you get the
+details and can then click the roll confirmation") if nothing else is
+showing, hides it again on a second click of that same button ("second
+click hides the details"), or — if a different ability's panel is
+currently showing — switches straight to the new one without needing to
+close the first ("you can click directly to other feature and get
+details"). `G.expandedSwap` (ephemeral UI state, never persisted — the
+same idiom as `G.shopTab`/`G.gearTab`/`G.peopleTab`) tracks which ability's
+key, if any, is currently expanded; a full `render()` rebuild follows every
+click, same as any other action in this codebase (§1's rendering model).
+
 ---
 
 ## Appendix A — Names
