@@ -1269,6 +1269,66 @@ job A's on both counts. A queued faction-war Special Mission (§19.7) is
 exempt from this retry — it must be exactly what the Power struggle
 targeted.
 
+**Revision (chat request) — Tier 3/4 factions pin to real faction Tiers,
+and start actively chasing Power.** "Make sure that at Tier 3, you only get
+jobs from Tier 3 (Job 1) and Tier 4 (Job 2) factions targeting similar
+factions. 50% of the time they actively try to do missions that result [in]
+power increase. In character Tier 4 all jobs are Tier 4 as are targets, and
+75% are aimed at power increase." `genMissionBoard()` now computes the
+player's real `reputationTier()` (not `capTier`, which stays capped at 3 for
+difficulty) and, at Tier 3+, pins both jobs to actual faction Tiers
+(`character.factionStandings[name].tier`, §19.6 — Corpo 3-4/Crime 2-3/Nomad
+1-2, not the broader category) instead of the old category-only gate:
+- **Tier 3 (character):** Job 1's Employer AND Target both pinned to
+  faction Tier 3; Job 2's both pinned to Tier 4.
+- **Tier 4 (character):** both jobs pin Employer and Target to Tier 4.
+- **Below Tier 3:** unchanged — `firstJobCategoriesByTier`'s existing
+  category-only gate on Job 1, Job 2 unrestricted.
+
+Threaded through as two new optional params: `genBoardJob()` gained
+`requiredFactionTier` (filters `getEmployer()`'s candidate pool by
+`standing.tier`, then narrows the Target pool — normally
+`pairedFactionsFor()`'s category-adjacency spread — to that same exact
+Tier: *"targeting similar factions"*) and `powerChance` (0-1: a per-job
+chance, checked before the normal random mission-type pick, of forcing the
+type to Assassination or Hold — the only two types that raise the
+Employer's own faction Power on success, §19.2's `missionFactionEffects` —
+0.5 at Tier 3, 0.75 at Tier 4, 0 below). `powerChance` layers *on top of*
+the ordinary random type pick's own ~40% baseline chance of landing on one
+of those two types anyway (2 of `DATA.missionTypes`' 5 entries) rather than
+replacing it, so the actually-observed rate of Power-raising missions runs
+higher than the literal 50%/75% (live-tested: ~70%/~85%) — read as "50%/75%
+of the time a faction *deliberately* reaches for it," not a hard overall
+cap. Both new params are `undefined`/`0` below Tier 3, so nothing about
+Tier 1/2 Board generation changed.
+
+**"Only… factions", no Freelance wildcard.** Every other category/Tier
+gate in the game (`firstJobCategoriesByTier` included) still lets Freelance
+stand in for any restriction — `getPerson()`/`genPerson()` always exempt it.
+That reads wrong for "you **only** get jobs from Tier 3/4 factions", so
+`requiredFactionTier` also flips on a new `strict` flag through the whole
+casting chain (`getEmployer()` → `getPerson()` → `genPerson()`, and
+`genMission()`'s own Target draw via a new `strictTargetFaction` param) —
+under `strict`, Freelance is excluded outright, not just deprioritized; the
+Employer/Target must be a real named faction at exactly that Tier. The one
+safety net: if literally no faction currently sits at the required Tier (or
+the Target pool empties out — e.g. only one Tier 4 faction exists, and it
+can't target itself), `genPerson()` still falls back to Freelance rather
+than crashing or looping — the only sane "nobody's stepped up to that Tier
+yet" outcome. Every pre-existing non-strict call site (`allowedCategories`
+alone, no `requiredTier`) is unaffected — `strict` is computed as
+`requiredFactionTier !== undefined`, so it's only ever true for this new
+Tier-pin path.
+
+Live-tested (Monte Carlo, 300 boards per scenario, faction Tiers forced via
+console): Tier 3 with 3 real Tier-3 factions and 1 Tier-4 faction — Job 1
+Employer/Target 300/300 Tier 3, Job 2 Employer 300/300 Tier 4 (Target fell
+back to Freelance 300/300, correctly — only one Tier-4 faction existed, so
+no different Tier-4 Target was possible); adding a 2nd Tier-4 faction made
+Job 2's Target land on it 300/300 instead. Tier 4 with 2 Tier-4 factions —
+both jobs' Employer and Target 300/300 Tier 4. Tier 1/2 boards unchanged
+(still category-gated, Freelance still allowed) — confirmed no regression.
+
 ### 20.3 Background faction missions (supplements §19.7)
 Distinct from §19.7's Power-struggle destroy-attempts (which only fire for
 Power ≥10 attackers, on Rest ticks, and can destroy a faction): once per

@@ -54,11 +54,20 @@ function genFaction(chanceFreelance = 0.25) {
 
 // allowedFactionNames (§19.4, optional): if given, the generated person's
 // faction is drawn from that list instead of any of the 11 — Freelance is
-// always included since it's exempt from the Employer/Target pairing rule.
-function genPerson(allowedFactionNames) {
+// always included since it's exempt from the Employer/Target pairing rule,
+// UNLESS strict (UPDATE 3.1, chat request, optional) says otherwise — "you
+// only get jobs from Tier 3/4 factions" (genMissionBoard) means a real
+// named faction, not the Freelance wildcard. An empty allowedFactionNames
+// under strict (no faction currently qualifies — e.g. no faction's climbed
+// to Tier 4 yet) falls back to Freelance anyway rather than crashing; it's
+// the only sane "nobody's stepped up yet" outcome.
+function genPerson(allowedFactionNames, strict) {
   let f;
   if (allowedFactionNames) {
-    f = pick([{ name: "Freelance", type: "None" }, ...DATA.factions.filter(x => allowedFactionNames.includes(x.name))]);
+    const pool = strict
+      ? DATA.factions.filter(x => allowedFactionNames.includes(x.name))
+      : [{ name: "Freelance", type: "None" }, ...DATA.factions.filter(x => allowedFactionNames.includes(x.name))];
+    f = pool.length ? pick(pool) : { name: "Freelance", type: "None" };
   } else {
     f = genFaction();
   }
@@ -155,7 +164,10 @@ function genOneShotOffer(reputationTier, idx) {
 // faction (null = unrestricted, used for Special Missions and Freelance
 // Employers). forcedType/forcedTarget (§19.7): used to build a guaranteed
 // Special Mission out of a faction Power struggle's pending war.
-function genMission(location, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget) {
+// strictTargetFaction (UPDATE 3.1, chat request, optional): the Target must
+// come from allowedTargetFactions itself — no Freelance wildcard (see
+// getPerson()) — genBoardJob's Tier 3/4 pin ("targeting similar factions").
+function genMission(location, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget, strictTargetFaction) {
   const type = forcedType || pick(DATA.missionTypes);
   const adversaryCount = randInt(1, 3);
   // tier is per-mission, not a trait of the pooled person, so it's spread
@@ -179,7 +191,7 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
   // getting killed); every other mission type casts a cooperative/neutral
   // Target (the person/cargo being stolen, moved, delayed, or held).
   const targetRole = type === "Assassination" ? "hostile" : "ally";
-  const target = forcedTarget || getPerson(character, targetRole, excludeIds, allowedTargetFactions);
+  const target = forcedTarget || getPerson(character, targetRole, excludeIds, allowedTargetFactions, strictTargetFaction);
 
   // Transport gets a distinct origin point; `location` (the job's main
   // Location, driving Heat/Encounters) is the destination.
@@ -241,26 +253,47 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 // war's target faction, guaranteed Special — from a faction Power struggle.
 // employerCategories (BATCH 2.2, optional): restricts the Employer's faction
 // category — only ever passed for the Board's first slot (see genMissionBoard).
-function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories) {
+// requiredFactionTier/powerChance (UPDATE 3.1, chat request, both optional,
+// both only ever passed by genMissionBoard for Reputation Tier 3+ — see
+// there): requiredFactionTier pins both the Employer's and the Target's
+// faction Tier to this exact number ("targeting similar factions" — Tier 3
+// jobs only involve Tier 3 factions, Tier 4 jobs only Tier 4); powerChance
+// (0-1) is the odds this job is forced into a mission type that actually
+// grows the Employer's faction Power (§19.2's missionFactionEffects) — a
+// faction "actively trying" to trigger its own §19.7 Power struggle.
+function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories, requiredFactionTier, powerChance) {
   const fullLoc = resolveLocation(character, genLocationDef());
   const excludeIds = new Set();
   // BATCH 2.0 — never draw an Employer from the faction a queued war is
   // already targeting, or a forced-war Special could end up hiring itself.
-  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories);
+  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories, requiredFactionTier);
   // BATCH 2.0 — Special Missions ignore pairing ("any roles") but still
   // never target the Employer's own faction; nonDestroyedFactionNames()
   // stands in for pairedFactionsFor()'s usual category-based list.
-  const allowedTargetFactions = forceSpecial
+  let allowedTargetFactions = forceSpecial
     ? nonDestroyedFactionNames(character).filter(name => name !== employer.faction)
     : pairedFactionsFor(character, employer.faction);
+  // UPDATE 3.1 (chat request) — "targeting similar factions": once the
+  // Employer's own Tier is pinned, narrow the Target pool to that same
+  // Tier too, instead of the usual broader category-adjacency spread.
+  if (requiredFactionTier !== undefined && allowedTargetFactions) {
+    allowedTargetFactions = allowedTargetFactions.filter(name => character.factionStandings[name].tier === requiredFactionTier);
+  }
 
   let forcedType = null, forcedTarget = null;
   if (forcedWar) {
     forcedType = "Assassination";
     forcedTarget = castWarTarget(character, forcedWar.target, excludeIds);
+  } else if (powerChance && randInt(1, 100) <= powerChance * 100) {
+    // UPDATE 3.1 (chat request) — "actively try to do missions that result
+    // [in] power increase": Assassination (+2) and Hold (+1) are the only
+    // two mission types that raise the Employer's own faction Power on a
+    // non-Failure (DATA.missionFactionEffects) — the two struggle-adjacent
+    // types a faction gunning for its own §19.7 Power play would pick.
+    forcedType = pick(["Assassination", "Hold"]);
   }
 
-  const mission = genMission(fullLoc, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget);
+  const mission = genMission(fullLoc, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget, requiredFactionTier !== undefined);
 
   if (forceSpecial) {
     mission.special = true;
@@ -284,12 +317,26 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, em
 // (§19.7) has a guaranteed war queued up, which always fills the second slot.
 function genMissionBoard(character) {
   const capTier = Math.min(reputationTier(character), 3);
+  const repTier = reputationTier(character);
   // BATCH 2.2 — the first job's Employer is further restricted to the
   // category set gated by the player's own Reputation Tier (not capTier,
   // which is capped at 3 for difficulty purposes — this uses the real Tier
   // up to 4, per DATA.firstJobCategoriesByTier's own Legend/Tier-4 entry).
-  const firstJobCategories = DATA.firstJobCategoriesByTier[Math.min(4, Math.max(1, reputationTier(character)))];
-  const jobA = genBoardJob(character, capTier, false, false, null, firstJobCategories);
+  const firstJobCategories = DATA.firstJobCategoriesByTier[Math.min(4, Math.max(1, repTier))];
+
+  // UPDATE 3.1 (chat request) — at Reputation Tier 3+, the Board's two jobs
+  // pin to real faction Tiers (not just categories): Job 1 only Tier 3
+  // factions (targeting Tier 3 factions), Job 2 only Tier 4 (targeting Tier
+  // 4) — at Tier 4 itself, both jobs pin to Tier 4 on both ends. Below Tier
+  // 3, undefined — genBoardJob's existing category-gated (not Tier-pinned)
+  // behavior stands unchanged. Same request: at Tier 3, a 50% chance per
+  // job of actively chasing a Power-raising mission type; 75% at Tier 4 —
+  // the factions themselves racing toward their own §19.7 Power struggle.
+  const jobATier = repTier >= 4 ? 4 : repTier === 3 ? 3 : undefined;
+  const jobBTier = repTier >= 3 ? 4 : undefined;
+  const powerChance = repTier >= 4 ? 0.75 : repTier === 3 ? 0.5 : 0;
+
+  const jobA = genBoardJob(character, capTier, false, false, null, firstJobCategories, jobATier, powerChance);
 
   // The queued war's target could have been destroyed by another Power
   // struggle in the same tick (§19.7) before this Board consumed it —
@@ -302,7 +349,8 @@ function genMissionBoard(character) {
   // §20.1 — the Board's two jobs always come from different Employers and
   // different factions (never a repeat of jobA's contact or faction). A
   // queued war (guaranteed Special Mission) is exempt — it must be exactly
-  // what the Power struggle targeted, so it's never retried against this.
+  // what the Power struggle targeted, so it's never retried against this
+  // (and exempt from the Tier-pin/power-chance above too, same reasoning).
   let jobB;
   const sameEmployer = candidate => candidate.employer.id === jobA.employer.id || candidate.employer.faction === jobA.employer.faction;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -316,7 +364,7 @@ function genMissionBoard(character) {
     // slot is already escalating to a higher Tier, a coin flip decides
     // whether it's a Special Mission instead of an ordinary higher-tier job.
     const wantSpecial = wantHigher && randInt(1, 100) <= 50;
-    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial);
+    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial, null, null, jobBTier, powerChance);
     if (!sameEmployer(jobB)) break;
   }
   return [jobA, jobB];

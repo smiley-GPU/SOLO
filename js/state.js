@@ -404,21 +404,24 @@ const REUSE_CHANCE = 0.8;
 // from casting the same person into two roles.
 // allowedFactionNames (§19.4, optional): restricts both the reused-pool
 // draw and a freshly generated person to that faction list (Freelance always
-// exempt — see genPerson()). Omitted entirely by every call site that
-// doesn't care (Hireling, Adversaries, ...), so existing behavior is unchanged.
-function getPerson(character, roleCategory, excludeIds, allowedFactionNames) {
+// exempt — see genPerson()) UNLESS strict (UPDATE 3.1, chat request,
+// optional) says otherwise — no Freelance wildcard at all, a real named
+// faction every time (genMissionBoard's Tier 3/4 pin). Omitted entirely by
+// every call site that doesn't care (Hireling, Adversaries, ...), so
+// existing behavior is unchanged.
+function getPerson(character, roleCategory, excludeIds, allowedFactionNames, strict) {
   const pool = character.contacts.filter(p =>
     !excludeIds.has(p.id) &&
     !p.benefactor && // BATCH 2.1 — the Mysterious Benefactor is never cast into an ordinary role
     (roleCategory === "hostile" ? p.relationship < 0 : p.relationship >= 0) &&
-    (!allowedFactionNames || p.faction === "Freelance" || allowedFactionNames.includes(p.faction))
+    (!allowedFactionNames || (strict ? allowedFactionNames.includes(p.faction) : (p.faction === "Freelance" || allowedFactionNames.includes(p.faction))))
   );
   let person = null;
   if (pool.length && Math.random() < REUSE_CHANCE) {
     person = pick(pool);
   }
   if (!person) {
-    person = genPerson(allowedFactionNames);
+    person = genPerson(allowedFactionNames, strict);
     person.id = character.nextPersonId++;
     person.relationship = roleCategory === "hostile" ? -randInt(1, 2) : 0;
     person.favor = 0;
@@ -507,14 +510,23 @@ function nonDestroyedFactionNames(character) {
 // allowedCategories (BATCH 2.2, optional): further restricts the Employer to
 // factions in these categories — used for the Mission Board's first slot,
 // gated by the player's own Reputation Tier (DATA.firstJobCategoriesByTier).
-// Freelance Employers are unaffected either way (getPerson() always exempts
-// Freelance from an allowedFactionNames list).
-function getEmployer(character, excludeIds, excludeFactionName, allowedCategories) {
+// requiredTier (UPDATE 3.1, chat request, optional): further restricts the
+// Employer to factions whose *current faction Tier* (not category) equals
+// this exact number — "at Tier 3, Job 1 only comes from Tier 3 factions,
+// Job 2 only Tier 4; at Tier 4, both only from Tier 4" (genMissionBoard,
+// engine.js). Freelance Employers are unaffected by any of this (getPerson()
+// always exempts Freelance from an allowedFactionNames list) — an empty
+// `allowed` (no faction currently at the required Tier) falls back to
+// Freelance-only via that same exemption, not an error.
+function getEmployer(character, excludeIds, excludeFactionName, allowedCategories, requiredTier) {
   let allowed = nonAuthorityFactionNames(character).filter(name => name !== excludeFactionName);
   if (allowedCategories) {
     allowed = allowed.filter(name => allowedCategories.includes(character.factionStandings[name].category));
   }
-  return getPerson(character, "ally", excludeIds, allowed);
+  if (requiredTier !== undefined) {
+    allowed = allowed.filter(name => character.factionStandings[name].tier === requiredTier);
+  }
+  return getPerson(character, "ally", excludeIds, allowed, requiredTier !== undefined);
 }
 
 // The factions a Target may belong to given the Employer's faction: same or
