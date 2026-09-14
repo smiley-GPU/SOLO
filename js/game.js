@@ -1117,6 +1117,12 @@ function renderBriefingCard(row, job, idx) {
   const acceptBtn = document.createElement("button");
   acceptBtn.textContent = "Accept the Job";
   acceptBtn.addEventListener("click", () => {
+    // UPDATE 3.1 (chat request) — "update to the log: what mission has been
+    // taken" — the Briefing card itself disappears the moment G.phase moves
+    // off "briefing", so without this the player has no record of which of
+    // the two jobs (or which Special) they actually picked.
+    const c = G.character;
+    addLog(c, `Job taken${mission.special ? ` — ${mission.specialName}` : ""}: ${mission.type} for ${employer.name} (${employer.faction}), targeting ${mission.target.name}, at ${location.name}.`);
     G.job = job;
     G.board = null;
     G.phase = "gearup";
@@ -2185,7 +2191,7 @@ function finishAbortMission() {
 // clears the pending result. Shared by mission steps and Random Encounters so
 // neither path skips consequences. BOOST growth is tallied once at Debrief
 // from job.stepResults instead of tracked per-step here.
-function finalizeChallengeCommon() {
+function finalizeChallengeCommon(stepDesc) {
   const job = G.job;
   const c = G.character;
   const res = job.lastResult;
@@ -2198,7 +2204,7 @@ function finalizeChallengeCommon() {
   // the next box) into a context it no longer belongs to.
   G.expandedSwap = null;
 
-  applyOutcome(c, job, res.usedAttr, res.tier);
+  applyOutcome(c, job, res.usedAttr, res.tier, res.total, stepDesc);
 
   // Every clash deepens the grudge, regardless of roll tier — covers both
   // mission Combat steps and the "Caught!" forced step (Encounter combat
@@ -2216,7 +2222,7 @@ function finalizeStep(step) {
   const c = G.character;
   const loc = c.locations[job.location.name]; // UPDATE 3.0 — snapshotted before the roll's own fallout can raise it
   const heatBefore = loc ? loc.heat : 0;
-  const res = finalizeChallengeCommon();
+  const res = finalizeChallengeCommon(step.desc);
   if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
   // Side-objective steps (todo3.md ADD: "more BONDS") are tracked
   // separately so a botched side job can't tank the main contract's
@@ -2346,21 +2352,31 @@ function degradeGearItem(c, item) {
 // Combat-fail fallout — see applyHuntCombatFailFallout — which this doesn't
 // touch). `options` is an array of consequence-key arrays; a Partial/Fail
 // picks one array at random and applies every key in it.
-function applyOutcome(c, job, attr, tier) {
+// UPDATE 3.1 (chat request) — "update to the log: what mission has been
+// taken, who has been killed, description of events player chooses, and
+// their outcomes." desc/total are optional (Rest sub-flows and other
+// finalizeChallengeCommon() callers that don't have a step description or
+// care about redundant rolls can omit them) — when given, desc prefixes the
+// line so the log reads as a recap of what was actually happening, and
+// total appends the roll so a player scrolling back can see how close a
+// Partial/Fail actually was.
+function applyOutcome(c, job, attr, tier, total, desc) {
   const loc = c.locations[job.location.name];
   const fallout = DATA.challengeFallout[attr];
+  const prefix = desc ? `${desc} ` : "";
+  const rolled = total !== undefined ? ` (${attr}, rolled ${total})` : "";
 
   // Combat always adds Heat, win or lose (§19.9) — checked before the
   // full-success early return below, since it applies there too.
   if (fallout.heatAlways) raiseHeat(c, loc, 1);
 
   if (tier === "full") {
-    addLog(c, `Full success on ${attr}.`);
+    addLog(c, `${prefix}Full success${rolled}.`);
     return;
   }
 
   const table = DATA.complications[attr];
-  addLog(c, tier === "partial" ? pick(table.partial) : pick(table.fail));
+  addLog(c, `${prefix}${tier === "partial" ? pick(table.partial) : pick(table.fail)}${rolled}`);
 
   if (fallout.heatOnResolve) raiseHeat(c, loc, fallout.heatOnResolve);
 
@@ -2407,12 +2423,19 @@ function maybeTriggerCyberpsycho(c, job) {
     return false;
   }
 
+  // UPDATE 3.1 (chat request) — "update to the log: ... who has been
+  // killed": killPerson() only logs an obituary for someone with an actual
+  // relationship (§20.1), so a mass-kill event like this needs its own
+  // named line per victim — otherwise the log just says "everyone" without
+  // ever recording who "everyone" was.
+  const namedKill = (person) => { if (person) { killPerson(c, person.id); addLog(c, `${person.name} is dead.`); } };
+
   if (roll >= 10) {
     addLog(c, "Something snaps behind your eyes. The red haze doesn't lift this time.");
-    if (job.employer) killPerson(c, job.employer.id);
-    if (job.mission.target) killPerson(c, job.mission.target.id);
-    (job.mission.adversaries || []).forEach(a => killPerson(c, a.id));
-    job.helpers.forEach(h => killPerson(c, h.person.id));
+    namedKill(job.employer);
+    namedKill(job.mission.target);
+    (job.mission.adversaries || []).forEach(namedKill);
+    job.helpers.forEach(h => namedKill(h.person));
     addLog(c, "SwissGuard finds you standing over the wreckage and fries you where you stand with a microwave cannon.");
     G.phase = "death";
     return true;
@@ -2421,10 +2444,10 @@ function maybeTriggerCyberpsycho(c, job) {
   // 7-9 — everyone opposing you tonight dies, and so does anyone standing
   // too close, but you come back to yourself once the mission's over.
   addLog(c, "The red haze takes you. When it clears, everyone standing against you tonight is dead — and so is anyone who was standing too close.");
-  (job.mission.adversaries || []).forEach(a => killPerson(c, a.id));
-  if (job.mission.target) killPerson(c, job.mission.target.id);
+  (job.mission.adversaries || []).forEach(namedKill);
+  namedKill(job.mission.target);
   job.helpers.slice().forEach(h => {
-    killPerson(c, h.person.id);
+    namedKill(h.person);
     c.contacts.forEach(p => { if (p.faction === h.person.faction) nudgeRelationship(c, p.id, -1); });
   });
   if (job.helpers.length) addLog(c, "Word of what you did to your own help gets back to their people fast.");

@@ -48,6 +48,38 @@ below.
   (state.js), which pushes a line onto `character.log` (capped at 300
   lines, oldest dropped). `renderJournal()` (game.js) renders the array
   **reversed** — newest line on top — under the phase card.
+  **Revision (chat request) — a readable per-mission recap.** Three gaps
+  closed, all in game.js, no new mechanics:
+  - **Which mission was taken.** The Briefing card (`renderBriefingCard()`)
+    disappears the instant `G.phase` moves off `"briefing"`, so nothing
+    recorded which of the two Board jobs (or which Special) the player
+    actually picked. "Accept the Job" now logs `Job taken[ — specialName]:
+    {type} for {employer} ({employer faction}), targeting {target}, at
+    {location}.` before it does.
+  - **What each step was and how the roll landed.** `applyOutcome()`
+    (still the single §19.9 fallout entry point) gained two optional
+    params, `total` and `desc`: `finalizeStep()` passes the main-sequence
+    step's own `step.desc` (`MISSION_SEQUENCES`, engine.js — e.g. "Approach
+    the target undetected.") and `finalizeChallengeCommon()` always passes
+    `res.total` through from `job.lastResult`. The old bare `"Full success
+    on Combat."` / a picked `DATA.complications` line is now `"{step desc}
+    {complication or 'Full success'} ({attr}, rolled {total})."` — a full
+    job now reads back as a plain-language recap step by step, not just a
+    pile of side-effect lines. Encounters (`renderEncounter()`) already log
+    their own `"Random Encounter: {desc}"` line up front, so that call site
+    still omits `desc` (no duplicate narration) but now shows the roll
+    total too.
+  - **Who died.** `killPerson()` (state.js) already logs an obituary, but
+    only for someone with an actual bond (`relationship >= 3`, Bloodbrother,
+    or Archenemy) — every other `killPerson()` call site is expected to
+    name its own victim, and every one already did (Debrief's Assassination/
+    Transport/Hold/side-objective kills, `woundPerson()`'s 2nd-wound kill,
+    the Hunt's finishing blow, a savior's death-save) **except**
+    `maybeTriggerCyberpsycho()`'s two mass-kill branches (10+: everyone
+    present; 7-9: every adversary/target/Helper), which only ever said
+    "everyone... is dead" without recording who "everyone" was. Both now
+    route every kill through a local `namedKill(person)` helper that logs
+    `"{name} is dead."` per victim before/alongside the flavor line.
 
 ---
 
