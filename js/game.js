@@ -961,13 +961,15 @@ function buildJobFromCandidate(candidate) {
     outcome: null,
     sideObjective: null, // "more BONDS" side job (todo3.md ADD) — see takeSideJob
     abortFlow: null, // todo3.md INTERFACE 2.4.2 — "Abort Mission" Evasion roll, see renderAbortBox
-    // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — each profession's
+    // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — each profession's
     // once-per-mission special, tracked per job so it refreshes every time
-    // out: Nomad's Combat-to-Driving swap (renderChallenge), Rocker's free
-    // Hire (renderGearUp), Solo's auto-success (renderChallenge).
-    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false },
+    // out: Jockey's Combat-to-Driving swap (renderChallenge), Rocker's free
+    // Hire (renderGearUp), Solo's auto-success (renderChallenge), Hacker's
+    // Stealth-or-Combat-to-Hacking swap (renderChallenge).
+    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false, hackerSwapUsed: false },
     pendingStepPenalty: null, // UPDATE 3.0 MISSIONS — see MISSION_SEQUENCES' alertOnFail (engine.js)
-    nomadVehicleSnapshot: null // UPDATE 3.0 ARCHENEMY/GEARHEAD — set on "Head Out", restored at Debrief
+    jockeyVehicleSnapshot: null, // UPDATE 3.0/3.1 GEARHEAD — set on "Head Out", restored at Debrief
+    hackerDeckSnapshot: null // UPDATE 3.1 (chat request) — same never-lose-it protection, for a Hacker's deck
   };
 }
 
@@ -1674,12 +1676,21 @@ function renderGearUp() {
       vehicle.preMissionLocation = vehicleLocation(vehicle);
       vehicle.location = "Moving";
     }
-    // UPDATE 3.0 — Nomad GEARHEAD: "they never lose their vehicle... it
-    // always returns to him after mission" — snapshot it here (name/tier
-    // survive even if degradeGearItem/loseVehicle later strips or removes
-    // it mid-job) so runDebrief can restore it once the job's over.
-    if (c.turf === "Nomad" && vehicle) {
-      job.nomadVehicleSnapshot = { name: vehicle.name, tier: vehicle.tier, tags: vehicle.tags, preMissionLocation: vehicle.preMissionLocation };
+    // UPDATE 3.0/3.1 — Jockey GEARHEAD (moved here from the Nomad Turf,
+    // chat request): "they never lose their vehicle... it always returns to
+    // him after mission" — snapshot it here (name/tier survive even if
+    // degradeGearItem/loseVehicle later strips or removes it mid-job) so
+    // runDebrief can restore it once the job's over.
+    if (c.profession === "Jockey" && vehicle) {
+      job.jockeyVehicleSnapshot = { name: vehicle.name, tier: vehicle.tier, tags: vehicle.tags, preMissionLocation: vehicle.preMissionLocation };
+    }
+    // UPDATE 3.1 (chat request) — Hacker: "never lose the deck — similarly
+    // like GEARHEAD vehicle." Same snapshot-and-reconcile shape as Jockey's
+    // vehicle above, just for a carried Hacking-attr item instead of a
+    // Driving one (decks don't have a Moving/location concept to restore).
+    const deck = c.gear.find(g => g.attr === "Hacking" && g.carried);
+    if (c.profession === "Hacker" && deck) {
+      job.hackerDeckSnapshot = { name: deck.name, tier: deck.tier, tags: deck.tags };
     }
     G.phase = advanceFromGearUp();
     persist(); render();
@@ -2488,16 +2499,26 @@ function renderChallenge(container, step, onContinue, ctx) {
   const rawAttrs = [step.attr, step.alt].filter(Boolean);
   const gatedAttrs = rawAttrs.filter(attr => attrAvailable(c, job, attr));
   const attrs = gatedAttrs.length ? gatedAttrs : rawAttrs;
-  // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Nomad GEARHEAD: "they
-  // can also change one Combat check to a Driving check," once per mission.
-  // Injected as an extra offered attr (reusing the normal roll block below,
-  // labeled distinctly) rather than a bespoke UI — only when Combat is on
-  // offer, Driving isn't already, and they're actually carrying a vehicle.
-  const gearheadEligible = job && c.turf === "Nomad" && job.classAbility && !job.classAbility.gearheadUsed
+  // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — Jockey GEARHEAD
+  // (moved here from the Nomad Turf, chat request): "they can also change
+  // one Combat check to a Driving check," once per mission. Injected as an
+  // extra offered attr (reusing the normal roll block below, labeled
+  // distinctly) rather than a bespoke UI — only when Combat is on offer,
+  // Driving isn't already, and they're actually carrying a vehicle.
+  const gearheadEligible = job && c.profession === "Jockey" && job.classAbility && !job.classAbility.gearheadUsed
     && rawAttrs.includes("Combat") && !rawAttrs.includes("Driving") && ownsGearForAttr(c, "Driving");
   if (gearheadEligible) attrs.push("Driving");
+  // UPDATE 3.1 (chat request) — Hacker: "change one stealth or combat check
+  // to hacking," once per mission. Same injected-extra-attr idiom as
+  // Jockey's GEARHEAD swap above — offered whenever the step's real options
+  // include Combat or Stealth (Hacking isn't already one of them), and
+  // they're actually carrying a deck.
+  const hackerSwapEligible = job && c.profession === "Hacker" && job.classAbility && !job.classAbility.hackerSwapUsed
+    && (rawAttrs.includes("Combat") || rawAttrs.includes("Stealth")) && !rawAttrs.includes("Hacking") && ownsGearForAttr(c, "Hacking");
+  if (hackerSwapEligible) attrs.push("Hacking");
   attrs.forEach(attr => {
     const isGearheadSwap = gearheadEligible && attr === "Driving";
+    const isHackerSwap = hackerSwapEligible && attr === "Hacking";
     const block = document.createElement("div");
     block.className = "challenge";
     const boostOption = boostSpendOptionHtml(c); // BATCH 2.1 (item 13) — up to 2 BOOST
@@ -2521,8 +2542,8 @@ function renderChallenge(container, step, onContinue, ctx) {
     const oneShotOptions = oneShotItems.map((item, i) =>
       `<label class="boost-toggle"><input type="checkbox" class="oneshot-check" data-idx="${i}" /> Use ${item.name} (1S) for +${DATA.gearTierBonus[item.tier] || 0}</label>`
     ).join("");
-    const gearheadLabel = isGearheadSwap ? "GEARHEAD — " : "";
-    block.innerHTML = `<h4>${gearheadLabel}Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
+    const swapLabel = isGearheadSwap ? "GEARHEAD — " : isHackerSwap ? "NETRUNNER — " : "";
+    block.innerHTML = `<h4>${swapLabel}Roll ${attr} (rank ${c.attrs[attr]})</h4>${boostOption}${assistOptions}${oneShotOptions}<div class="mods"></div>`;
     const modsEl = block.querySelector(".mods");
     const assistChecks = Array.from(block.querySelectorAll(".assist-check"));
     const checkedAssistIds = () => assistChecks.filter(el => el.checked).map(el => Number(el.dataset.personId));
@@ -2555,6 +2576,10 @@ function renderChallenge(container, step, onContinue, ctx) {
       if (isGearheadSwap) {
         job.classAbility.gearheadUsed = true;
         addLog(c, `${c.name} fights it from behind the wheel — GEARHEAD.`);
+      }
+      if (isHackerSwap) {
+        job.classAbility.hackerSwapUsed = true;
+        addLog(c, `${c.name} routes it through the deck instead — NETRUNNER.`);
       }
       const result = resolveRoll(c, c.attrs[attr], mods); // BATCH 2.1 (item 8)
       result.usedAttr = attr;
@@ -2971,15 +2996,15 @@ function runDebrief(forceFailure) {
     }
   });
 
-  // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Nomad GEARHEAD: "they
-  // never lose their vehicle. It can be damaged (or destroyed) by effect
-  // but it always returns to him after mission." Reconciles whatever the
-  // job's own fallout did to it (degradeGearItem's tier drop, or
-  // loseVehicle's outright removal) against the snapshot taken on "Head
-  // Out" — restoring the item if it's gone, or its Tier if it's merely
-  // downgraded.
-  if (job.nomadVehicleSnapshot) {
-    const snap = job.nomadVehicleSnapshot;
+  // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — Jockey GEARHEAD
+  // (moved here from the Nomad Turf, chat request): "they never lose their
+  // vehicle. It can be damaged (or destroyed) by effect but it always
+  // returns to him after mission." Reconciles whatever the job's own
+  // fallout did to it (degradeGearItem's tier drop, or loseVehicle's
+  // outright removal) against the snapshot taken on "Head Out" — restoring
+  // the item if it's gone, or its Tier if it's merely downgraded.
+  if (job.jockeyVehicleSnapshot) {
+    const snap = job.jockeyVehicleSnapshot;
     const item = c.gear.find(g => g.attr === "Driving" && g.name === snap.name);
     if (!item) {
       c.gear.push({ name: snap.name, attr: "Driving", tier: snap.tier, tags: snap.tags, carried: true, location: snap.preMissionLocation || "Street" });
@@ -2987,6 +3012,22 @@ function runDebrief(forceFailure) {
     } else if (DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.indexOf(snap.tier)) {
       item.tier = snap.tier;
       addLog(c, `${snap.name} comes back fixed up to spec overnight — GEARHEAD keeps it running.`);
+    }
+  }
+
+  // UPDATE 3.1 (chat request) — Hacker: "never lose the deck — similarly
+  // like GEARHEAD vehicle." Identical reconcile-against-snapshot shape as
+  // Jockey's vehicle above, just for a carried Hacking-attr item; decks
+  // don't have a Moving/location concept, so there's no location to restore.
+  if (job.hackerDeckSnapshot) {
+    const snap = job.hackerDeckSnapshot;
+    const item = c.gear.find(g => g.attr === "Hacking" && g.name === snap.name);
+    if (!item) {
+      c.gear.push({ name: snap.name, attr: "Hacking", tier: snap.tier, tags: snap.tags, carried: true });
+      addLog(c, `${snap.name} turns back up in your rig, rebuilt from a backup image — you never really lose the deck.`);
+    } else if (DATA.gearTierOrder.indexOf(item.tier || "Street") < DATA.gearTierOrder.indexOf(snap.tier)) {
+      item.tier = snap.tier;
+      addLog(c, `${snap.name} reflashes itself back to spec overnight.`);
     }
   }
 

@@ -7,8 +7,16 @@ const SAVE_KEY = "solo_game_save_v1";
 // item is mechanically identical (original Europunk names — Corrections.md).
 const PROFESSIONS = {
   Solo: { boosts: ["Combat", "Stealth"], gear: [{ name: "Kessler Snub", attr: "Combat" }, { name: "Padded Vest", armor: 1 }], desc: "Combat & Stealth. Starts armed and armored." },
-  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Bootleg Deck", attr: "Hacking" }, { name: "Patchwork ICE Program", attr: "Hacking" }], desc: "Hacking & Social. Starts with a deck and a program." },
-  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Ostrava Runner", attr: "Driving" }], desc: "Social & Driving. Starts with a ride and a crew contact." }
+  // UPDATE 3.1 (chat request) — NETRUNNER: once a job, swap a Stealth or
+  // Combat check to Hacking; the deck itself is never lost for good, same
+  // never-lose-it protection as Jockey's GEARHEAD vehicle (see
+  // hackerDeckSnapshot, game.js).
+  Hacker: { boosts: ["Hacking", "Social"], gear: [{ name: "Bootleg Deck", attr: "Hacking" }, { name: "Patchwork ICE Program", attr: "Hacking" }], desc: "Hacking & Social. Starts with a deck and a program — NETRUNNER, once a job." },
+  Rocker: { boosts: ["Social", "Driving"], gear: [{ name: "Ostrava Runner", attr: "Driving" }], desc: "Social & Driving. Starts with a ride and a crew contact." },
+  // UPDATE 3.1 (chat request) — GEARHEAD moved here from the Nomad Turf: a
+  // Profession, not a Turf, is what gates a Class Ability (§21.3), so it
+  // needed a Profession home of its own instead of piggybacking on Nomad.
+  Jockey: { boosts: ["Driving", "Combat"], gear: [{ name: "Roadhouse Revolver", attr: "Combat" }, { name: "Steel Jackal", attr: "Driving" }], desc: "Driving & Combat. Starts with a gun and a bike — GEARHEAD, once a job." }
 };
 
 const TURFS = {

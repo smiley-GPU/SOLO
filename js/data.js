@@ -111,11 +111,13 @@ const DATA = {
       { name: "Kessler Snub", attr: "Combat", price: 1 },
       { name: "Rusted Stiletto", attr: "Combat", price: 1 },
       { name: "Junkyard Shiv", attr: "Combat", price: 1 },
+      { name: "Roadhouse Revolver", attr: "Combat", price: 1 }, // Jockey starting gear
       { name: "Grigio Overcoat", attr: "Stealth", price: 1 },
       { name: "Faded Trenchcoat", attr: "Stealth", price: 1 },
       { name: "Ostrava Runner", attr: "Driving", price: 1 },
       { name: "Rustbucket Moped", attr: "Driving", price: 1 },
       { name: "Borrowed Bicycle", attr: "Driving", price: 1 },
+      { name: "Steel Jackal", attr: "Driving", price: 1 }, // Jockey starting gear (motorcycle)
       { name: "Bootleg Deck", attr: "Hacking", price: 1 },
       { name: "Cracked Tablet Rig", attr: "Hacking", price: 1 },
       { name: "Scavenged Antenna Array", attr: "Hacking", price: 1 },

@@ -123,6 +123,10 @@ attrs[turf.boost] = min(3, attrs[turf.boost]+1)
 | Hacker | Hacking, Social | Bootleg Deck (Hacking, Street), Patchwork ICE Program (Hacking, Street) | Hacking & Social. Starts with a deck and a program. |
 | Rocker | Social, Driving | Ostrava Runner (Driving, Street) | Social & Driving. Starts with a ride and a crew contact. |
 
+**Revision (§21.3)**: a 4th Profession, **Jockey** (Driving, Combat;
+Roadhouse Revolver + Steel Jackal), joined this table — see §21.3 for its
+Class Ability.
+
 **Turfs:**
 | Turf | Boost | Starting BONDS | Starting gear | Contact faction | Extra |
 |---|---|---|---|---|---|
@@ -2522,24 +2526,34 @@ position, since a forced step (the Transport-ambush or "Caught!" insert,
   individual wave went (no more step-ratio Partial-or-worse outcome for
   this type).
 
-### 21.3 Character Class Abilities — one free use per job, per background trait
+### 21.3 Character Class Abilities — one free use per job, per Profession
 
 "Each Character class has a special ability that is available once in a
-mission." `job.classAbility = {gearheadUsed, samuraiUsed, freeHireUsed}`
-(all `false`, `buildJobFromCandidate()`) tracks each per job, so every new
-job refreshes all three regardless of whether the last one used them.
-Despite the todo's heading, these key off whichever of the six background
-traits (§4.1's three Professions, three Turfs) the character actually has
-— "Nomad" here is the **Turf** (`character.turf === "Nomad"`), "Rocker"
-and "Solo" are **Professions** (`character.profession`); Hacker/Corpo/
-Street have no ability of their own yet.
+mission." `job.classAbility = {gearheadUsed, samuraiUsed, freeHireUsed,
+hackerSwapUsed}` (all `false`, `buildJobFromCandidate()`) tracks each per
+job, so every new job refreshes all four regardless of whether the last one
+used them. These key off `character.profession` — every one of the four
+Professions (§4.1's table, now including Jockey) has exactly one; the three
+Turfs have none.
 
-- **Nomad — GEARHEAD**: two effects, one passive and permanent for the
+**Revision (chat request, same session as §21.1-21.2)**: GEARHEAD originally
+shipped keyed to the Nomad **Turf** rather than a Profession — inconsistent
+with every other ability here, and with "each Character *class*" in the
+todo's own heading. It was moved onto a brand-new 4th Profession, **Jockey**
+(Driving/Combat boosts, starting gear a Roadhouse Revolver and a Steel
+Jackal motorcycle, §4.1), and every `c.turf === "Nomad"` gate that used to
+read it became `c.profession === "Jockey"`. The Nomad Turf itself is
+unchanged otherwise — it still grants +Driving, 2 BONDS, and a starting
+Kombi Wagon (§4.1's Turfs table); it just no longer carries a Class Ability
+of its own. `job.nomadVehicleSnapshot` was renamed `job.jockeyVehicleSnapshot`
+to match.
+
+- **Jockey — GEARHEAD**: two effects, one passive and permanent for the
   whole job, one a limited-use swap.
   - *"They never lose their vehicle... it can be damaged (or destroyed) by
     effect but it always returns to him after mission."* On Gear Up's
-    "Head Out" click, a Nomad's currently-carried Driving-attr item is
-    snapshotted (`job.nomadVehicleSnapshot = {name, tier, tags,
+    "Head Out" click, a Jockey's currently-carried Driving-attr item is
+    snapshotted (`job.jockeyVehicleSnapshot = {name, tier, tags,
     preMissionLocation}`) before the normal "vehicle goes Moving"
     handling (§20.20/INTERFACE 2.5). At Debrief, right after that same
     Moving-location restore, `runDebrief()` reconciles the snapshot against
@@ -2548,7 +2562,7 @@ Street have no ability of their own yet.
     pushed back onto `character.gear` at its original name/Tier/tags,
     carried, returned to wherever it was stocked before the job; if it's
     merely downgraded (`degradeGearItem` on a Driving item), its Tier is
-    restored. A Nomad effectively can't lose their one signature ride to
+    restored. A Jockey effectively can't lose their one signature ride to
     mission fallout — only ever inconvenienced by it mid-job.
   - *"They can also change one Combat check to a Driving check"* — once
     per job. `renderChallenge()` (game.js) injects `"Driving"` as an extra
@@ -2560,6 +2574,23 @@ Street have no ability of their own yet.
     Clicking its Roll button sets `job.classAbility.gearheadUsed = true`
     and logs the swap; picking a step's real Driving option instead (when
     one exists) never touches the flag.
+- **Hacker — NETRUNNER** (chat request, same session): the same
+  never-lose-it/limited-swap shape as Jockey's GEARHEAD, mirrored onto
+  Hacking instead of Driving.
+  - *"Never lose the deck — similarly like GEARHEAD vehicle."*
+    `job.hackerDeckSnapshot = {name, tier, tags}` is taken on "Head Out"
+    for a Hacker's currently-carried Hacking-attr item (no location to
+    track — decks don't move between an Apartment and "Street" the way a
+    Vehicle does); `runDebrief()` reconciles it the same way, right after
+    the Jockey vehicle check — pushing the item back if it's gone, restoring
+    its Tier if it's merely downgraded.
+  - *"Change one stealth or combat check to hacking"* — once per job.
+    `renderChallenge()` injects `"Hacking"` as an extra offered attr on any
+    step whose real options include Combat **or** Stealth but not already
+    Hacking, while `!job.classAbility.hackerSwapUsed` and the character
+    carries a deck (`ownsGearForAttr(c, "Hacking")`) — labeled
+    `"NETRUNNER — "`. Clicking its Roll button sets
+    `job.classAbility.hackerSwapUsed = true`.
 - **Rocker — NATURAL LEADER**: *"they get a one free Hire for a mission."*
   `renderGearUp()`'s "Hire backup for this job" row costs 0 BONDS instead
   of 1 the first time a Rocker uses it per job (`freeHire = c.profession
