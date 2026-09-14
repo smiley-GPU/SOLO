@@ -80,6 +80,44 @@ below.
     "everyone... is dead" without recording who "everyone" was. Both now
     route every kill through a local `namedKill(person)` helper that logs
     `"{name} is dead."` per victim before/alongside the flavor line.
+  **Revision (chat request) — the kill itself reads back the gear/crew that
+  did it.** Assassination's own keyChallenge step ("Take out the target")
+  gets a bespoke line, `buildKillFlavor(c, job, res)` (game.js), instead of
+  the generic Full-success/complication text — only when the target
+  actually dies (`res.tier !== "fail"`, matching `runDebrief()`'s own
+  "outcome !== Failure" kill condition; a Fail there still falls through to
+  the plain complication line untouched, since the target survives it).
+  Composed as `"{You / You and your crew} {corner / ambush} {target} in
+  {setting} — {method}"`:
+  - **`method`** keys off `res.usedAttr` — for `"Combat"`,
+    `bestPermanentGearBonus(c, "Combat")` (the same "best owned item"
+    auto-equip §20.5 modifiers already use) names the weapon, looked up
+    against a new `DATA.weaponKillFlavor` entry per exact item name across
+    the whole Combat gear catalog (all 4 Tiers, both `gear` and
+    `oneShotGear`) — e.g. Vorpal Monowire: *"your monowire whirls through
+    air, flesh, and bone — they're down before the motion even finishes"*;
+    a carried one-shot Combat item checked for *this* roll
+    (`res.modifiers` matching `"{name} (1S)"`) outranks the passive
+    best-owned pick, since throwing/firing it was the more dramatic choice
+    this specific roll. No Combat gear carried at all falls to
+    `weaponKillFlavor.unarmed`. `"Hacking"` (the step's own `alt`, a Hacker
+    choosing to hack the kill) picks from a `DATA.hackKillFlavor` pool
+    instead (ICE/killcode themed, not item-specific — the kill reads the
+    same regardless of whose Deck sent it). GEARHEAD (Jockey, Combat →
+    Driving) or WRAITH (Combat → Stealth) swapping into this same step —
+    both eligible here since it offers Combat with no Driving/Stealth
+    already on the table — fall to a one-line `DATA.attrKillFlavor[attr]`
+    each, since neither is a specific piece of gear.
+  - **Crew assist** — `"You and your crew ambush"` instead of solo `"You
+    corner"` — checks whether *this specific roll's* `res.modifiers`
+    actually included a Helper's contribution (a hired Helper's own +1, an
+    Ally's +2 assist, or the 2+-active `"Crew (2+ helpers)"` bonus, §20.1),
+    not merely whether the job has Helpers along.
+  - **`setting`** — the target's own faction standing's `category` picks a
+    genre-appropriate line (Corpo: *"the {faction} HQ lobby"*; Crime:
+    *"the back room of a {faction} joint"*; Nomad: *"{faction} turf on the
+    edge of the sprawl"*); Freelance/no standing/destroyed falls back to the
+    job's real generated `location.name`.
 
 ---
 

@@ -2187,11 +2187,57 @@ function finishAbortMission() {
   render();
 }
 
+// UPDATE 3.1 (chat request) — "modify descriptions by bonuses and
+// equipment player uses": Assassination's keyChallenge step ("Take out the
+// target") narrates the actual kill using whatever's actually equipped and
+// however it went down, instead of the generic "Full success"/complication
+// text every other Challenge gets. Only ever called for a non-Fail tier on
+// that one step (finalizeStep) — the target always dies here, per
+// runDebrief's own "outcome !== Failure" kill condition.
+function buildKillFlavor(c, job, res) {
+  const target = job.mission.target;
+  const standing = c.factionStandings[target.faction];
+  const category = standing && !standing.destroyed ? standing.category : null;
+  const setting = category === "Corpo" ? `the ${target.faction} HQ lobby`
+    : category === "Crime" ? `the back room of a ${target.faction} joint`
+    : category === "Nomad" ? `${target.faction} turf on the edge of the sprawl`
+    : job.location.name;
+
+  // Crew assist: a Helper actually contributed a bonus to *this specific*
+  // roll (res.modifiers) — a hired Helper's +1, an Ally's +2 assist, or the
+  // 2+-active "Crew" bonus (computeModifiers, §20.1) — not just "a Helper
+  // happens to be along for the ride" (they could be benched, unused, or
+  // assigned to a different attr entirely).
+  const crewAssisted = (res.modifiers || []).some(m =>
+    m.label === "Crew (2+ helpers)" || job.helpers.some(h => h.person.name === m.label));
+
+  let method;
+  if (res.usedAttr === "Combat") {
+    // A checked one-shot Combat item (thrown/fired for this roll
+    // specifically, PATCH 2.4) is the more dramatic choice over whatever's
+    // merely holstered — prefer it over the passive best-owned-weapon bonus.
+    const oneShotLabel = (res.modifiers || []).map(m => m.label).find(l => /\(1S\)$/.test(l) && DATA.weaponKillFlavor[l.replace(" (1S)", "")]);
+    const weapon = bestPermanentGearBonus(c, "Combat");
+    const weaponName = oneShotLabel ? oneShotLabel.replace(" (1S)", "") : weapon ? weapon.name : null;
+    method = weaponName ? (DATA.weaponKillFlavor[weaponName] || DATA.weaponKillFlavor.default) : DATA.weaponKillFlavor.unarmed;
+  } else if (res.usedAttr === "Hacking") {
+    method = pick(DATA.hackKillFlavor);
+  } else {
+    // GEARHEAD (Combat -> Driving) or WRAITH (Combat -> Stealth) swapped
+    // into this step — neither is a specific piece of gear.
+    method = DATA.attrKillFlavor[res.usedAttr] || DATA.weaponKillFlavor.default;
+  }
+
+  const subject = crewAssisted ? "You and your crew" : "You";
+  const verb = crewAssisted ? "ambush" : "corner";
+  return `${subject} ${verb} ${target.name} in ${setting} — ${method}`;
+}
+
 // Applies a resolved roll's effects (Harm/Heat/etc. per gamedesc.md §7) and
 // clears the pending result. Shared by mission steps and Random Encounters so
 // neither path skips consequences. BOOST growth is tallied once at Debrief
 // from job.stepResults instead of tracked per-step here.
-function finalizeChallengeCommon(stepDesc) {
+function finalizeChallengeCommon(stepDesc, killFlavor) {
   const job = G.job;
   const c = G.character;
   const res = job.lastResult;
@@ -2204,7 +2250,7 @@ function finalizeChallengeCommon(stepDesc) {
   // the next box) into a context it no longer belongs to.
   G.expandedSwap = null;
 
-  applyOutcome(c, job, res.usedAttr, res.tier, res.total, stepDesc);
+  applyOutcome(c, job, res.usedAttr, res.tier, res.total, stepDesc, killFlavor);
 
   // Every clash deepens the grudge, regardless of roll tier — covers both
   // mission Combat steps and the "Caught!" forced step (Encounter combat
@@ -2222,7 +2268,15 @@ function finalizeStep(step) {
   const c = G.character;
   const loc = c.locations[job.location.name]; // UPDATE 3.0 — snapshotted before the roll's own fallout can raise it
   const heatBefore = loc ? loc.heat : 0;
-  const res = finalizeChallengeCommon(step.desc);
+  // UPDATE 3.1 (chat request) — "modify descriptions by bonuses and
+  // equipment player uses": Assassination's own keyChallenge step ("Take
+  // out the target") gets a weapon/crew-flavored kill line instead of the
+  // generic complication/Full-success text, whenever the target doesn't
+  // survive it — mirrors runDebrief()'s own "outcome !== Failure" kill
+  // condition (a Fail here means they lived, so no kill flavor then).
+  const isKillMoment = step.keyChallenge && job.mission.type === "Assassination" && job.lastResult.tier !== "fail";
+  const killFlavor = isKillMoment ? buildKillFlavor(c, job, job.lastResult) : null;
+  const res = finalizeChallengeCommon(step.desc, killFlavor);
   if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
   // Side-objective steps (todo3.md ADD: "more BONDS") are tracked
   // separately so a botched side job can't tank the main contract's
@@ -2360,7 +2414,13 @@ function degradeGearItem(c, item) {
 // line so the log reads as a recap of what was actually happening, and
 // total appends the roll so a player scrolling back can see how close a
 // Partial/Fail actually was.
-function applyOutcome(c, job, attr, tier, total, desc) {
+// killFlavor (optional, UPDATE 3.1 chat request — see buildKillFlavor
+// below) is only ever passed for Assassination's keyChallenge step on a
+// non-Fail tier — it replaces the generic "Full success" line outright, or
+// prefixes the Partial complication line (the target still dies either
+// way, per runDebrief's "outcome !== Failure" kill condition, but a Partial
+// still costs something).
+function applyOutcome(c, job, attr, tier, total, desc, killFlavor) {
   const loc = c.locations[job.location.name];
   const fallout = DATA.challengeFallout[attr];
   const prefix = desc ? `${desc} ` : "";
@@ -2371,12 +2431,15 @@ function applyOutcome(c, job, attr, tier, total, desc) {
   if (fallout.heatAlways) raiseHeat(c, loc, 1);
 
   if (tier === "full") {
-    addLog(c, `${prefix}Full success${rolled}.`);
+    addLog(c, `${prefix}${killFlavor || "Full success"}${rolled}.`);
     return;
   }
 
   const table = DATA.complications[attr];
-  addLog(c, `${prefix}${tier === "partial" ? pick(table.partial) : pick(table.fail)}${rolled}`);
+  const complication = tier === "partial" ? pick(table.partial) : pick(table.fail);
+  addLog(c, killFlavor
+    ? `${prefix}${killFlavor}. ${complication}${rolled}`
+    : `${prefix}${complication}${rolled}`);
 
   if (fallout.heatOnResolve) raiseHeat(c, loc, fallout.heatOnResolve);
 

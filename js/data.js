@@ -302,6 +302,52 @@ const DATA = {
     }
   },
 
+  // UPDATE 3.1 (chat request) — "modify descriptions by bonuses and
+  // equipment player uses": Assassination's own keyChallenge step ("Take
+  // out the target") narrates the actual kill using whatever's actually
+  // equipped, keyed by exact item name against the `gear`/`oneShotGear`
+  // catalogs above — every Combat weapon in both gets an entry, plus
+  // `unarmed` (no Combat gear carried) and `default` (a fallback that
+  // should never actually be hit). Written as a lowercase clause fragment
+  // (no leading capital, no trailing period) so buildKillFlavor() (game.js)
+  // can drop it straight in after an em-dash.
+  weaponKillFlavor: {
+    "Kessler Snub": "your Kessler barks twice, center mass, and they're down before they hit the ground",
+    "Rusted Stiletto": "the rusted stiletto goes in under the ribs before they even clock you're there",
+    "Junkyard Shiv": "a scrap-metal shiv does the job quick, ugly, and final",
+    "Roadhouse Revolver": "one round from the Roadhouse and it's over",
+    "Halvar Sidearm": "the Halvar's subsonic round drops them without a sound",
+    "Monofilament Edge": "the monofilament edge opens them up before the nerve signal even reaches their brain",
+    "Tactical Push Dagger": "the push dagger finds the gap in their armor — in, out, done",
+    "Sturmgewehr SMG": "a burst from the Sturmgewehr walks clean up their chest",
+    "Raptor Talons": "the Raptor Talons go through their armor like it's paper",
+    "Gauss Battle Rifle": "one Gauss round punches through cover, armor, and target in the same breath",
+    "Ares Railgun": "the Ares Railgun's shot turns cover, armor, and target into the same fine mist",
+    "Vorpal Monowire": "your monowire whirls through air, flesh, and bone — they're down before the motion even finishes",
+    "Singularity Blade": "the Singularity Blade doesn't so much cut them as unmake them",
+    "Lucky-Lucky Polymer One-Shot Pistol": "the polymer one-shot goes off point-blank — messy, but it does the job",
+    "Hades Thermite Grenade": "the Hades charge cooks them where they stand",
+    "Singularity Grenade": "the Singularity Grenade folds the room in on itself — there's nothing left to identify",
+    unarmed: "bare hands finish it, brutal and close",
+    default: "whatever's in your hands finishes it, up close and personal"
+  },
+  // A Hacking kill (the step's `alt`) doesn't key off a specific deck the
+  // way a Combat kill keys off a specific weapon — a burst of lethal ICE
+  // reads the same regardless of whose Deck sent it — so this stays a
+  // flavor pool (`pick()`) rather than a per-item table.
+  hackKillFlavor: [
+    "a burst of killcode floods their neural link and they seize and drop before the ICE even finishes loading",
+    "you brick their cyberware mid-heartbeat and their own augments finish the job",
+    "their pacemaker chip takes one malformed packet and just stops"
+  ],
+  // GEARHEAD (Combat -> Driving) and WRAITH (Combat -> Stealth) can both
+  // swap into this same keyChallenge step (engine.js MISSION_SEQUENCES) —
+  // neither is a specific piece of gear, so one line each covers it.
+  attrKillFlavor: {
+    Driving: "you run them down under the wheels before they can even turn",
+    Stealth: "you're already gone before they know they're dead — clean and quiet"
+  },
+
   // Repair options for a Permanent Injury (gamedesc.md §1 Health). Cybernetic
   // is the cheap, standard fix but leaves a lasting piece of chrome behind
   // (see cyberneticParts below); Biovat costs more but grows back clean.
