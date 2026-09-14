@@ -965,8 +965,10 @@ function buildJobFromCandidate(candidate) {
     // once-per-mission special, tracked per job so it refreshes every time
     // out: Jockey's Combat-to-Driving swap (renderChallenge), Rocker's free
     // Hire (renderGearUp), Solo's auto-success (renderChallenge), Hacker's
-    // Stealth-or-Combat-to-Hacking swap (renderChallenge).
-    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false, hackerSwapUsed: false },
+    // Stealth-or-Combat-to-Hacking swap (renderChallenge). wraithUsed
+    // (chat request) is the odd one out — not profession-gated, unlocked by
+    // earning a 2nd "Shadow of X" (§19.1) instead; see wraithEligible.
+    classAbility: { gearheadUsed: false, samuraiUsed: false, freeHireUsed: false, hackerSwapUsed: false, wraithUsed: false },
     pendingStepPenalty: null, // UPDATE 3.0 MISSIONS — see MISSION_SEQUENCES' alertOnFail (engine.js)
     jockeyVehicleSnapshot: null, // UPDATE 3.0/3.1 GEARHEAD — set on "Head Out", restored at Debrief
     hackerDeckSnapshot: null // UPDATE 3.1 (chat request) — same never-lose-it protection, for a Hacker's deck
@@ -2512,6 +2514,12 @@ function renderChallenge(container, step, onContinue, ctx) {
   // one of them), and they're actually carrying a deck.
   const hackerSwapEligible = job && c.profession === "Hacker" && job.classAbility && !job.classAbility.hackerSwapUsed
     && (rawAttrs.includes("Combat") || rawAttrs.includes("Stealth")) && !rawAttrs.includes("Hacking") && ownsGearForAttr(c, "Hacking");
+  // UPDATE 3.1 (chat request) — WRAITH: earned (not profession-gated) by a
+  // 2nd "Shadow of X" (§19.1, runDebrief) — "change one combat in mission
+  // to Stealth. Same way as GEARHEAD." No gear prerequisite (unlike
+  // Jockey's vehicle/Hacker's deck) — it's an earned trait, not equipment.
+  const wraithEligible = job && c.wraith && job.classAbility && !job.classAbility.wraithUsed
+    && rawAttrs.includes("Combat") && !rawAttrs.includes("Stealth");
 
   attrs.forEach(attr => {
     const block = document.createElement("div");
@@ -2542,6 +2550,15 @@ function renderChallenge(container, step, onContinue, ctx) {
         onUse: () => {
           job.classAbility.hackerSwapUsed = true;
           addLog(c, `${c.name} routes it through the deck instead — NETRUNNER.`);
+        }
+      });
+    }
+    if (wraithEligible && attr === "Combat") {
+      renderRollOption(block, "Stealth", step, job, holder, c, {
+        label: "WRAITH",
+        onUse: () => {
+          job.classAbility.wraithUsed = true;
+          addLog(c, `${c.name} is already gone before the fight starts — WRAITH.`);
         }
       });
     }
@@ -2909,8 +2926,20 @@ function runDebrief(forceFailure) {
     const finalHeat = (c.locations[job.location.name] || {}).heat;
     if (job.mission.type === "Assassination" && typeof finalHeat === "number" && finalHeat <= 3) {
       repGain += 1;
-      addLog(c, `Word travels: "Shadow of ${job.location.name}."`);
-      addTitle(c, `Shadow of ${job.location.name}`);
+      // UPDATE 3.1 (chat request) — WRAITH: a 2nd "Shadow of X" upgrades
+      // the title track to WRAITH instead of stacking more Shadow entries
+      // (and unlocks its Class Ability — see wraithEligible below); every
+      // one after that is "not shown or has no effect" — the +1 Reputation
+      // above still applies each time, just no further title/flavor line.
+      c.shadowCount = (c.shadowCount || 0) + 1;
+      if (c.shadowCount === 1) {
+        addLog(c, `Word travels: "Shadow of ${job.location.name}."`);
+        addTitle(c, `Shadow of ${job.location.name}`);
+      } else if (c.shadowCount === 2) {
+        c.wraith = true;
+        addLog(c, `${c.name} isn't just a shadow anymore — the street starts calling them WRAITH.`);
+        addTitle(c, `WRAITH`);
+      }
     }
     if (job.mission.special) repGain += 1;
     gainReputation(c, repGain);

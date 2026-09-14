@@ -977,6 +977,16 @@ Gained at Debrief (§16) for a non-Failure outcome:
   only ever rises during a job (nothing decays the job's own Location until
   `decayOtherLocations()` right after, which explicitly skips it), so the
   value read here is already the highest it reached over the whole job.
+  **Further revision (chat request) — WRAITH**: `character.shadowCount`
+  tracks how many times this condition has ever been met. The 1st still
+  logs and titles *"Shadow of `<Location>`"* as above; the 2nd instead sets
+  `character.wraith = true` and titles **WRAITH** — "further Shadow titles
+  are not shown or have no effect": the 3rd and beyond add no title and no
+  extra flavor line (the +1 Reputation itself still applies every time,
+  unaffected). WRAITH is a permanent, profession-independent unlock (unlike
+  every other Class Ability, §21.3, which is gated by `character.profession`)
+  granting the same once-per-job Combat-to-Stealth swap GEARHEAD/NETRUNNER
+  use for their own attr — see §21.3's WRAITH entry.
 - **+1** if the job was a Special Mission (§19.5).
 - **+2** whenever an Archenemy is killed (§13.8) — logged as *"Killer of
   `<name>`"*.
@@ -2541,11 +2551,13 @@ position, since a forced step (the Transport-ambush or "Caught!" insert,
 
 "Each Character class has a special ability that is available once in a
 mission." `job.classAbility = {gearheadUsed, samuraiUsed, freeHireUsed,
-hackerSwapUsed}` (all `false`, `buildJobFromCandidate()`) tracks each per
-job, so every new job refreshes all four regardless of whether the last one
-used them. These key off `character.profession` — every one of the four
-Professions (§4.1's table, now including Jockey) has exactly one; the three
-Turfs have none.
+hackerSwapUsed, wraithUsed}` (all `false`, `buildJobFromCandidate()`)
+tracks each per job, so every new job refreshes all five regardless of
+whether the last one used them. Four of the five key off
+`character.profession` — every one of the four Professions (§4.1's table,
+including Jockey) has exactly one; the three Turfs have none. The 5th,
+**WRAITH**, is earned instead of profession-gated — see its own entry
+below, after Solo's.
 
 **Revision (chat request, same session as §21.1-21.2)**: GEARHEAD originally
 shipped keyed to the Nomad **Turf** rather than a Profession — inconsistent
@@ -2680,6 +2692,19 @@ else's second item.
   wounded Helper, same as an actually-rolled 7-9 — no BOOST-for-a-Full at
   Debrief, and the mission's own payout multiplier lands at Partial Success
   (0.6x) rather than Full (1x) if this was the deciding roll.
+- **WRAITH** (chat request, same session) — the odd one out: not gated by
+  `character.profession` like the four above, but **earned**. A 2nd
+  "Shadow of `<Location>`" (§19.1's own revision note) sets
+  `character.wraith = true` instead of stacking a 3rd title, unlocking this
+  ability permanently from then on, on whatever Profession/Turf the
+  character already has. *"Change one combat in mission to Stealth. Same
+  way as GEARHEAD."* — once per job, `wraithEligible` (`c.wraith &&
+  !job.classAbility.wraithUsed && rawAttrs.includes("Combat") &&
+  !rawAttrs.includes("Stealth")`, no gear prerequisite — it's an earned
+  trait, not equipment) offers `"WRAITH — Roll Stealth instead"` as a
+  `.swap-option` inside the Combat box, identical placement/UI to Jockey's
+  GEARHEAD swap (§21.3, right above). Clicking it sets
+  `job.classAbility.wraithUsed = true`.
 
 ---
 

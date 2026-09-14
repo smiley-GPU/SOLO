@@ -69,6 +69,15 @@ function defaultCharacter(name, profession, turf) {
     pendingSaleItem: null, // a banked Street-tier item awaiting its pair — see sellGearItem() in game.js
     reputation: 1, // §19.1 — 1-20, never spent, gates the Mission Board (reputationTier() below)
     titles: [], // INTERFACE 2.4.1 — earned honorifics ("Killer of X", "Shadow of X", "Friend of X"), see addTitle()
+    // UPDATE 3.1 (chat request) — WRAITH: a 2nd "Shadow of X" (a clean,
+    // low-Heat Assassination, §19.1) upgrades the title track to WRAITH
+    // instead of stacking more Shadow entries, and unlocks a permanent,
+    // profession-independent Class Ability (once per job, swap a Combat
+    // check to Stealth — see the wraithEligible check in renderChallenge,
+    // game.js). shadowCount tracks progress toward that upgrade; wraith
+    // is the unlocked-or-not flag the ability itself reads.
+    shadowCount: 0,
+    wraith: false,
     pendingWars: [], // §19.7 — guaranteed Special Missions queued by a faction Power struggle
     stocks: {}, // §20.5 EuroStoxx — {factionName: amount}, Corpo factions only
     apartment: null, // §20.5 — {locationName, tier, security: [names]} once bought
@@ -342,6 +351,9 @@ function migrateCharacter(character) {
   if (typeof character.reputation !== "number") character.reputation = 1;
   if (!character.titles) character.titles = []; // INTERFACE 2.4.1
   if (!character.pendingWars) character.pendingWars = [];
+  // UPDATE 3.1 (chat request) — WRAITH progress/unlock.
+  if (typeof character.shadowCount !== "number") character.shadowCount = 0;
+  if (typeof character.wraith !== "boolean") character.wraith = false;
   Object.entries(character.factionStandings).forEach(([name, standing]) => {
     const f = DATA.factions.find(f => f.name === name);
     if (!standing.category) standing.category = f ? f.type : "None";
