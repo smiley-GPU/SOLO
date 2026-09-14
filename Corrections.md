@@ -23,3 +23,5 @@ random attacks from Archenemies
 Archetype features
 2 Killer of.. titles = Hitman
 4 Killer of titles = autosuccess in combat, heat +2. Once in amission.
+
+

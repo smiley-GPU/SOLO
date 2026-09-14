@@ -239,8 +239,49 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
     targetDamage,
     special: false, // §19.5 — set true/named by genBoardJob() for the Mission Board's escalated slot
     specialName: null,
-    forcedFactionWar: null // §19.7 — set when this Special Mission comes from a queued faction Power struggle
+    forcedFactionWar: null, // §19.7 — set when this Special Mission comes from a queued faction Power struggle
+    extraTough: false, // UPDATE 3.1 (chat request) — Tier 3/4 Board's Job 2: an extra -2 roll penalty
+    guaranteedEmployerPower: false // UPDATE 3.1 (chat request) — Tier 3/4 Board's Job 2: always Employer Power +2 on success, regardless of type
   };
+}
+
+// UPDATE 3.1 (chat request) — "there should be no freelance involvement on
+// [Tier 3/4 Board jobs]... Tier 4: always use Tier4 employer and target,
+// but Tier 3 if Tier 4 is not available": walks a Tier-pinned draw's
+// requirement down (never up, never touching the Freelance wildcard) from
+// `tier` to 1 until it finds one at least one real (non-Authority,
+// category/exclude-filtered — same filters getEmployer() itself applies)
+// faction currently sits at. getEmployer()/getPerson()'s own Freelance
+// safety net becomes the very last resort — only reachable now if literally
+// no faction at any Tier 1-4 qualifies, an extreme edge case (every Corpo/
+// Crime/Nomad faction destroyed) rather than the everyday "only one Tier 4
+// faction exists yet" case this was written for.
+function resolveFactionTier(character, tier, excludeFactionName, allowedCategories) {
+  for (let t = tier; t >= 1; t--) {
+    const has = nonAuthorityFactionNames(character).some(name =>
+      name !== excludeFactionName &&
+      (!allowedCategories || allowedCategories.includes(character.factionStandings[name].category)) &&
+      character.factionStandings[name].tier === t);
+    if (has) return t;
+  }
+  return tier;
+}
+
+// Same descent, applied to an already-computed candidate list (a Target
+// pool, post category-adjacency/Employer-exclusion filtering) instead of
+// re-deriving one from scratch — used right after resolveFactionTier() above
+// picks the Employer's own resolved Tier, so the Target search starts from
+// whatever Tier the Employer actually landed on (keeping "targeting similar
+// factions") and only descends further if that exact Tier turns up nothing
+// to target. Falls back to the unfiltered `names` (never Freelance itself —
+// callers only ever pass real faction names in) only if nothing at any Tier
+// matched at all.
+function factionsAtOrBelowTier(character, names, startTier) {
+  for (let t = startTier; t >= 1; t--) {
+    const atTier = names.filter(name => character.factionStandings[name].tier === t);
+    if (atTier.length) return atTier;
+  }
+  return names;
 }
 
 // -- §19.3 The Mission Board (two jobs) + §19.4/§19.5 pairing & specials ----
@@ -257,22 +298,43 @@ function genMission(location, character, excludeIds, allowedTargetFactions, forc
 // both only ever passed by genMissionBoard for Reputation Tier 3+ — see
 // there): requiredFactionTier pins both the Employer's and the Target's
 // faction Tier to this exact number ("targeting similar factions" — Tier 3
-// jobs only involve Tier 3 factions, Tier 4 jobs only Tier 4); powerChance
-// (0-1) is the odds this job is forced into a mission type that actually
-// grows the Employer's faction Power (§19.2's missionFactionEffects) — a
-// faction "actively trying" to trigger its own §19.7 Power struggle.
+// jobs only involve Tier 3 factions, Tier 4 jobs only Tier 4) — actually
+// resolved via resolveFactionTier()/factionsAtOrBelowTier() just below,
+// which descend to the next Tier down rather than ever falling back to the
+// Freelance wildcard ("there should be no freelance involvement... Tier 4:
+// always use Tier 4 employer and target, but Tier 3 if Tier 4 is not
+// available"); powerChance (0-1) is the odds this job is forced into a
+// mission type that actually grows the Employer's faction Power (§19.2's
+// missionFactionEffects) — a faction "actively trying" to trigger its own
+// §19.7 Power struggle.
 // preExcludeIds (UPDATE 3.1, chat request, optional) — "the same person
 // doesn't have two roles at the same time... they can't be present at both
 // jobs": seeds this job's own excludeIds with the Board's *other* slot's
 // people (its Employer/Target/Adversaries) before this job draws any of its
 // own, so neither Board job can ever cast someone the other already cast —
 // see genMissionBoard, which passes job A's excludeIds in for job B.
-function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories, requiredFactionTier, powerChance, preExcludeIds) {
+// extraTough/guaranteedEmployerPower (UPDATE 3.1, chat request, both
+// optional, only ever passed true together, for the Board's Job 2 at
+// Reputation Tier 3+) — "Job 2 should always be special mission, toughness
+// extra -2, always increases employer's power by 2 regardless of job type":
+// extraTough sets mission.extraTough (an extra -2 roll penalty, applied
+// alongside the ordinary Special Mission -1 — see computeModifiers,
+// game.js); guaranteedEmployerPower sets mission.guaranteedEmployerPower
+// (overrides the Employer's side of runDebrief's usual type-driven
+// missionFactionEffects entirely with a flat, un-amplified Power +2 — see
+// runDebrief, game.js).
+function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, employerCategories, requiredFactionTier, powerChance, preExcludeIds, extraTough, guaranteedEmployerPower) {
   const fullLoc = resolveLocation(character, genLocationDef());
   const excludeIds = new Set(preExcludeIds || []);
+  // UPDATE 3.1 (chat request) — resolve the Employer's *actual* Tier before
+  // drawing them: the requested Tier if a real faction sits there, else the
+  // next one down (never Freelance — see resolveFactionTier() above).
+  const resolvedTier = requiredFactionTier !== undefined
+    ? resolveFactionTier(character, requiredFactionTier, forcedWar ? forcedWar.target : null, employerCategories)
+    : undefined;
   // BATCH 2.0 — never draw an Employer from the faction a queued war is
   // already targeting, or a forced-war Special could end up hiring itself.
-  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories, requiredFactionTier);
+  const employer = getEmployer(character, excludeIds, forcedWar ? forcedWar.target : null, employerCategories, resolvedTier);
   // BATCH 2.0 — Special Missions ignore pairing ("any roles") but still
   // never target the Employer's own faction; nonDestroyedFactionNames()
   // stands in for pairedFactionsFor()'s usual category-based list.
@@ -280,10 +342,12 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, em
     ? nonDestroyedFactionNames(character).filter(name => name !== employer.faction)
     : pairedFactionsFor(character, employer.faction);
   // UPDATE 3.1 (chat request) — "targeting similar factions": once the
-  // Employer's own Tier is pinned, narrow the Target pool to that same
-  // Tier too, instead of the usual broader category-adjacency spread.
-  if (requiredFactionTier !== undefined && allowedTargetFactions) {
-    allowedTargetFactions = allowedTargetFactions.filter(name => character.factionStandings[name].tier === requiredFactionTier);
+  // Employer's own Tier is resolved, narrow the Target pool to that same
+  // Tier too (descending further still, same no-Freelance reasoning, if
+  // that exact Tier turns up no Target either) instead of the usual broader
+  // category-adjacency spread.
+  if (resolvedTier !== undefined && allowedTargetFactions) {
+    allowedTargetFactions = factionsAtOrBelowTier(character, allowedTargetFactions, resolvedTier);
   }
 
   let forcedType = null, forcedTarget = null;
@@ -299,7 +363,7 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, em
     forcedType = pick(["Assassination", "Hold"]);
   }
 
-  const mission = genMission(fullLoc, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget, requiredFactionTier !== undefined);
+  const mission = genMission(fullLoc, character, excludeIds, allowedTargetFactions, forcedType, forcedTarget, resolvedTier !== undefined);
 
   if (forceSpecial) {
     mission.special = true;
@@ -307,6 +371,8 @@ function genBoardJob(character, capTier, wantHigher, forceSpecial, forcedWar, em
     // "one full tier above" (§19.5), on top of whatever escalation already got it here.
     mission.difficulty = Math.min(4, Math.max(mission.difficulty, capTier + 1) + 1);
     if (forcedWar) mission.forcedFactionWar = forcedWar;
+    if (extraTough) mission.extraTough = true;
+    if (guaranteedEmployerPower) mission.guaranteedEmployerPower = true;
   } else if (wantHigher) {
     mission.difficulty = Math.min(3, Math.max(mission.difficulty, capTier + 1));
   } else {
@@ -366,13 +432,25 @@ function genMissionBoard(character) {
       jobB = genBoardJob(character, capTier, true, true, war, null, undefined, undefined, jobA.excludeIds);
       break;
     }
-    const higherChance = 10 + 10 * character.restCount;
-    const wantHigher = randInt(1, 100) <= higherChance;
-    // BATCH 2.1 (item 2) — raised from 10% to 50%: once the Board's second
-    // slot is already escalating to a higher Tier, a coin flip decides
-    // whether it's a Special Mission instead of an ordinary higher-tier job.
-    const wantSpecial = wantHigher && randInt(1, 100) <= 50;
-    jobB = genBoardJob(character, capTier, wantHigher, wantSpecial, null, null, jobBTier, powerChance, jobA.excludeIds);
+    if (jobBTier !== undefined) {
+      // UPDATE 3.1 (chat request) — "Job 2 should always be special
+      // mission, toughness extra -2, always increases employer's power by
+      // 2 regardless of job type": at Reputation Tier 3+, Job 2 no longer
+      // rolls for wantHigher/wantSpecial at all — it's unconditionally
+      // forceSpecial, with the extraTough/guaranteedEmployerPower flags on
+      // top (see genBoardJob above). wantHigher is passed true too, though
+      // moot — forceSpecial's own branch in genBoardJob takes priority over
+      // it regardless.
+      jobB = genBoardJob(character, capTier, true, true, null, null, jobBTier, powerChance, jobA.excludeIds, true, true);
+    } else {
+      const higherChance = 10 + 10 * character.restCount;
+      const wantHigher = randInt(1, 100) <= higherChance;
+      // BATCH 2.1 (item 2) — raised from 10% to 50%: once the Board's second
+      // slot is already escalating to a higher Tier, a coin flip decides
+      // whether it's a Special Mission instead of an ordinary higher-tier job.
+      const wantSpecial = wantHigher && randInt(1, 100) <= 50;
+      jobB = genBoardJob(character, capTier, wantHigher, wantSpecial, null, null, jobBTier, powerChance, jobA.excludeIds);
+    }
     if (!sameEmployer(jobB)) break;
   }
   // UPDATE 3.1 (chat request) — "the same person doesn't have two roles at
