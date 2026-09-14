@@ -2227,8 +2227,10 @@ function finalizeStep(step) {
     // UPDATE 3.0 (todo3.md MISSIONS) — carry the step's keyChallenge tag
     // (MISSION_SEQUENCES, engine.js) onto its result so determineMissionOutcome
     // can find it by tag instead of array position (a forced step spliced in
-    // right after it would otherwise shift the indices).
-    job.stepResults.push({ attr: res.usedAttr, tier: res.tier, keyChallenge: !!step.keyChallenge });
+    // right after it would otherwise shift the indices). UPDATE 3.1 (chat
+    // request) — stealthCritical rides along the same way, for the
+    // Assassination "full stealth" check in runDebrief().
+    job.stepResults.push({ attr: res.usedAttr, tier: res.tier, keyChallenge: !!step.keyChallenge, stealthCritical: !!step.stealthCritical });
     applySpecialMissionBloodbrotherDanger(c, job, res);
 
     // Assassination's Approach / Heist's Breach: a Partial/Fail hands the
@@ -3118,14 +3120,20 @@ function runDebrief(forceFailure) {
   // a failed Transport/Hold kills whoever was being moved/protected.
   if (job.mission.type === "Assassination") {
     if (outcome !== "Failure") {
-      const keyResult = job.stepResults.find(r => r.keyChallenge);
       killPerson(c, job.mission.target.id);
       addLog(c, `${job.mission.target.name} won't be a problem for anyone again.`);
-      // UPDATE 3.0 (todo3.md MISSIONS) — "Even partial is success
-      // considering mission result, but creates Archenemy of killed
-      // person's sibling": the kill goes through either way, but a Partial
-      // on the key Combat/Hacking challenge leaves a fresh Archenemy behind.
-      if (keyResult && keyResult.tier === "partial") spawnArchenemySibling(c, job.mission.target);
+      // UPDATE 3.1 (chat request) — "successful Assassination always
+      // creates archenemy, unless is done full stealth, not heat addition
+      // way": replaces the old Partial-key-challenge-only trigger. A job
+      // only counts as "full stealth" if both stealth-critical steps
+      // (Approach, Escape — MISSION_SEQUENCES' stealthCritical tag,
+      // engine.js) were actually resolved via Stealth at a Full tier — a
+      // swapped attribute (Combat/Driving/Hacking instead), or anything
+      // short of Full on either, means it wasn't clean, deliberately not
+      // tied to Location Heat the way "Shadow of X" (§19.1) is.
+      const stealthSteps = job.stepResults.filter(r => r.stealthCritical);
+      const fullStealth = stealthSteps.length > 0 && stealthSteps.every(r => r.attr === "Stealth" && r.tier === "full");
+      if (!fullStealth) spawnArchenemyRelative(c, job.mission.target);
       // §19.7 — a guaranteed Special Mission queued by a faction Power
       // struggle's 7-9 result destroys the target faction outright on
       // success (todo3.md FACTIONS: "if the mission succeeds then it

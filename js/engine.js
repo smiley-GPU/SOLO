@@ -331,11 +331,16 @@ function genMissionBoard(character) {
 // step (job.pendingStepPenalty, applied in finalizeStep/computeModifiers,
 // game.js), not to the mission's outcome directly. Transport's two steps
 // both carry `targetDamage` — see genMission's targetDamage field above.
+// UPDATE 3.1 (chat request) — Assassination's Approach and Escape steps
+// also carry `stealthCritical: true`: runDebrief() (game.js) checks that
+// both came back a Full Stealth roll to decide whether the job was done
+// "full stealth" (no Archenemy relative left behind) or not (one always
+// is, on any successful Assassination that wasn't perfectly clean).
 const MISSION_SEQUENCES = {
   Assassination: [
-    { attr: "Stealth", desc: "Approach the target undetected.", alertOnFail: true },
+    { attr: "Stealth", desc: "Approach the target undetected.", alertOnFail: true, stealthCritical: true },
     { attr: "Combat", alt: "Hacking", desc: "Take out the target — a gun or a blade up close, or a burst of lethal ICE through the net.", keyChallenge: true },
-    { attr: "Stealth", alt: "Driving", desc: "Escape the scene." }
+    { attr: "Stealth", alt: "Driving", desc: "Escape the scene.", stealthCritical: true }
   ],
   Heist: [
     { attr: "Hacking", alt: "Stealth", desc: "Breach the security around the target.", alertOnFail: true },

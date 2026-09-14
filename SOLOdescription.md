@@ -2661,13 +2661,34 @@ position, since a forced step (the Transport-ambush or "Caught!" insert,
   Failure, Partial *or* Full is a success ("even partial is success
   considering mission result"), independent of how the Approach or Escape
   steps went. The Stealth "Approach the target undetected" step is tagged
-  `alertOnFail` instead (see below). A **Partial** on the key challenge
-  still kills the target, but also spawns a fresh Archenemy —
-  `spawnArchenemySibling()` (state.js) generates a new contact sharing the
-  dead target's faction, relationship -5 immediately, `tagArchenemy()`'d on
-  the spot ("creates Archenemy of killed person's sibling") — distinct from
-  every other Archenemy trigger in §7.3 (the Rest clock, a botched-and-
-  spotted hit, the relationship floor, a turned Amigue).
+  `alertOnFail` instead (see below). Every non-Failure kill risks leaving a
+  fresh Archenemy behind — see the **Revision** just below, which replaced
+  the original Partial-only trigger.
+
+  **Revision (chat request) — "successful Assassination always creates
+  archenemy, unless is done full stealth, not heat addition way."**
+  Supersedes the original "only on a Partial key challenge" trigger above.
+  Both the Approach and Escape steps also carry `stealthCritical: true`
+  (`MISSION_SEQUENCES`, engine.js), copied onto their `job.stepResults`
+  entries the same way `keyChallenge` is. At Debrief, on any non-Failure
+  outcome, `job.stepResults.filter(r => r.stealthCritical)` must be
+  non-empty and *every* one of those entries must read `{attr: "Stealth",
+  tier: "full"}` for the job to count as "full stealth" — a swapped
+  attribute (Escape taken via Driving, or either step swapped through
+  NETRUNNER/WICKED/GEARHEAD) or anything short of a Full roll on either
+  step disqualifies it, deliberately independent of Location Heat (unlike
+  "Shadow of `<Location>`," §19.1, which *is* Heat-gated — "not heat
+  addition way"). Anything less than full stealth calls
+  `spawnArchenemyRelative()` (state.js, renamed from
+  `spawnArchenemySibling()`): a new contact sharing the dead target's
+  faction, relationship -3, `tagArchenemy()`'d on the spot — distinct from
+  every other Archenemy trigger in §7.3 (the Rest clock, a
+  botched-and-spotted hit, the relationship floor, a turned Amigue). The
+  accusation names a random relation (`ARCHENEMY_RELATIVE_WORDS`: lover,
+  brother, sister, father, mother) and logs as a direct quote —
+  `"<target> was my <relation>!" cries <name> — and they swear vengeance.`
+  — tagged `"archenemy"` so it renders in red (`.log-archenemy`, style.css)
+  like every other Archenemy log line.
 - **Heist**: the Stealth "Grab the target" step is tagged `keyChallenge`
   the same way — Fail is a Failure, Partial/Full a success (a Partial still
   applies its own normal fallout cost, unchanged). The Hacking/Stealth

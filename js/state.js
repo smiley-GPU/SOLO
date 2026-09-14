@@ -614,21 +614,26 @@ function tagBloodbrother(character, person) {
   person.bloodbrother = true;
 }
 
-// UPDATE 3.0 (todo3.md MISSIONS) — "Even partial is success considering
-// mission result, but creates Archenemy of killed person's sibling": a
-// Partial on an Assassination's key Combat/Hacking challenge still kills
-// the target (runDebrief, game.js), but leaves a fresh relative gunning for
-// the player — a brand-new Archenemy, distinct from every other trigger in
+// UPDATE 3.0 (todo3.md MISSIONS), revised UPDATE 3.1 (chat request) —
+// "successful Assassination always creates archenemy, unless is done full
+// stealth": a successful Assassination that wasn't a perfectly clean,
+// full-Stealth job leaves a fresh relative gunning for the player — a
+// brand-new Archenemy, distinct from every other trigger in
 // §7.3/tagArchenemy above (the Rest clock, a botched-and-spotted hit, a
-// relationship hitting -5, a turned Amigue).
-function spawnArchenemySibling(character, deadTarget) {
-  const sibling = { name: genName(), faction: deadTarget.faction, profession: pick(DATA.npcProfessions), relationship: -3, favor: 0 };
-  sibling.id = character.nextPersonId++;
-  assignFactionTier(character, sibling);
-  character.contacts.push(sibling);
-  tagArchenemy(character, sibling);
-  addLog(character, `${deadTarget.name}'s sibling, ${sibling.name}, swears revenge for the botched hit. You've made an Archenemy.`, "archenemy");
-  return sibling;
+// relationship hitting -5, a turned Amigue). The trigger check itself
+// lives in runDebrief() (game.js); this just builds the relative and logs
+// the accusation. `tag: "archenemy"` renders in red (`.log-archenemy`,
+// style.css) same as every other Archenemy log line.
+const ARCHENEMY_RELATIVE_WORDS = ["lover", "brother", "sister", "father", "mother"];
+function spawnArchenemyRelative(character, deadTarget) {
+  const relative = { name: genName(), faction: deadTarget.faction, profession: pick(DATA.npcProfessions), relationship: -3, favor: 0 };
+  relative.id = character.nextPersonId++;
+  assignFactionTier(character, relative);
+  character.contacts.push(relative);
+  tagArchenemy(character, relative);
+  const relation = pick(ARCHENEMY_RELATIVE_WORDS);
+  addLog(character, `"${deadTarget.name} was my ${relation}!" cries ${relative.name} — and they swear vengeance. You've made an Archenemy.`, "archenemy");
+  return relative;
 }
 
 function killPerson(character, personId) {
