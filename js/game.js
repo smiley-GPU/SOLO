@@ -1054,6 +1054,7 @@ function buildJobFromCandidate(candidate) {
     outcome: null,
     sideObjective: null, // "more BONDS" side job (todo3.md ADD) — see takeSideJob
     abortFlow: null, // todo3.md INTERFACE 2.4.2 — "Abort Mission" Evasion roll, see renderAbortBox
+    patchUp: null, // chat request — mid-mission "Patch Up" heal + Stealth check, see renderPatchUpBox
     // UPDATE 3.0/3.1 (todo3.md CHARACTER CLASS ABILITY) — each profession's
     // once-per-mission special, tracked per job so it refreshes every time
     // out: Jockey's Combat-to-Driving swap (renderChallenge), Rocker's free
@@ -1908,7 +1909,7 @@ function renderLoadoutSection() {
   if (healItems.length) {
     const healBlock = document.createElement("div");
     healBlock.innerHTML = `<h4>Heal (always available)</h4>`;
-    healBlock.innerHTML += healItems.map(g => `<div class="offer"><span>${g.name} (${g.tier})</span></div>`).join("");
+    healBlock.innerHTML += healItems.map(g => `<div class="offer"><span>${g.name} (${g.tier}) — ${g.heal} use${g.heal === 1 ? "" : "s"} left</span></div>`).join("");
     grid.appendChild(healBlock);
   }
 
@@ -1961,7 +1962,10 @@ function renderEncounter() {
   renderChallenge(wrap, job.encounter.step, () => {
     finalizeChallengeCommon();
     if (G.phase === "death") { persist(); render(); return; } // BATCH 2.0
-    if (job.encounter.stage === "pre") {
+    if (job.encounter.stage === "pre" || job.encounter.stage === "patchup") {
+      // "patchup" — chat request's mid-mission Patch-Up Fail forces this
+      // same Encounter Challenge; once it resolves, control returns to the
+      // Step being patched up for, same as a "pre" boundary encounter does.
       G.phase = "steps";
     } else {
       // BATCH 2.3 fix — reaching an Encounter's own resolution at "post"
@@ -2152,8 +2156,12 @@ function renderSteps() {
   wrap.innerHTML = `<h2>${job.mission.type} — Step ${job.stepIndex + 1}/${job.steps.length}</h2>${jobContextHtml(job)}<p class="step-desc">${step.desc}</p>`;
   els.main.appendChild(wrap);
   if (job.abortFlow) { renderAbortBox(els.main); return; } // todo3.md INTERFACE 2.4.2/2.4.4
+  if (job.patchUp) { renderPatchUpBox(els.main); return; } // chat request — mid-mission Patch Up
   renderChallenge(wrap, step, () => finalizeStep(step));
-  if (!job.pendingResult) renderAbortBox(els.main); // hidden while a roll result awaits Continue
+  if (!job.pendingResult) {
+    renderPatchUpBox(els.main); // chat request — hidden while a roll result awaits Continue
+    renderAbortBox(els.main); // hidden while a roll result awaits Continue
+  }
 }
 
 // todo3.md INTERFACE 2.4.2 — "ABORT MISSION": a bail-out box shown once a
@@ -2222,6 +2230,64 @@ function finishAbortMission() {
   addLog(c, `${c.name} pulls the plug on the job. Any hired backup stands down — they'd need hiring again next time.`);
   G.phase = "debrief";
   runDebrief(true); // forced Failure — todo3.md: "Mission failed, normal penalty to your rep"
+  persist();
+  render();
+}
+
+// Mid-mission "Patch Up" (chat request) — heal items were completely inert
+// during a job; this lets the player spend one on the spot. The cost isn't a
+// flat roll penalty (that would just replace the Wounded penalty healing is
+// meant to relieve) — it's a Stealth check for the time it takes to patch up:
+// Full does nothing further, Partial raises Heat, Fail forces a Random
+// Encounter (§9). Same box/sub-flow shape as Abort Mission above, shown only
+// during Steps (not Encounter/Checkpoint, which have no equivalent hook and
+// would fight over the single job.encounter scratch slot).
+function renderPatchUpBox(container) {
+  const c = G.character;
+  const job = G.job;
+  const box = document.createElement("div");
+  box.className = "card centered abort-box";
+  if (!job.patchUp) {
+    const item = bestHealItem(c);
+    const openWounds = c.health.filter(h => h).length;
+    if (openWounds === 0 || !item) return; // nothing to heal, or nothing to heal with
+    box.innerHTML = `<h3>Patch Up</h3><p class="muted">Use ${item.name} to patch yourself up here, mid-job — it takes time you don't really have.</p>`;
+    const btn = document.createElement("button");
+    btn.textContent = "Patch Up";
+    btn.addEventListener("click", () => {
+      applyFieldHeal(c);
+      job.patchUp = { pendingResult: null, lastResult: null };
+      persist(); render();
+    });
+    box.appendChild(btn);
+    container.appendChild(box);
+    return;
+  }
+  box.innerHTML = `<h3>Patch Up</h3>`;
+  container.appendChild(box);
+  renderChallenge(box, { attr: "Stealth", desc: "Hold still and get patched up — hope nobody clocks you.", noSwap: true }, finishPatchUp, { job, holder: job.patchUp });
+}
+
+function finishPatchUp() {
+  const c = G.character;
+  const job = G.job;
+  const res = job.patchUp.lastResult;
+  const loc = c.locations[job.location.name];
+  job.patchUp = null;
+  if (res.tier === "full") {
+    addLog(c, "You're back on your feet with nobody the wiser.");
+  } else if (res.tier === "partial") {
+    addLog(c, "Someone clocks you stopping to patch up.");
+    raiseHeat(c, loc, 1);
+  } else {
+    addLog(c, "Stopping to patch up gets you made.");
+    // Same shape maybeTriggerEncounter() builds (§9) — reused, not
+    // duplicated, by renderEncounter()'s own "pre"/"patchup" branch below.
+    job.encounter.stage = "patchup";
+    job.encounter.step = { attr: "Stealth", alt: "Combat", desc: pick(DATA.encounterFlavor), isEncounter: true };
+    addLog(c, `Random Encounter: ${job.encounter.step.desc}`);
+    G.phase = "encounter";
+  }
   persist();
   render();
 }
@@ -2729,31 +2795,31 @@ function renderChallenge(container, step, onContinue, ctx) {
   // "they can also change one Combat check to a Driving check," once per
   // mission — only when Combat is on offer, Driving isn't already, and
   // they're actually carrying a vehicle.
-  const gearheadEligible = job && c.profession === "Jockey" && job.classAbility && !job.classAbility.gearheadUsed
+  const gearheadEligible = !step.noSwap && job && c.profession === "Jockey" && job.classAbility && !job.classAbility.gearheadUsed
     && rawAttrs.includes("Combat") && !rawAttrs.includes("Driving") && ownsGearForAttr(c, "Driving");
   // UPDATE 3.1 (chat request) — Hacker NETRUNNER: "change one stealth or
   // combat check to hacking," once per mission — offered whenever the
   // step's real options include Combat or Stealth (Hacking isn't already
   // one of them), and they're actually carrying a deck.
-  const hackerSwapEligible = job && c.profession === "Hacker" && job.classAbility && !job.classAbility.hackerSwapUsed
+  const hackerSwapEligible = !step.noSwap && job && c.profession === "Hacker" && job.classAbility && !job.classAbility.hackerSwapUsed
     && (rawAttrs.includes("Combat") || rawAttrs.includes("Stealth")) && !rawAttrs.includes("Hacking") && ownsGearForAttr(c, "Hacking");
   // UPDATE 3.1 (chat request) — WRAITH: earned (not profession-gated) by a
   // 2nd "Shadow of X" (§19.1, runDebrief) — "change one combat in mission
   // to Stealth. Same way as GEARHEAD." No gear prerequisite (unlike
   // Jockey's vehicle/Hacker's deck) — it's an earned trait, not equipment.
-  const wraithEligible = job && c.wraith && job.classAbility && !job.classAbility.wraithUsed
+  const wraithEligible = !step.noSwap && job && c.wraith && job.classAbility && !job.classAbility.wraithUsed
     && rawAttrs.includes("Combat") && !rawAttrs.includes("Stealth");
   // UPDATE 3.1 (chat request) — WICKED: earned by a 2nd "Killer of X"
   // (§13.8, applyHuntKillReward) — "change Stealth to Combat once in a
   // mission," the reverse pairing of WRAITH above. Same no-gear-prerequisite
   // shape.
-  const wickedEligible = job && c.wicked && job.classAbility && !job.classAbility.wickedUsed
+  const wickedEligible = !step.noSwap && job && c.wicked && job.classAbility && !job.classAbility.wickedUsed
     && rawAttrs.includes("Stealth") && !rawAttrs.includes("Combat");
   // UPDATE 3.0 (todo3.md CHARACTER CLASS ABILITY) — Solo STREET SAMURAI:
   // "they can choose to have one auto success in combat challenge. Once a
   // mission." No gear/attr-swap prerequisite (unlike the four above) — its
   // own attr is Combat itself, not a substitute (see the swaps.push below).
-  const samuraiEligible = job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed
+  const samuraiEligible = !step.noSwap && job && c.profession === "Solo" && job.classAbility && !job.classAbility.samuraiUsed
     && rawAttrs.includes("Combat");
 
   attrs.forEach(attr => {

@@ -833,6 +833,26 @@ function applyHarm(character) {
   return down;
 }
 
+// Mid-mission "Patch Up" (chat request) — heals as many currently-open
+// Health boxes as the best owned heal item still has charges for, depleting
+// that item exactly as much as it was used (same idiom as applyHarm's armor
+// depletion above: mutate the count, log it, remove the item once it hits
+// 0). Never touches permanentInjury — that's the Hub's paid repair alone.
+function applyFieldHeal(character) {
+  const item = bestHealItem(character);
+  if (!item) return 0;
+  const openWounds = character.health.filter(h => h).length;
+  const boxesHealed = Math.min(item.heal, openWounds);
+  for (let i = 0; i < boxesHealed; i++) healBox(character);
+  item.heal -= boxesHealed;
+  addLog(character, `${item.name} patches you up — -${boxesHealed} Harm box${boxesHealed === 1 ? "" : "es"}.`);
+  if (item.heal <= 0) {
+    character.gear = character.gear.filter(g => g !== item);
+    addLog(character, `${item.name} is spent — nothing left in it.`);
+  }
+  return boxesHealed;
+}
+
 // Fires on a character's *first* Down (all 3 Health boxes marked): a slim
 // chance knocks 2 points off their BOOST pool ("you should be dead —
 // you're not, but it cost you"), and either way they're left with a
@@ -1009,6 +1029,18 @@ function bestHealBonus(character) {
   let best = 0;
   character.gear.forEach(item => {
     if (item.heal && item.heal > best) best = item.heal;
+  });
+  return best;
+}
+
+// Mid-mission "Patch Up" (chat request) — the actual best owned heal item
+// (not just its value, unlike bestHealBonus above), since applyFieldHeal
+// below needs to deplete it. Only the single best owned item is ever used,
+// matching the "best owned item" precedent every other gear bonus follows.
+function bestHealItem(character) {
+  let best = null;
+  character.gear.forEach(item => {
+    if (item.heal && item.heal > 0 && (!best || item.heal > best.heal)) best = item;
   });
   return best;
 }
