@@ -25,13 +25,13 @@ const DATA = {
   factions: [
     { name: "Hammerstein GmbH", type: "Corpo" },
     { name: "Bulldog Ltd.", type: "Corpo" },
-    { name: "Styletto", type: "Corpo" },
+    { name: "Stiletto Inc.", type: "Corpo" },
     { name: "EuroMafia", type: "Crime" },
     { name: "Vikings", type: "Crime" },
     { name: "Hooligans", type: "Crime" },
     { name: "Vlads", type: "Nomad" },
     { name: "Sombra 43", type: "Nomad" },
-    { name: "Odin's Ax", type: "Nomad" },
+    { name: "Axe of Odin", type: "Nomad" },
     { name: "EurCop", type: "Authority" },
     { name: "SwissGuard", type: "Authority" }
   ],
@@ -80,11 +80,11 @@ const DATA = {
     { name: "Pustý Blok", area: "Urban", faction: "Hooligans" },
     { name: "Hammerstein Turm", area: "Corpo", faction: "Hammerstein GmbH" },
     { name: "Campus Bulldog", area: "Corpo", faction: "Bulldog Ltd." },
-    { name: "Atrio Styletto", area: "Corpo", faction: "Styletto" },
+    { name: "Atrio Stiletto", area: "Corpo", faction: "Stiletto Inc." },
     { name: "La Bourse de Verre", area: "Corpo", faction: null },
     { name: "Depozit Vlad", area: "Rural", faction: "Vlads" },
     { name: "Askeveien", area: "Rural", faction: "Sombra 43" },
-    { name: "Beinhaugen", area: "Rural", faction: "Odin's Ax" },
+    { name: "Beinhaugen", area: "Rural", faction: "Axe of Odin" },
     { name: "Posterunek Rdzy", area: "Rural", faction: null }
   ],
 
@@ -108,9 +108,9 @@ const DATA = {
   // 1-2, so the Shop's higher-tier rolls have real variety to land on.
   gear: {
     Street: [
-      { name: "Kessler Snub", attr: "Combat", price: 1 },
-      { name: "Rusted Stiletto", attr: "Combat", price: 1 },
-      { name: "Junkyard Shiv", attr: "Combat", price: 1 },
+      { name: "Kessler Polymer-Auto", attr: "Combat", price: 1 },
+      { name: "Ceramic Stiletto", attr: "Combat", price: 1, tags: ["ML"] },
+      { name: "Junkyard Shiv", attr: "Combat", price: 1, tags: ["ML"] },
       { name: "Roadhouse Revolver", attr: "Combat", price: 1 }, // Jockey starting gear
       { name: "Grigio Overcoat", attr: "Stealth", price: 1 },
       { name: "Faded Trenchcoat", attr: "Stealth", price: 1 },
@@ -128,9 +128,9 @@ const DATA = {
       { name: "Padded Vest", armor: 1, price: 1 }
     ],
     Professional: [
-      { name: "Halvar Sidearm", attr: "Combat", price: 2, tags: ["AP"] },
-      { name: "Monofilament Edge", attr: "Combat", price: 2 },
-      { name: "Tactical Push Dagger", attr: "Combat", price: 2 },
+      { name: "Halvar M18 Sidearm", attr: "Combat", price: 2, tags: ["AP"] },
+      { name: "Monofilament Edge", attr: "Combat", price: 2, tags: ["ML"] },
+      { name: "Tactical Push Dagger", attr: "Combat", price: 2, tags: ["ML"] },
       { name: "Notte Milano", attr: "Stealth", price: 2 },
       { name: "Urban Camo Cloak", attr: "Stealth", price: 2 },
       { name: "Voss Coupé", attr: "Driving", price: 2, tags: ["LX"] },
@@ -146,8 +146,8 @@ const DATA = {
       { name: "Kevlar Weave Jacket", armor: 2, price: 2 }
     ],
     Military: [
-      { name: "Sturmgewehr SMG", attr: "Combat", price: 3, tags: ["AP"] },
-      { name: "Raptor Talons", attr: "Combat", price: 3, tags: ["EX"] },
+      { name: "Sturmpistol SMG", attr: "Combat", price: 3, tags: ["AP"] },
+      { name: "Raptor Talons", attr: "Combat", price: 3, tags: ["ML"] },
       { name: "Gauss Battle Rifle", attr: "Combat", price: 3, tags: ["AP"] },
       { name: "Ombra Couture", attr: "Stealth", price: 3 },
       { name: "Optic-Camo Weave", attr: "Stealth", price: 3 },
@@ -165,8 +165,8 @@ const DATA = {
     ],
     Legendary: [
       { name: "Ares Railgun", attr: "Combat", price: 4, tags: ["AP", "EX"] },
-      { name: "Vorpal Monowire", attr: "Combat", price: 4, tags: ["AP"] },
-      { name: "Singularity Blade", attr: "Combat", price: 4, tags: ["EX"] },
+      { name: "Vorpal Monowire", attr: "Combat", price: 4, tags: ["EX", "ML"] },
+      { name: "Singularity Blade", attr: "Combat", price: 4, tags: ["AP", "ML"] },
       { name: "Chameleon Weave", attr: "Stealth", price: 4 },
       { name: "Phase-Shift Mantle", attr: "Stealth", price: 4 },
       { name: "Ghost Chassis AV", attr: "Driving", price: 4, tags: ["AR", "LX", "CG"] },
@@ -225,7 +225,7 @@ const DATA = {
   // pool instead of a fixed string; genMission() (engine.js) picks one at
   // generation time, same as every other flavor pool in this file.
   missionFlavor: {
-    Assassination: ["put down a target who's become a liability — gun, blade, or a burst of lethal ICE.", "erase someone before they can testify, sell out, or just get in the way."],
+    Assassination: ["put down a target who's become a liability.", "erase someone before they can testify, sell out, or just get in the way."],
     Heist: ["lift something valuable before anyone notices it's gone.", "crack a vault, a server, or a safehouse and walk out with the good stuff."],
     Transport: ["move a package across town without it getting flagged.", "get precious cargo from one end of the SuperState to the other, quiet."],
     Delay: ["keep someone or something tied up while the real move happens.", "run interference so the actual op has room to breathe."],
@@ -312,14 +312,14 @@ const DATA = {
   // (no leading capital, no trailing period) so buildKillFlavor() (game.js)
   // can drop it straight in after an em-dash.
   weaponKillFlavor: {
-    "Kessler Snub": "your Kessler barks twice, center mass, and they're down before they hit the ground",
-    "Rusted Stiletto": "the rusted stiletto goes in under the ribs before they even clock you're there",
+    "Kessler Polymer-Auto": "your Kessler barks twice, center mass, and they're down before they hit the ground",
+    "Ceramic Stiletto": "the ceramic stiletto goes in under the ribs before they even clock you're there",
     "Junkyard Shiv": "a scrap-metal shiv does the job quick, ugly, and final",
     "Roadhouse Revolver": "one round from the Roadhouse and it's over",
-    "Halvar Sidearm": "the Halvar's subsonic round drops them without a sound",
+    "Halvar M18 Sidearm": "the Halvar's subsonic round drops them without a sound",
     "Monofilament Edge": "the monofilament edge opens them up before the nerve signal even reaches their brain",
     "Tactical Push Dagger": "the push dagger finds the gap in their armor — in, out, done",
-    "Sturmgewehr SMG": "a burst from the Sturmgewehr walks clean up their chest",
+    "Sturmpistol SMG": "a burst from the Sturmpistol walks clean up their chest",
     "Raptor Talons": "the Raptor Talons go through their armor like it's paper",
     "Gauss Battle Rifle": "one Gauss round punches through cover, armor, and target in the same breath",
     "Ares Railgun": "the Ares Railgun's shot turns cover, armor, and target into the same fine mist",

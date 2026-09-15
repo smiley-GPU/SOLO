@@ -6,7 +6,7 @@ const SAVE_KEY = "solo_game_save_v1";
 // Starting gear names match the Street-tier catalog in data.js where the
 // item is mechanically identical (original Europunk names — Corrections.md).
 const PROFESSIONS = {
-  Solo: { boosts: ["Combat", "Stealth"], gear: [{ name: "Kessler Snub", attr: "Combat" }, { name: "Padded Vest", armor: 1 }], desc: "Combat & Stealth. Starts armed and armored." },
+  Solo: { boosts: ["Combat", "Stealth"], gear: [{ name: "Kessler Polymer-Auto", attr: "Combat" }, { name: "Padded Vest", armor: 1 }], desc: "Combat & Stealth. Starts armed and armored." },
   // UPDATE 3.1 (chat request) — NETRUNNER: once a job, swap a Stealth or
   // Combat check to Hacking; the deck itself is never lost for good, same
   // never-lose-it protection as Jockey's GEARHEAD vehicle (see
